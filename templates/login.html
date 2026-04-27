@@ -23,9 +23,9 @@
         <div class="user-group-label">
           {{ org_name }}
           {% if org_users[0].parent_org_name %}
-            <span class="muted">— subsidiary of {{ org_users[0].parent_org_name }}</span>
+            <span class="muted">— satellite of {{ org_users[0].parent_org_name }}</span>
           {% elif org_users[0].org_type == 'parent' %}
-            <span class="muted">— parent organization</span>
+            <span class="muted">— main organization</span>
           {% endif %}
         </div>
         {% for u in org_users %}

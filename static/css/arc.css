@@ -1402,6 +1402,35 @@ tr.row-overdue:hover { background: #F9CFCF !important; }
   padding: 12px 14px;
   font-size: 13px;
 }
+/* Super admin read-only enforcement: when a super admin is drilled into a
+   customer org, hide every write-action UI element. Server-side, the global
+   before_request hook also blocks any state-changing request as a safety
+   net — but suppressing the buttons makes the read-only policy visible. */
+body.super-readonly .page-header .actions .btn-primary,
+body.super-readonly .page-header .actions .btn-link,
+body.super-readonly .bulk-bar,
+body.super-readonly .form-actions,
+body.super-readonly .alert-actions,
+body.super-readonly .inbox-item-actions,
+body.super-readonly .inbox-reply-form,
+body.super-readonly .location-card-actions,
+body.super-readonly .metric-picker,
+body.super-readonly tr td form,
+body.super-readonly tr td .btn:not(.btn-link),
+body.super-readonly .card-header .btn-primary,
+body.super-readonly .card-header .btn-sm.btn-primary {
+  display: none !important;
+}
+/* Keep any explicit "exit support view" / navigation buttons usable. */
+body.super-readonly .super-admin-banner,
+body.super-readonly .super-admin-banner * {
+  display: revert !important;
+}
+body.super-readonly .super-admin-banner .btn,
+body.super-readonly .super-admin-banner button {
+  display: inline-flex !important;
+}
+
 /* Super admin banner — shown when ABMRC support is viewing a customer org */
 .super-admin-banner {
   background: #FEF6DB;

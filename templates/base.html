@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/arc.css') }}">
   {% block head_extra %}{% endblock %}
 </head>
-<body>
+<body class="{% if is_super_admin and super_acting_org_id %}super-readonly{% endif %}">
 
 {% if current_user %}
 <nav class="topbar">
@@ -21,20 +21,25 @@
   </a>
 
   <div class="topbar-nav">
-    <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' else '' }}">Dashboard</a>
-    <a href="{{ url_for('patients') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('patient') else '' }}">Patients</a>
-    <a href="{{ url_for('devices') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('device') else '' }}">Devices</a>
-    <a href="{{ url_for('alerts') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('alert') and request.endpoint != 'alert_rules' and not request.endpoint.startswith('alert_rule') else '' }}">Alerts</a>
-    <a href="{{ url_for('tasks') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('task') else '' }}">Tasks</a>
-    {% if messaging_enabled %}
-      <a href="{{ url_for('inbox') }}" class="nav-with-badge {{ 'active' if request.endpoint and request.endpoint.startswith('inbox') else '' }}">
-        Inbox
-        {% if inbox_unread %}<span class="nav-badge">{{ inbox_unread }}</span>{% endif %}
-      </a>
-    {% endif %}
-    <a href="{{ url_for('referring_clinics') }}" class="{{ 'active' if request.endpoint and (request.endpoint.startswith('referring_') or request.endpoint == 'referring_clinic_detail') else '' }}">Referring</a>
-    {% if current_user.role == 'admin' %}
-      <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint and (request.endpoint == 'settings' or request.endpoint.startswith('user') or request.endpoint.startswith('alert_rule')) else '' }}">Settings</a>
+    {% if is_super_admin and not super_acting_org_id %}
+      {# ABMRC super admin at their own dashboard — no customer workflows. #}
+      <a href="{{ url_for('super_dashboard') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('super_') else '' }}">Organizations</a>
+    {% else %}
+      <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' else '' }}">Dashboard</a>
+      <a href="{{ url_for('patients') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('patient') else '' }}">Patients</a>
+      <a href="{{ url_for('devices') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('device') else '' }}">Devices</a>
+      <a href="{{ url_for('alerts') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('alert') and request.endpoint != 'alert_rules' and not request.endpoint.startswith('alert_rule') else '' }}">Alerts</a>
+      <a href="{{ url_for('tasks') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('task') else '' }}">Tasks</a>
+      {% if messaging_enabled %}
+        <a href="{{ url_for('inbox') }}" class="nav-with-badge {{ 'active' if request.endpoint and request.endpoint.startswith('inbox') else '' }}">
+          Inbox
+          {% if inbox_unread %}<span class="nav-badge">{{ inbox_unread }}</span>{% endif %}
+        </a>
+      {% endif %}
+      <a href="{{ url_for('referring_clinics') }}" class="{{ 'active' if request.endpoint and (request.endpoint.startswith('referring_') or request.endpoint == 'referring_clinic_detail') else '' }}">Referring</a>
+      {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint and (request.endpoint == 'settings' or request.endpoint.startswith('user') or request.endpoint.startswith('alert_rule')) else '' }}">Settings</a>
+      {% endif %}
     {% endif %}
   </div>
 

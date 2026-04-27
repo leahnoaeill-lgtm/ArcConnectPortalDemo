@@ -113,7 +113,7 @@
     <div class="card-header">
       <h2>Patient engagement features</h2>
       {% if parent_override_on %}
-        <span class="badge status-inactive">Disabled by parent organization</span>
+        <span class="badge status-inactive">Disabled by main organization</span>
       {% endif %}
     </div>
     <form method="POST" action="{{ url_for('settings_engagement') }}" class="card-body">
@@ -149,8 +149,8 @@
       </div>
       {% if parent_override_on %}
         <div class="flash info mt-2" style="margin-bottom:0;">
-          The parent organization has disabled this feature. Contact your group
-          administrator to turn it on before changing this location's setting.
+          The main organization has disabled this feature. Contact your group
+          administrator to turn it on before changing this satellite location's setting.
         </div>
       {% endif %}
       <div class="form-actions">
@@ -170,10 +170,10 @@
           <input type="radio" name="alert_rules_source" value="location"
                  {% if org.alert_rules_source != 'parent' %}checked{% endif %}>
           <div>
-            <strong>Each location manages its own alert rules</strong>
+            <strong>Each satellite location manages its own alert rules</strong>
             <div class="help">
-              Location admins can add, edit, and deactivate their own rules under
-              Settings → Alert rules at their location.
+              Satellite-location admins can add, edit, and deactivate their own
+              rules under Settings → Alert rules at their location.
             </div>
           </div>
         </label>
@@ -183,10 +183,11 @@
           <input type="radio" name="alert_rules_source" value="parent"
                  {% if org.alert_rules_source == 'parent' %}checked{% endif %}>
           <div>
-            <strong>Parent organization manages alert rules for all locations</strong>
+            <strong>Main organization manages alert rules for all satellite locations</strong>
             <div class="help">
-              Only the group admin can change alert rules. Location admins see
-              the parent's rules as read-only and cannot add or modify them.
+              Only the group admin can change alert rules. Satellite-location
+              admins see the main organization's rules as read-only and cannot
+              add or modify them.
             </div>
           </div>
         </label>

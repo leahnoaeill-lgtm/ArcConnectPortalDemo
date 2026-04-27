@@ -6,7 +6,7 @@
     <div>
       <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Back</a>
       <h1 class="mt-2">New customer organization</h1>
-      <div class="subtitle">All three sections are required: organization details, signed BAA, and an initial parent admin invite.</div>
+      <div class="subtitle">All three sections are required: organization details, signed BAA, and an initial group admin invite.</div>
     </div>
   </div>
 
@@ -18,7 +18,7 @@
           <div class="form-group required span-2">
             <label>Organization name</label>
             <input type="text" name="name" required>
-            <div class="help">Shown across the customer's portal as their parent/account name.</div>
+            <div class="help">Shown across the customer's portal as their main organization name.</div>
           </div>
           <div class="form-group span-2">
             <label>Address line 1</label>
@@ -94,11 +94,12 @@
     </div>
 
     <div class="card mt-3">
-      <div class="card-header"><h2>Parent admin invite</h2></div>
+      <div class="card-header"><h2>Group admin invite</h2></div>
       <div class="card-body">
         <div class="small muted mb-2">
-          The first admin you invite becomes the customer's parent group admin.
-          They'll receive an invite link to set up their portal access.
+          The first admin you invite becomes the customer's group admin
+          (main-organization admin). They'll receive an invite link to set up
+          their portal access.
         </div>
         <div class="form-grid">
           <div class="form-group required">
