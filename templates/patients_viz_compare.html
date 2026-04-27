@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+{% block title %}Adherence + Alert viz comparison · Arc Connect{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('patients') }}" class="btn btn-sm">← Back to patient list</a>
+      <h1 class="mt-2">Adherence + alert — visual concepts</h1>
+      <div class="subtitle">Same 5 patients rendered 4 different ways. Pick the one that reads best at a glance.</div>
+    </div>
+  </div>
+
+  {# ─── Common macro for the adherence context: %, class, worst severity, alert count ─── #}
+  {% macro adh_class(pct) %}
+    {%- if pct is none -%}status-gray
+    {%- elif pct >= 80 -%}status-green
+    {%- elif pct >= 50 -%}status-yellow
+    {%- else -%}status-red
+    {%- endif -%}
+  {% endmacro %}
+
+  {% macro patient_row_head() %}
+    <th>Patient</th>
+    <th>Disease</th>
+    <th>Cough</th>
+    <th>Clear</th>
+  {% endmacro %}
+
+  {% macro patient_cells(p) %}
+    <td style="font-weight: 600;">{{ p.first_name }} {{ p.last_name }}
+      <div class="mono muted small">{{ p.mrn }}</div>
+    </td>
+    <td class="small" style="max-width: 200px;">{{ p.diagnosis or '—' }}</td>
+  {% endmacro %}
+
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       OPTION A — Badge over bar
+       ══════════════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h2>Option A — Badge over bar</h2>
+        <div class="small muted">Familiar iOS/notification pattern. Adherence bar stays, small red badge overlays when alerts exist.</div>
+      </div>
+    </div>
+    <div class="card-body no-pad">
+      <table class="table">
+        <thead><tr>{{ patient_row_head() }}</tr></thead>
+        <tbody>
+          {% for p in patients %}
+            <tr>
+              {{ patient_cells(p) }}
+              {% for modality, pct, has in [('cough', p.cough_pct, p.has_cough), ('clear', p.clear_pct, p.has_clear)] %}
+                <td>
+                  {% if has %}
+                    <div class="viz-a-cell">
+                      <span class="viz-a-pct {{ adh_class(pct) }}">{{ pct }}%</span>
+                      <div class="viz-a-bar">
+                        <div class="viz-a-fill {{ adh_class(pct) }}" style="width: {{ pct or 0 }}%"></div>
+                      </div>
+                      {% if p.open_alerts > 0 %}
+                        <span class="viz-a-badge sev-{{ p.worst }}" title="{{ p.open_alerts }} active alert{{ 's' if p.open_alerts != 1 }}">
+                          {% if p.worst == 'critical' %}⚠{% else %}●{% endif %} {{ p.open_alerts }}
+                        </span>
+                      {% endif %}
+                    </div>
+                  {% else %}<span class="muted small">— not prescribed —</span>{% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       OPTION B — Alert-outlined bar
+       ══════════════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h2>Option B — Alert-outlined bar</h2>
+        <div class="small muted">Same bar + %, but the bar's outline turns red when alerts exist. Count printed to the right of the bar.</div>
+      </div>
+    </div>
+    <div class="card-body no-pad">
+      <table class="table">
+        <thead><tr>{{ patient_row_head() }}</tr></thead>
+        <tbody>
+          {% for p in patients %}
+            <tr>
+              {{ patient_cells(p) }}
+              {% for modality, pct, has in [('cough', p.cough_pct, p.has_cough), ('clear', p.clear_pct, p.has_clear)] %}
+                <td>
+                  {% if has %}
+                    <div class="viz-b-cell">
+                      <span class="viz-b-pct {{ adh_class(pct) }}">{{ pct }}%</span>
+                      <div class="viz-b-bar {% if p.open_alerts > 0 %}has-alerts sev-{{ p.worst }}{% endif %}">
+                        <div class="viz-b-fill {{ adh_class(pct) }}" style="width: {{ pct or 0 }}%"></div>
+                      </div>
+                      {% if p.open_alerts > 0 %}
+                        <span class="viz-b-count sev-{{ p.worst }}">{{ p.open_alerts }}</span>
+                      {% endif %}
+                    </div>
+                  {% else %}<span class="muted small">— not prescribed —</span>{% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       OPTION C — Split chip
+       ══════════════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h2>Option C — Split chip</h2>
+        <div class="small muted">One rounded pill with two halves: adherence % on the left (tier-colored), alert count on the right. No bar.</div>
+      </div>
+    </div>
+    <div class="card-body no-pad">
+      <table class="table">
+        <thead><tr>{{ patient_row_head() }}</tr></thead>
+        <tbody>
+          {% for p in patients %}
+            <tr>
+              {{ patient_cells(p) }}
+              {% for modality, pct, has in [('cough', p.cough_pct, p.has_cough), ('clear', p.clear_pct, p.has_clear)] %}
+                <td>
+                  {% if has %}
+                    <div class="viz-c-chip">
+                      <span class="viz-c-adh {{ adh_class(pct) }}">{{ pct }}%</span>
+                      <span class="viz-c-alerts {% if p.open_alerts > 0 %}sev-{{ p.worst }}{% else %}none{% endif %}">
+                        {% if p.open_alerts > 0 %}
+                          {% if p.worst == 'critical' %}⚠{% else %}●{% endif %} {{ p.open_alerts }}
+                        {% else %}—{% endif %}
+                      </span>
+                    </div>
+                  {% else %}<span class="muted small">— not prescribed —</span>{% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       OPTION D — Fill + tick marks
+       ══════════════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h2>Option D — Fill + tick marks</h2>
+        <div class="small muted">Adherence % fills the bar. Each active alert is a red vertical tick in the <em>unfilled</em> portion of the bar.</div>
+      </div>
+    </div>
+    <div class="card-body no-pad">
+      <table class="table">
+        <thead><tr>{{ patient_row_head() }}</tr></thead>
+        <tbody>
+          {% for p in patients %}
+            <tr>
+              {{ patient_cells(p) }}
+              {% for modality, pct, has in [('cough', p.cough_pct, p.has_cough), ('clear', p.clear_pct, p.has_clear)] %}
+                <td>
+                  {% if has %}
+                    <div class="viz-d-cell">
+                      <span class="viz-d-pct {{ adh_class(pct) }}">{{ pct }}%</span>
+                      <div class="viz-d-bar">
+                        <div class="viz-d-fill {{ adh_class(pct) }}" style="width: {{ pct or 0 }}%"></div>
+                        {% if p.open_alerts > 0 %}
+                          {# Place ticks in the unfilled portion, evenly distributed #}
+                          {% set tick_region_start = pct or 0 %}
+                          {% set tick_region_width = 100 - tick_region_start %}
+                          {% set tick_gap = tick_region_width / (p.open_alerts + 1) %}
+                          {% for i in range(p.open_alerts) %}
+                            {% set tick_left = tick_region_start + tick_gap * (i + 1) %}
+                            <span class="viz-d-tick sev-{{ p.worst }}" style="left: {{ tick_left }}%"></span>
+                          {% endfor %}
+                        {% endif %}
+                      </div>
+                    </div>
+                  {% else %}<span class="muted small">— not prescribed —</span>{% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       Legend / alert summary for the 5 sample patients
+       ══════════════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header"><h2>Sample patients — ground truth</h2></div>
+    <div class="card-body no-pad">
+      <table class="table">
+        <thead>
+          <tr><th>Patient</th><th>Adherence</th><th>Alerts (severity)</th><th>Scenario</th></tr>
+        </thead>
+        <tbody>
+          {% for p in patients %}
+            <tr>
+              <td><strong>{{ p.first_name }} {{ p.last_name }}</strong> <span class="mono muted small">{{ p.mrn }}</span></td>
+              <td>
+                {% if p.has_cough %}Cough {{ p.cough_pct }}%{% endif %}
+                {% if p.has_cough and p.has_clear %} · {% endif %}
+                {% if p.has_clear %}Clear {{ p.clear_pct }}%{% endif %}
+              </td>
+              <td>
+                {% if p.critical_alerts %}<span class="status-red">{{ p.critical_alerts }} critical</span>{% endif %}
+                {% if p.critical_alerts and p.warning_alerts %}, {% endif %}
+                {% if p.warning_alerts %}<span class="status-yellow">{{ p.warning_alerts }} warning</span>{% endif %}
+                {% if p.open_alerts == 0 %}<span class="status-green">clean ✓</span>{% endif %}
+              </td>
+              <td class="small muted">
+                {% if p.open_alerts == 0 and (p.cough_pct or 0) + (p.clear_pct or 0) >= 150 %}
+                  best case — high adherence, no alerts
+                {% elif p.open_alerts == 0 %}
+                  mid adherence, no alerts
+                {% elif p.worst == 'critical' and (p.cough_pct or 100) < 30 %}
+                  worst case — critical alerts, very low adherence
+                {% elif p.worst == 'warning' %}
+                  warning case — mid adherence with open warning
+                {% else %}
+                  critical case — low adherence with critical alert
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<style>
+/* ══════════ OPTION A ══════════ */
+.viz-a-cell {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 130px;
+  padding-right: 32px;
+}
+.viz-a-pct { font-family: var(--font-mono); font-weight: 600; font-size: 12px; }
+.viz-a-bar {
+  height: 8px; background: var(--ac-slate-light);
+  border-radius: 4px; overflow: hidden; width: 130px;
+}
+.viz-a-fill { height: 100%; border-radius: 4px; }
+.viz-a-fill.status-green { background: var(--ac-green); }
+.viz-a-fill.status-yellow { background: var(--ac-yellow); }
+.viz-a-fill.status-red { background: var(--ac-red); }
+.viz-a-fill.status-gray { background: var(--ac-gray); }
+
+.viz-a-badge {
+  position: absolute; top: -4px; right: -4px;
+  padding: 1px 6px; border-radius: 10px;
+  font-size: 10px; font-weight: 700;
+  color: white;
+  box-shadow: 0 0 0 2px white, 0 1px 3px rgba(0,0,0,0.2);
+  white-space: nowrap;
+}
+.viz-a-badge.sev-critical { background: var(--ac-red); }
+.viz-a-badge.sev-warning  { background: var(--ac-yellow); color: var(--ac-dark); }
+
+
+/* ══════════ OPTION B ══════════ */
+.viz-b-cell { display: flex; align-items: center; gap: 8px; min-width: 150px; }
+.viz-b-pct { font-family: var(--font-mono); font-weight: 600; font-size: 12px; min-width: 38px; }
+.viz-b-bar {
+  flex: 1; height: 10px; background: var(--ac-slate-light);
+  border-radius: 4px; overflow: hidden; border: 2px solid transparent;
+  transition: border-color 0.1s;
+  max-width: 90px;
+}
+.viz-b-bar.has-alerts.sev-critical { border-color: var(--ac-red); }
+.viz-b-bar.has-alerts.sev-warning  { border-color: var(--ac-yellow); }
+.viz-b-fill { height: 100%; }
+.viz-b-fill.status-green { background: var(--ac-green); }
+.viz-b-fill.status-yellow { background: var(--ac-yellow); }
+.viz-b-fill.status-red { background: var(--ac-red); }
+.viz-b-fill.status-gray { background: var(--ac-gray); }
+.viz-b-count {
+  font-family: var(--font-mono); font-weight: 700; font-size: 11px;
+  padding: 1px 6px; border-radius: 8px; color: white;
+}
+.viz-b-count.sev-critical { background: var(--ac-red); }
+.viz-b-count.sev-warning  { background: var(--ac-yellow); color: var(--ac-dark); }
+
+
+/* ══════════ OPTION C ══════════ */
+.viz-c-chip {
+  display: inline-flex;
+  border-radius: 12px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12px;
+  border: 1px solid var(--ac-border);
+}
+.viz-c-adh { padding: 3px 10px; color: white; }
+.viz-c-adh.status-green  { background: var(--ac-green); }
+.viz-c-adh.status-yellow { background: var(--ac-yellow); color: var(--ac-dark); }
+.viz-c-adh.status-red    { background: var(--ac-red); }
+.viz-c-adh.status-gray   { background: var(--ac-gray); }
+
+.viz-c-alerts { padding: 3px 10px; background: var(--ac-slate-light); color: var(--ac-gray); }
+.viz-c-alerts.sev-critical { background: var(--ac-red); color: white; }
+.viz-c-alerts.sev-warning  { background: var(--ac-yellow); color: var(--ac-dark); }
+
+
+/* ══════════ OPTION D ══════════ */
+.viz-d-cell { display: inline-flex; flex-direction: column; gap: 2px; min-width: 140px; }
+.viz-d-pct { font-family: var(--font-mono); font-weight: 600; font-size: 12px; }
+.viz-d-bar {
+  position: relative;
+  height: 12px;
+  background: var(--ac-slate-light);
+  border-radius: 4px;
+  overflow: hidden;
+  width: 140px;
+}
+.viz-d-fill { height: 100%; border-radius: 4px; }
+.viz-d-fill.status-green  { background: var(--ac-green); }
+.viz-d-fill.status-yellow { background: var(--ac-yellow); }
+.viz-d-fill.status-red    { background: var(--ac-red); }
+.viz-d-fill.status-gray   { background: var(--ac-gray); }
+.viz-d-tick {
+  position: absolute; top: 0; width: 3px; height: 100%;
+  transform: translateX(-50%);
+  border-radius: 1px;
+}
+.viz-d-tick.sev-critical { background: var(--ac-red); }
+.viz-d-tick.sev-warning  { background: #d89000; }
+</style>
+{% endblock %}

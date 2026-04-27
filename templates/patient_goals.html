@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Goals history · {{ patient.first_name }} {{ patient.last_name }}{% endblock %}
+{% block body %}
+{% set goal_meta = {
+  'therapy_cough':       {'label': 'BiWaze Cough',        'color': 'var(--biwaze-cough-dark)'},
+  'therapy_clear':       {'label': 'BiWaze Clear',        'color': 'var(--ac-cyan-dark)'},
+  'vest':                {'label': 'Vest',                'color': '#6D4CA6'},
+  'breathing_treatment': {'label': 'Breathing Treatments', 'color': '#2E8EBC'},
+  'steps':               {'label': 'Steps',               'color': '#4CAF50'},
+  'sleep':               {'label': 'Sleep',               'color': '#334155'}
+} %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="btn btn-sm">← Back to patient</a>
+      <h1 class="mt-2">Goals history — {{ patient.first_name }} {{ patient.last_name }}</h1>
+      <div class="subtitle">
+        {{ start_date.strftime('%d-%b-%Y') }} – {{ end_date.strftime('%d-%b-%Y') }}
+        · {{ goal_rows | length }} goal{{ 's' if goal_rows | length != 1 }}
+      </div>
+    </div>
+  </div>
+
+  <form method="GET" class="filter-bar">
+    <label class="small muted">From</label>
+    <input type="date" name="start" value="{{ start_date.isoformat() }}" class="filter-select" onchange="this.form.submit()">
+    <label class="small muted">To</label>
+    <input type="date" name="end" value="{{ end_date.isoformat() }}" class="filter-select" onchange="this.form.submit()">
+    <select name="goal_type" class="filter-select" onchange="this.form.submit()">
+      <option value="">All goals</option>
+      {% for gt in all_goal_types %}
+        <option value="{{ gt }}" {% if goal_filter == gt %}selected{% endif %}>{{ goal_meta.get(gt, {'label': gt}).label }}</option>
+      {% endfor %}
+    </select>
+    <a href="{{ url_for('patient_goals', patient_id=patient.id) }}" class="filter-clear">Reset</a>
+  </form>
+
+  {% if goal_rows %}
+    {% for gr in goal_rows %}
+      {% set meta = goal_meta.get(gr.goal.goal_type, {'label': gr.goal.goal_type, 'color': '#555'}) %}
+      <div class="card mb-3">
+        <div class="card-body">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 10px;">
+            <div>
+              <div>
+                <div style="font-size: 15px; font-weight: 500; color: {{ meta.color }};">{{ meta.label }}</div>
+                <div class="small muted">
+                  Target:
+                  {% if gr.goal.unit == 'sessions' %}{{ gr.goal.target_value | int }} sessions/day
+                  {% elif gr.goal.unit == 'steps' %}{{ "{:,}".format(gr.goal.target_value | int) }} steps/day
+                  {% else %}{{ gr.goal.target_value }} hrs/night{% endif %}
+                  · Started {{ gr.goal.start_date }}
+                  {% if gr.goal.end_date %}· Ended {{ gr.goal.end_date }}{% else %}· <span style="color: var(--status-green);">Active</span>{% endif %}
+                </div>
+              </div>
+            </div>
+            <div style="display:flex; gap: 18px; text-align:right;">
+              <div>
+                <div class="small muted" style="text-transform:uppercase; letter-spacing:0.04em; font-size:10px;">Hit rate</div>
+                <div style="font-size: 18px; font-weight: 500;">{{ gr.hit_pct }}%</div>
+                <div class="small muted">{{ gr.met }} of {{ gr.total_days }} days</div>
+              </div>
+              {% if gr.avg_actual is not none %}
+                <div>
+                  <div class="small muted" style="text-transform:uppercase; letter-spacing:0.04em; font-size:10px;">Avg / day</div>
+                  <div style="font-size: 18px; font-weight: 500;">
+                    {% if gr.goal.unit == 'steps' %}{{ "{:,}".format(gr.avg_actual | int) }}
+                    {% else %}{{ gr.avg_actual }}{% endif %}
+                  </div>
+                  <div class="small muted">{{ gr.goal.unit }}</div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+          <div class="goal-history-strip" style="display:flex; gap:3px; flex-wrap:wrap;">
+            {% for d in gr.days %}
+              {% set pct = 0 %}
+              {% if d.actual is not none and gr.goal.target_value > 0 %}
+                {% set pct = ((d.actual / gr.goal.target_value) * 100) | round(0) | int %}
+                {% if pct > 120 %}{% set pct = 120 %}{% endif %}
+              {% endif %}
+              <div class="goal-day {% if d.hit %}goal-day-hit{% elif d.actual is not none %}goal-day-partial{% else %}goal-day-miss{% endif %}"
+                   title="{{ d.weekday }} {{ d.date }} — {% if d.actual is none %}no data{% elif gr.goal.unit == 'sessions' %}{{ d.actual | int }} / {{ gr.goal.target_value | int }}{% elif gr.goal.unit == 'steps' %}{{ '{:,}'.format(d.actual | int) }} / {{ '{:,}'.format(gr.goal.target_value | int) }}{% else %}{{ d.actual }} / {{ gr.goal.target_value }}{% endif %}">
+                <div class="goal-day-wd">{{ d.date[-2:] }}</div>
+                <div class="goal-day-bar-wrap">
+                  <div class="goal-day-bar" style="height: {{ pct }}%; background: {{ meta.color }};"></div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="card">
+      <div class="empty-state">
+        <p>No goals match the current filter.</p>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Alert rules · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Alert rules</h1>
+      <div class="subtitle">Configure what triggers an alert and who gets notified</div>
+    </div>
+    <div class="actions">
+      {% if can_edit %}
+        <a href="{{ url_for('alert_rule_new') }}" class="btn btn-primary">+ Add rule</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if parent_managed %}
+    <div class="flash info">
+      Alert rules for this location are managed by <strong>{{ managing_parent.name }}</strong>.
+      Contact your group administrator to request a change.
+    </div>
+  {% endif %}
+
+  <div class="tabs">
+    <a href="{{ url_for('settings') }}">Location info</a>
+    <a href="{{ url_for('users') }}">Users</a>
+    <a href="{{ url_for('alert_rules') }}" class="active">Alert rules</a>
+    <a href="{{ url_for('audit_log') }}">Audit log</a>
+  </div>
+
+  <div class="card">
+    <div class="card-body no-pad">
+      {% if rules %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Rule</th>
+            <th>Metric</th>
+            <th>Threshold</th>
+            <th>Severity</th>
+            <th>Channels</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rules %}
+            <tr>
+              <td>
+                <div style="font-weight: 600;">{{ r.name }}</div>
+                {% if r.description %}<div class="small muted">{{ r.description }}</div>{% endif %}
+              </td>
+              <td class="small mono">{{ r.metric }}</td>
+              <td class="num">{{ r.threshold_value }}</td>
+              <td><span class="badge severity-{{ r.severity }}">{{ r.severity | upper }}</span></td>
+              <td class="small">
+                {% if r.notify_email %}✉ Email{% endif %}
+                {% if r.notify_in_app %} · 🔔 In-app{% endif %}
+                {% if r.notify_sms %} · 📱 Text{% endif %}
+              </td>
+              <td>
+                {% if r.is_active %}
+                  <span class="badge status-active">Active</span>
+                {% else %}
+                  <span class="badge status-inactive">Disabled</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if can_edit %}
+                  <a href="{{ url_for('alert_rule_edit', rule_id=r.id) }}" class="btn btn-sm">Edit</a>
+                  <form method="POST" action="{{ url_for('alert_rule_delete', rule_id=r.id) }}" style="display: inline;" onsubmit="return confirm('Delete rule {{ r.name }}?');">
+                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                  </form>
+                {% else %}
+                  <span class="small muted">Read only</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="empty-state">
+          <div class="big">🔔</div>
+          {% if can_edit %}
+            <p>No alert rules configured. <a href="{{ url_for('alert_rule_new') }}">Create the first one →</a></p>
+          {% else %}
+            <p>No alert rules configured yet.</p>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card mt-3">
+    <div class="card-body">
+      <h3 class="mb-2">Available metrics</h3>
+      <table class="table">
+        <thead>
+          <tr><th>Metric</th><th>Meaning</th><th>Threshold unit</th></tr>
+        </thead>
+        <tbody>
+          {% for m_id, m_desc, m_unit, m_example in metrics %}
+            <tr>
+              <td class="mono">{{ m_id }}</td>
+              <td>{{ m_desc }}</td>
+              <td class="small">{{ m_unit }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

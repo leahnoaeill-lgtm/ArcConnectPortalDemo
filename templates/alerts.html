@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Alerts · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Alerts</h1>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="?show=active&severity=all" class="{{ 'active' if show == 'active' and filter_sev == 'all' else '' }}">Active <span class="tab-count">{{ counts.active or 0 }}</span></a>
+    <a href="?show=active&severity=critical" class="{{ 'active' if filter_sev == 'critical' else '' }}">Critical <span class="tab-count">{{ counts.critical or 0 }}</span></a>
+    <a href="?show=active&severity=warning" class="{{ 'active' if filter_sev == 'warning' else '' }}">Warning <span class="tab-count">{{ counts.warning or 0 }}</span></a>
+    <a href="?show=mine&severity=all" class="{{ 'active' if show == 'mine' else '' }}">My alerts <span class="tab-count">{{ counts.mine or 0 }}</span></a>
+    <a href="?show=all&severity=all" class="{{ 'active' if show == 'all' else '' }}">All (incl. resolved)</a>
+  </div>
+
+  {% if alerts %}
+  <form method="POST" action="{{ url_for('alert_bulk') }}" id="alertBulkForm">
+    <div class="bulk-bar" id="alertBulkBar">
+      <label class="bulk-select-all">
+        <input type="checkbox" id="alertSelectAll">
+        Select all
+      </label>
+      <span class="bulk-count" id="alertBulkCount">0 selected</span>
+      <div class="bulk-actions">
+        <button type="submit" name="action" value="acknowledge" class="btn btn-sm" disabled>Acknowledge</button>
+        <button type="submit" name="action" value="resolve" class="btn btn-sm btn-danger" disabled
+                onclick="return confirm('Resolve ' + document.querySelectorAll('input.alert-select:checked').length + ' alert(s)? This closes any linked tasks and cannot be undone.');">Resolve</button>
+      </div>
+    </div>
+    {% for a in alerts %}
+      <div class="alert-row severity-{{ a.severity }}{% if a.acknowledged_at %} acknowledged{% endif %}" style="grid-template-columns: 32px 110px 120px 1fr auto;">
+        <div>
+          {% if not a.resolved_at %}
+            <input type="checkbox" name="ids" value="{{ a.id }}" class="alert-select">
+          {% endif %}
+        </div>
+        <div>
+          <span class="badge severity-{{ a.severity }}">{{ a.severity | upper }}</span>
+          <div class="small muted mt-1">{{ a.triggered_at | dt }}</div>
+        </div>
+        <div>
+          <div class="patient-name">
+            <a href="{{ url_for('patient_detail', patient_id=a.patient_id) }}">
+              {{ a.first_name }} {{ a.last_name }}
+            </a>
+          </div>
+          {% if a.mrn %}<div class="mono muted small">ID: {{ a.mrn | replace('MRN-', '') }}</div>{% endif %}
+        </div>
+        <div class="alert-body">
+          <div class="title">{{ a.message }}</div>
+          {% if a.detail %}<div class="detail">{{ a.detail }}</div>{% endif %}
+          {% if a.rule_name %}
+            <div class="small muted mt-1">Rule: {{ a.rule_name }}</div>
+          {% endif %}
+          {% if a.acknowledged_at %}
+            <div class="small muted mt-1">✓ Acknowledged {{ a.acknowledged_at | dt }}</div>
+          {% endif %}
+          {% if a.resolved_at %}
+            <div class="small status-green mt-1">✓ Resolved {{ a.resolved_at | dt }}</div>
+          {% endif %}
+        </div>
+        <div class="alert-actions">
+          {% if not a.resolved_at %}
+            {% if a.task_id %}
+              <a href="{{ url_for('task_detail', task_id=a.task_id) }}" class="btn btn-sm">
+                ✓ Task #{{ a.task_id }}{% if a.task_assignee_first %} — {{ a.task_assignee_first }}{% endif %}
+              </a>
+            {% else %}
+              <details class="alert-assign-details">
+                <summary class="btn btn-sm btn-primary">+ Assign</summary>
+                <div class="alert-assign-popover">
+                  <form method="POST" action="{{ url_for('alert_create_task', alert_id=a.id) }}">
+                    <div class="form-group">
+                      <label>Assign to</label>
+                      <select name="assigned_to_user_id">
+                        {% for u in assign_users %}
+                          <option value="{{ u.id }}" {% if u.id == current_user.id %}selected{% endif %}>{{ u.last_name }}, {{ u.first_name }}{% if u.id == current_user.id %} — me{% endif %}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Due by</label>
+                      <input type="datetime-local" name="due_at" value="{{ default_due[a.severity] }}">
+                      <div class="help">Default: {{ due_defaults[a.severity] }}h ({{ a.severity }})</div>
+                    </div>
+                    <div class="form-group">
+                      <label>Title (optional)</label>
+                      <input type="text" name="title" placeholder="Follow-up on alert: {{ a.message[:40] }}…">
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary">Create task</button>
+                  </form>
+                </div>
+              </details>
+            {% endif %}
+            {% if not a.acknowledged_at %}
+              <form method="POST" action="{{ url_for('alert_acknowledge', alert_id=a.id) }}" style="display:inline;">
+                <button type="submit" class="btn btn-sm">Acknowledge</button>
+              </form>
+            {% endif %}
+            <form method="POST" action="{{ url_for('alert_resolve', alert_id=a.id) }}" style="display:inline;"
+                  onsubmit="return confirm('Resolve this alert?\n\nThis marks the underlying condition as cleared and closes any linked task. Use Acknowledge instead if you\u2019re only triaging.');">
+              <button type="submit" class="btn btn-sm btn-danger">Resolve</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </form>
+  <script>
+  (function() {
+    const form = document.getElementById('alertBulkForm');
+    if (!form) return;
+    const all = document.getElementById('alertSelectAll');
+    const boxes = form.querySelectorAll('input.alert-select');
+    const btns = form.querySelectorAll('.bulk-actions button');
+    const count = document.getElementById('alertBulkCount');
+    function update() {
+      const n = form.querySelectorAll('input.alert-select:checked').length;
+      count.textContent = n + ' selected';
+      btns.forEach(b => b.disabled = (n === 0));
+      document.getElementById('alertBulkBar').classList.toggle('is-active', n > 0);
+    }
+    all.addEventListener('change', () => { boxes.forEach(b => b.checked = all.checked); update(); });
+    boxes.forEach(b => b.addEventListener('change', update));
+    update();
+  })();
+  </script>
+  {% else %}
+    <div class="card">
+      <div class="empty-state">
+        <div class="big">✓</div>
+        <p>No alerts in this view.</p>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}Session · {{ patient.first_name }} {{ patient.last_name }}{% endblock %}
+{% block body %}
+{% set modality_label = 'BiWaze Cough' if session.session_type == 'cough' else 'BiWaze Clear' %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="btn btn-sm">← Back to patient</a>
+      <h1 class="mt-2">{{ modality_label }} session</h1>
+      <div class="subtitle">
+        {{ patient.first_name }} {{ patient.last_name }} ({{ patient.mrn }}) ·
+        {{ session.started_at | date_only }} at {{ session.started_at | time_only }}
+      </div>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi kpi-slate">
+      <div class="label">Duration</div>
+      <div class="value">{{ session.duration_seconds // 60 }}m {{ session.duration_seconds % 60 }}s</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Peak pressure</div>
+      <div class="value">{{ "%.1f" % session.peak_pressure_cmh2o if session.peak_pressure_cmh2o else '—' }}</div>
+      <div class="sub">cmH₂O</div>
+    </div>
+    {% if session.peak_flow_lpm %}
+      <div class="kpi kpi-slate">
+        <div class="label">Peak flow</div>
+        <div class="value">{{ "%.0f" % session.peak_flow_lpm }}</div>
+        <div class="sub">L/min (PEF)</div>
+      </div>
+    {% endif %}
+    <div class="kpi">
+      <div class="label">Mode</div>
+      <div class="value" style="font-size: 22px;">{{ session.mode | title }}</div>
+    </div>
+    {% if session.spo2_pct is not none %}
+      <div class="kpi kpi-slate">
+        <div class="label">SpO₂ (avg)</div>
+        <div class="value">{{ "%.1f" % session.spo2_pct }}</div>
+        <div class="sub">%</div>
+      </div>
+    {% endif %}
+    {% if session.heart_rate_bpm is not none %}
+      <div class="kpi kpi-slate">
+        <div class="label">Heart rate (avg)</div>
+        <div class="value">{{ "%.0f" % session.heart_rate_bpm }}</div>
+        <div class="sub">bpm</div>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if waveform and (waveform.spo2_samples or waveform.hr_samples) %}
+    <div class="card">
+      <div class="card-header">
+        <h2>Vitals during session</h2>
+        <span class="small muted">Captured from the patient's paired pulse-ox / wearable</span>
+      </div>
+      <div class="card-body">
+        <div class="form-grid" style="grid-template-columns: repeat({% if waveform.spo2_samples and waveform.hr_samples %}2{% else %}1{% endif %}, 1fr);">
+          {% if waveform.spo2_samples %}
+            {% set sp = waveform.spo2_samples %}
+            {% set spmin = sp | min %}
+            {% set spmax = sp | max %}
+            {% set sp_lo = ((spmin | round(0, 'floor')) | int) - 2 %}
+            {% set sp_hi = ((spmax | round(0, 'ceil'))  | int) + 2 %}
+            {% if sp_lo < 80 %}{% set sp_lo = 80 %}{% endif %}
+            {% if sp_hi > 100 %}{% set sp_hi = 100 %}{% endif %}
+            {% set sp_range = (sp_hi - sp_lo) if sp_hi > sp_lo else 1 %}
+            <div>
+              <div class="small muted mb-1">SpO₂ (%)</div>
+              <svg viewBox="0 0 600 180" preserveAspectRatio="none" style="width:100%; height:160px; display:block;" xmlns="http://www.w3.org/2000/svg">
+                <rect x="50" y="10" width="540" height="140" fill="#F7F9FB" stroke="#D0D4D8" stroke-width="1"/>
+                {% for gp in [sp_lo, ((sp_lo + sp_hi) / 2) | round(0) | int, sp_hi] %}
+                  {% set gy = 10 + 140 * (1 - (gp - sp_lo) / sp_range) %}
+                  <line x1="50" y1="{{ gy }}" x2="590" y2="{{ gy }}" stroke="#DDD" stroke-width="0.5" stroke-dasharray="3 3"/>
+                  <text x="44" y="{{ gy + 4 }}" fill="#6C737B" font-size="11" text-anchor="end" font-family="Roboto">{{ gp }}</text>
+                {% endfor %}
+                <polyline fill="none" stroke="#2E8EBC" stroke-width="1.6" stroke-linejoin="round"
+                  points="{% for v in sp %}{{ 50 + 540 * loop.index0 / (sp | length - 1) }},{{ 10 + 140 * (1 - (v - sp_lo) / sp_range) }} {% endfor %}"/>
+              </svg>
+              <div class="small muted">Min {{ spmin }}% · Max {{ spmax }}% · Avg {{ "%.1f" % session.spo2_pct if session.spo2_pct else '—' }}%</div>
+            </div>
+          {% endif %}
+          {% if waveform.hr_samples %}
+            {% set hr = waveform.hr_samples %}
+            {% set hrmin = hr | min %}
+            {% set hrmax = hr | max %}
+            {% set hr_lo = ((hrmin | round(0, 'floor')) | int) - 5 %}
+            {% set hr_hi = ((hrmax | round(0, 'ceil'))  | int) + 5 %}
+            {% set hr_range = (hr_hi - hr_lo) if hr_hi > hr_lo else 1 %}
+            <div>
+              <div class="small muted mb-1">Heart Rate (bpm)</div>
+              <svg viewBox="0 0 600 180" preserveAspectRatio="none" style="width:100%; height:160px; display:block;" xmlns="http://www.w3.org/2000/svg">
+                <rect x="50" y="10" width="540" height="140" fill="#F7F9FB" stroke="#D0D4D8" stroke-width="1"/>
+                {% for gp in [hr_lo, ((hr_lo + hr_hi) / 2) | round(0) | int, hr_hi] %}
+                  {% set gy = 10 + 140 * (1 - (gp - hr_lo) / hr_range) %}
+                  <line x1="50" y1="{{ gy }}" x2="590" y2="{{ gy }}" stroke="#DDD" stroke-width="0.5" stroke-dasharray="3 3"/>
+                  <text x="44" y="{{ gy + 4 }}" fill="#6C737B" font-size="11" text-anchor="end" font-family="Roboto">{{ gp }}</text>
+                {% endfor %}
+                <polyline fill="none" stroke="#C0392B" stroke-width="1.6" stroke-linejoin="round"
+                  points="{% for v in hr %}{{ 50 + 540 * loop.index0 / (hr | length - 1) }},{{ 10 + 140 * (1 - (v - hr_lo) / hr_range) }} {% endfor %}"/>
+              </svg>
+              <div class="small muted">Min {{ hrmin | int }} · Max {{ hrmax | int }} · Avg {{ "%.0f" % session.heart_rate_bpm if session.heart_rate_bpm else '—' }} bpm</div>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if waveform %}
+    {% set samples = waveform.samples %}
+    {% set n = samples | length %}
+    {% set pmax = samples | max %}
+    {% set pmin = samples | min %}
+    {# Pad the axis so the waveform doesn't touch edges #}
+    {% set y_hi = (pmax | round(0, 'ceil')) + 5 %}
+    {% set y_lo = (pmin | round(0, 'floor')) - 5 %}
+    {% set y_range = y_hi - y_lo %}
+    {% set vb_w = 1000 %}
+    {% set vb_h = 360 %}
+    {% set plot_x0 = 60 %}
+    {% set plot_x1 = vb_w - 20 %}
+    {% set plot_y0 = 30 %}
+    {% set plot_y1 = vb_h - 40 %}
+    {% set plot_w = plot_x1 - plot_x0 %}
+    {% set plot_h = plot_y1 - plot_y0 %}
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Pressure waveform</h2>
+        <span class="small muted">
+          {{ n }} samples · {{ waveform.sample_rate_hz }} Hz · {{ session.duration_seconds }}s total
+        </span>
+      </div>
+      <div class="card-body">
+        <svg class="waveform" viewBox="0 0 {{ vb_w }} {{ vb_h }}" preserveAspectRatio="none"
+             xmlns="http://www.w3.org/2000/svg">
+          <!-- Chart background -->
+          <rect x="{{ plot_x0 }}" y="{{ plot_y0 }}" width="{{ plot_w }}" height="{{ plot_h }}"
+                fill="#F7F9FB" stroke="#D0D4D8" stroke-width="1"/>
+
+          <!-- Horizontal gridlines at ±20, ±40, 0 -->
+          {% for p in [-40, -20, 0, 20, 40] %}
+            {% if p <= y_hi and p >= y_lo %}
+              {% set y = plot_y0 + plot_h * (1 - (p - y_lo) / y_range) %}
+              <line x1="{{ plot_x0 }}" y1="{{ y }}" x2="{{ plot_x1 }}" y2="{{ y }}"
+                    stroke="{{ '#888' if p == 0 else '#DDD' }}"
+                    stroke-width="{{ 1 if p == 0 else 0.5 }}"
+                    stroke-dasharray="{{ '0' if p == 0 else '3 3' }}"/>
+              <text x="{{ plot_x0 - 8 }}" y="{{ y + 4 }}" fill="#888" font-size="12"
+                    text-anchor="end" font-family="Roboto">{{ p }}</text>
+            {% endif %}
+          {% endfor %}
+
+          <!-- Time axis ticks (every ~20% of duration) -->
+          {% for k in range(6) %}
+            {% set x = plot_x0 + plot_w * k / 5 %}
+            {% set sec = (session.duration_seconds * k / 5) | round(0) | int %}
+            <line x1="{{ x }}" y1="{{ plot_y1 }}" x2="{{ x }}" y2="{{ plot_y1 + 4 }}" stroke="#888"/>
+            <text x="{{ x }}" y="{{ plot_y1 + 18 }}" fill="#888" font-size="11"
+                  text-anchor="middle" font-family="Roboto">{{ sec }}s</text>
+          {% endfor %}
+
+          <!-- Y-axis label -->
+          <text x="15" y="{{ plot_y0 + plot_h / 2 }}" fill="#5A656F" font-size="11"
+                font-family="Roboto" transform="rotate(-90 15 {{ plot_y0 + plot_h / 2 }})"
+                text-anchor="middle">Pressure (cmH₂O)</text>
+
+          <!-- Waveform polyline -->
+          <polyline
+            fill="none"
+            stroke="#43C1ED"
+            stroke-width="1.8"
+            stroke-linejoin="round"
+            points="{% for v in samples %}{{ plot_x0 + plot_w * loop.index0 / (n - 1) }},{{ plot_y0 + plot_h * (1 - (v - y_lo) / y_range) }} {% endfor %}"
+          />
+
+          <!-- Zero line overlay if 0 is in range -->
+          {% if y_lo < 0 < y_hi %}
+            {% set zy = plot_y0 + plot_h * (1 - (0 - y_lo) / y_range) %}
+            <line x1="{{ plot_x0 }}" y1="{{ zy }}" x2="{{ plot_x1 }}" y2="{{ zy }}"
+                  stroke="#888" stroke-width="1"/>
+          {% endif %}
+        </svg>
+
+        <div class="flex-between mt-2 small muted">
+          <div>Max: <strong class="status-green">{{ pmax }}</strong> cmH₂O · Min: <strong class="status-red">{{ pmin }}</strong> cmH₂O</div>
+          <div>
+            {% if session.session_type == 'cough' %}
+              Cough: 5 cycles of inspiratory (positive) → expiratory (negative) pressure
+            {% else %}
+              Clear: PEP → OSC → NEB phase cycling
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-header"><h2>Session metadata</h2></div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Device</label>
+          <div>{% if session.serial_number %}
+            <span class="mono">{{ session.serial_number }}</span> <span class="muted">({{ session.device_model | model_label }})</span>
+          {% else %}<span class="muted">—</span>{% endif %}</div>
+        </div>
+        <div class="form-group">
+          <label>Session type</label>
+          <div>{{ modality_label }}</div>
+        </div>
+        <div class="form-group">
+          <label>Started at</label>
+          <div>{{ session.started_at | dt }}</div>
+        </div>
+        <div class="form-group">
+          <label>Completed</label>
+          <div>{% if session.completed %}<span class="status-green">✓ Yes</span>{% else %}<span class="status-red">✗ No</span>{% endif %}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

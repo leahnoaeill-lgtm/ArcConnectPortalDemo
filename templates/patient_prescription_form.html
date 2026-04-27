@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}{{ modality | title }} prescription · {{ patient.first_name }} {{ patient.last_name }}{% endblock %}
+{% block body %}
+{% set label = 'BiWaze Cough' if modality == 'cough' else 'BiWaze Clear' %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="btn btn-sm">← Back to patient</a>
+      <h1 class="mt-2">{{ label }} prescription — {{ patient.first_name }} {{ patient.last_name }}</h1>
+      <div class="subtitle">Patient ID {{ patient.mrn }}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="POST" enctype="multipart/form-data" class="card-body">
+      <div class="form-grid">
+        <div class="form-group span-2">
+          <label>Prescribed by</label>
+          <select name="prescribed_by_provider_id">
+            <option value="">— none —</option>
+            {% for pr in providers %}
+              <option value="{{ pr.id }}" {% if rx and rx.prescribed_by_provider_id == pr.id %}selected{% endif %}>
+                {{ pr.last_name }}, {{ pr.first_name }} {{ pr.credentials or '' }} — {{ pr.clinic_name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Prescribed date</label>
+          <input type="date" name="prescribed_date" value="{{ rx.prescribed_date if rx else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Effective date</label>
+          <input type="date" name="effective_date" value="{{ rx.effective_date if rx else '' }}">
+        </div>
+
+        {% if modality == 'cough' %}
+          <div class="form-group span-2" style="background: #FEF1E7; padding: 12px 16px; border-radius: var(--radius); border: 1px solid var(--biwaze-cough);">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--biwaze-cough-dark);">
+              BiWaze Cough settings
+            </div>
+          </div>
+          <div class="form-group required">
+            <label># of cycles</label>
+            <input type="number" name="cough_cycles" required min="1" max="10" step="1"
+                   value="{{ rx.cough_cycles if rx else 5 }}">
+          </div>
+          <div class="form-group required">
+            <label>Inspiratory pressure (cmH₂O)</label>
+            <input type="number" name="cough_insp_pressure_cmh2o" required step="1" min="0" max="80"
+                   value="{{ (rx.cough_insp_pressure_cmh2o | round | int) if rx else 40 }}">
+          </div>
+          <div class="form-group required">
+            <label>Inspiratory time (sec)</label>
+            <input type="number" name="cough_insp_time_sec" required step="0.1" min="0.1" max="10"
+                   value="{{ rx.cough_insp_time_sec if rx else 2.0 }}">
+          </div>
+          <div class="form-group required">
+            <label>Expiratory pressure (cmH₂O)</label>
+            <input type="number" name="cough_exp_pressure_cmh2o" required step="1" min="-80" max="0"
+                   value="{{ (rx.cough_exp_pressure_cmh2o | round | int) if rx else -40 }}">
+            <div class="help">Negative value (exsufflation).</div>
+          </div>
+          <div class="form-group required">
+            <label>Expiratory time (sec)</label>
+            <input type="number" name="cough_exp_time_sec" required step="0.1" min="0.1" max="10"
+                   value="{{ rx.cough_exp_time_sec if rx else 2.0 }}">
+          </div>
+          <div class="form-group required">
+            <label>Pause pressure (cmH₂O)</label>
+            <input type="number" name="cough_pause_pressure_cmh2o" required step="1" min="-20" max="20"
+                   value="{{ (rx.cough_pause_pressure_cmh2o | round | int) if rx else 0 }}">
+          </div>
+          <div class="form-group required">
+            <label>Pause time (sec)</label>
+            <input type="number" name="cough_pause_time_sec" required step="0.1" min="0" max="10"
+                   value="{{ rx.cough_pause_time_sec if rx else 1.0 }}">
+          </div>
+        {% else %}
+          <div class="form-group span-2" style="background: var(--ac-cyan-light); padding: 12px 16px; border-radius: var(--radius); border: 1px solid var(--ac-cyan);">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ac-cyan-dark);">
+              BiWaze Clear settings
+            </div>
+          </div>
+          <div class="form-group required">
+            <label>PEP pressure (cmH₂O)</label>
+            <input type="number" name="clear_pep_pressure_cmh2o" required step="1" min="0" max="40"
+                   value="{{ (rx.clear_pep_pressure_cmh2o | round | int) if rx else 15 }}">
+            <div class="help">Positive Expiratory Pressure phase.</div>
+          </div>
+          <div class="form-group required">
+            <label>PEP time</label>
+            <div class="time-min-sec">
+              <input type="number" name="clear_pep_time_min" required step="1" min="0" max="10"
+                     value="{{ ((rx.clear_pep_time_sec | int) // 60) if rx else 2 }}">
+              <span class="muted small">m</span>
+              <input type="number" name="clear_pep_time_sec" required step="1" min="0" max="59"
+                     value="{{ ((rx.clear_pep_time_sec | int) % 60) if rx else 0 }}">
+              <span class="muted small">sec</span>
+            </div>
+          </div>
+          <div class="form-group required">
+            <label>OSC pressure (cmH₂O)</label>
+            <input type="number" name="clear_osc_pressure_cmh2o" required step="1" min="0" max="50"
+                   value="{{ (rx.clear_osc_pressure_cmh2o | round | int) if rx else 25 }}">
+            <div class="help">Oscillation phase amplitude.</div>
+          </div>
+          <div class="form-group required">
+            <label>OSC time</label>
+            <div class="time-min-sec">
+              <input type="number" name="clear_osc_time_min" required step="1" min="0" max="10"
+                     value="{{ ((rx.clear_osc_time_sec | int) // 60) if rx else 1 }}">
+              <span class="muted small">m</span>
+              <input type="number" name="clear_osc_time_sec" required step="1" min="0" max="59"
+                     value="{{ ((rx.clear_osc_time_sec | int) % 60) if rx else 30 }}">
+              <span class="muted small">sec</span>
+            </div>
+          </div>
+          <div class="form-group span-2">
+            <label>Nebulizer</label>
+            <div class="check-group">
+              <label>
+                <input type="checkbox" name="clear_neb_enabled"
+                       {% if not rx or rx.clear_neb_enabled %}checked{% endif %}>
+                NEB enabled — integrated nebulizer during therapy
+              </label>
+            </div>
+          </div>
+          <div class="form-group span-2">
+            <label>Nebulizer medication</label>
+            <input type="text" name="clear_neb_medication"
+                   value="{{ rx.clear_neb_medication if rx else '' }}"
+                   placeholder="e.g., 7% hypertonic saline; Albuterol 2.5 mg; Dornase alfa">
+            <div class="help">Drug (+ dose/concentration) delivered via the integrated nebulizer.</div>
+          </div>
+
+          <div class="form-group span-2" style="background: var(--ac-light-orange, #FEF1E7); padding: 10px 14px; border-radius: var(--radius);">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #B28600;">Supplemental oxygen during therapy</div>
+          </div>
+          <div class="form-group">
+            <label>Bleed-in oxygen</label>
+            <div class="check-group">
+              <label>
+                <input type="checkbox" name="clear_bleed_in_oxygen"
+                       {% if rx and rx.clear_bleed_in_oxygen %}checked{% endif %}>
+                Bleed supplemental O₂ into the therapy circuit
+              </label>
+            </div>
+            <div class="help">Check if supplemental oxygen is mixed into the Clear circuit during therapy.</div>
+          </div>
+          <div class="form-group">
+            <label>O₂ flow (L/min)</label>
+            <input type="number" name="clear_oxygen_flow_lpm" min="0" max="15" step="1"
+                   value="{{ (rx.clear_oxygen_flow_lpm | round | int) if rx and rx.clear_oxygen_flow_lpm is not none else '' }}">
+            <div class="help">Only applies if bleed-in O₂ is on.</div>
+          </div>
+        {% endif %}
+
+        <div class="form-group span-2">
+          <label>Prescription document</label>
+          {% if rx and rx.document_path %}
+            <div class="small mt-1" style="padding: 8px 12px; background: var(--ac-bg); border-radius: var(--radius); display: flex; align-items: center; justify-content: space-between;">
+              <span>
+                📎 <a href="{{ url_for('static', filename=rx.document_path) }}" target="_blank">{{ rx.document_filename or 'View current document' }}</a>
+              </span>
+              <label class="small muted" style="display: flex; align-items: center; gap: 6px; margin: 0;">
+                <input type="checkbox" name="remove_document" value="1"> Remove on save
+              </label>
+            </div>
+          {% endif %}
+          <input type="file" name="prescription_document"
+                 accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.tif,.tiff,application/pdf,image/*">
+          <div class="help">Optional: upload the signed prescription from the referring MD. Accepted: PDF, DOC/DOCX, JPG, PNG, TIFF.</div>
+        </div>
+
+        <div class="form-group span-2">
+          <label>Clinical notes</label>
+          <textarea name="notes" rows="2" placeholder="Titration notes, change reason, etc.">{{ rx.notes if rx else '' }}</textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">Save prescription</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

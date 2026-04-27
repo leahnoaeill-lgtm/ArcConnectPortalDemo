@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% from "_chip.html" import chip %}
+{% block title %}Patients · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Patients</h1>
+    </div>
+    <div class="actions">
+      <a href="{{ url_for('patient_new') }}" class="btn btn-primary">+ Add patient</a>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="?status=active" class="{{ 'active' if status == 'active' else '' }}">Active <span class="tab-count">{{ status_counts.active or 0 }}</span></a>
+    <a href="?status=inactive" class="{{ 'active' if status == 'inactive' else '' }}">Inactive <span class="tab-count">{{ status_counts.inactive or 0 }}</span></a>
+  </div>
+
+  {% if patients %}
+  <div class="filter-bar" id="patientFilterBar">
+    <div class="filter-search">
+      <input type="search" id="patientSearch" placeholder="Search name, PT ID, or diagnosis…" autocomplete="off" autofocus>
+    </div>
+    <select class="filter-select" id="patientModalityFilter">
+      <option value="">All devices</option>
+      <option value="cough">BiWaze Cough</option>
+      <option value="clear">BiWaze Clear</option>
+      <option value="both">Both devices</option>
+    </select>
+    <select class="filter-select" id="patientRiskFilter">
+      <option value="">All adherence levels</option>
+      <option value="critical">Below 50%</option>
+      <option value="at_risk">50% – 79%</option>
+      <option value="on_track">80% or higher</option>
+    </select>
+    <button type="button" class="filter-clear" id="patientFilterClear" style="display:none;">Clear</button>
+    <span class="filter-count" id="patientFilterCount"></span>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-body no-pad">
+      {% if patients %}
+      {# Sort helper macro — crisp labeled sort link with chevron indicator #}
+      {% macro sort_link(key, label, current_sort, current_dir) %}
+        {% set is_active = current_sort == key %}
+        {% set next_dir = 'desc' if (is_active and current_dir == 'asc') else 'asc' %}
+        {% set cls = 'sort-active' if is_active else '' %}
+        <a href="?status={{ status }}&sort={{ key }}&dir={{ next_dir }}" class="sort-link {{ cls }}">
+          <span class="sort-label">{{ label }}</span>
+          <span class="sort-arrow {% if is_active %}sort-arrow-{{ current_dir }}{% else %}sort-arrow-both{% endif %}" aria-hidden="true">
+            {% if is_active %}{% if current_dir == 'asc' %}▲{% else %}▼{% endif %}{% else %}⇅{% endif %}
+          </span>
+        </a>
+      {% endmacro %}
+
+      <table class="table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>{{ sort_link('name', 'Patient', sort, direction) }}</th>
+            <th>{{ sort_link('disease', 'Disease', sort, direction) }}</th>
+            <th>
+              BiWaze Cough <span class="col-header-hint">(30D)</span>
+              <div class="sort-sub">
+                {{ sort_link('cough_adh', 'Adherence', sort, direction) }}
+                <span class="sort-sep">·</span>
+                {{ sort_link('alerts', 'Alerts', sort, direction) }}
+              </div>
+            </th>
+            <th>
+              BiWaze Clear <span class="col-header-hint">(30D)</span>
+              <div class="sort-sub">
+                {{ sort_link('clear_adh', 'Adherence', sort, direction) }}
+                <span class="sort-sep">·</span>
+                {{ sort_link('alerts', 'Alerts', sort, direction) }}
+              </div>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in patients %}
+            {% set pct = p.adherence_pct_30d or 0 %}
+            {% set risk_bucket = 'critical' if pct < 50 else ('at_risk' if pct < 80 else 'on_track') %}
+            {% set modality_tag = 'both' if (p.has_cough and p.has_clear) else ('cough' if p.has_cough else ('clear' if p.has_clear else 'none')) %}
+            <tr class="clickable patient-row"
+                data-search="{{ (p.first_name ~ ' ' ~ p.last_name ~ ' ' ~ (p.mrn or '') ~ ' ' ~ (p.diagnosis or '')) | lower }}"
+                data-modality="{{ modality_tag }}"
+                data-risk="{{ risk_bucket }}"
+                onclick="window.location='{{ url_for('patient_detail', patient_id=p.id) }}'">
+              <td><span class="dot {{ p.adherence_pct_30d | adherence_class }}"></span></td>
+              <td style="font-weight: 600;">
+                {{ p.first_name }} {{ p.last_name }}
+                {% if p.mrn %}<div class="mono muted small">ID: {{ p.mrn | replace('MRN-', '') }}</div>{% endif %}
+              </td>
+              <td class="small" style="max-width: 220px;">
+                {% if p.diagnosis %}{{ p.diagnosis }}{% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              <td>
+                {% if p.has_cough %}
+                  <a href="#" class="chip-link" data-patient-id="{{ p.id }}" data-modality="cough"
+                     onclick="event.stopPropagation(); openChipPopover(event, {{ p.id }}, 'cough'); return false;">
+                    {{ chip(p.cough_pct, p.critical_alerts, p.warning_alerts, p.worst_severity) }}
+                  </a>
+                {% else %}<span class="muted small">— not prescribed —</span>{% endif %}
+              </td>
+              <td>
+                {% if p.has_clear %}
+                  <a href="#" class="chip-link" data-patient-id="{{ p.id }}" data-modality="clear"
+                     onclick="event.stopPropagation(); openChipPopover(event, {{ p.id }}, 'clear'); return false;">
+                    {{ chip(p.clear_pct, p.critical_alerts, p.warning_alerts, p.worst_severity) }}
+                  </a>
+                {% else %}<span class="muted small">— not prescribed —</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="empty-state">
+          <div class="big">👥</div>
+          <p>No {{ status }} patients. <a href="{{ url_for('patient_new') }}">Add one →</a></p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const bar = document.getElementById('patientFilterBar');
+  if (!bar) return;
+  const search   = document.getElementById('patientSearch');
+  const modality = document.getElementById('patientModalityFilter');
+  const risk     = document.getElementById('patientRiskFilter');
+  const clearBtn = document.getElementById('patientFilterClear');
+  const count    = document.getElementById('patientFilterCount');
+  const rows     = document.querySelectorAll('tr.patient-row');
+  const totalRows = rows.length;
+
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    const m = modality.value;
+    const r = risk.value;
+    let visible = 0;
+    rows.forEach(row => {
+      const matchSearch = !q || row.dataset.search.includes(q);
+      const matchModality = !m || (m === 'both' ? row.dataset.modality === 'both'
+                                                : row.dataset.modality === m || row.dataset.modality === 'both');
+      const matchRisk = !r || row.dataset.risk === r;
+      const show = matchSearch && matchModality && matchRisk;
+      row.classList.toggle('filter-hidden', !show);
+      if (show) visible += 1;
+    });
+    const active = q || m || r;
+    clearBtn.style.display = active ? '' : 'none';
+    count.textContent = active ? `${visible} of ${totalRows} patients` : '';
+  }
+  function reset() {
+    search.value = ''; modality.value = ''; risk.value = '';
+    apply();
+  }
+  search.addEventListener('input', apply);
+  modality.addEventListener('change', apply);
+  risk.addEventListener('change', apply);
+  clearBtn.addEventListener('click', reset);
+})();
+</script>
+{% endblock %}

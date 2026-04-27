@@ -1,0 +1,27 @@
+{# Option C — split chip showing adherence % on the left (tier-colored)
+   and alert count on the right (severity-colored or gray "—" if zero). #}
+
+{% macro adh_class(pct) -%}
+  {% if pct is none -%}status-gray
+  {%- elif pct >= 80 -%}status-green
+  {%- elif pct >= 50 -%}status-yellow
+  {%- else -%}status-red
+  {%- endif %}
+{%- endmacro %}
+
+{% macro chip(pct, critical_alerts, warning_alerts, worst_severity) %}
+  <div class="adh-chip">
+    <span class="adh-chip-pct {{ adh_class(pct) | trim }}">{{ pct }}%</span>
+    <span class="adh-chip-alerts
+      {%- if worst_severity %} sev-{{ worst_severity }}
+      {%- else %} none{% endif %}">
+      {%- set total = (critical_alerts or 0) + (warning_alerts or 0) -%}
+      {%- if total > 0 -%}
+        {%- if worst_severity == 'critical' %}⚠ {% else %}● {% endif -%}
+        {{ total }}
+      {%- else -%}
+        —
+      {%- endif -%}
+    </span>
+  </div>
+{% endmacro %}

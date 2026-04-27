@@ -1,0 +1,374 @@
+{# Printable report of selected therapy sessions. Same visual language as
+   patient_report.html but compact — one row per session with key metrics. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Therapy sessions · {{ patient.first_name }} {{ patient.last_name }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --border: #B3B8BD;
+      --label: #4A5058;
+      --text:  #1F2328;
+      --muted: #6C737B;
+      --cyan:  #43C1ED;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Helvetica Neue', Helvetica, 'Roboto', Arial, sans-serif;
+      color: var(--text);
+      margin: 0;
+      background: #E5E8EB;
+      font-size: 12px;
+    }
+    .toolbar {
+      position: sticky; top: 0;
+      background: white; border-bottom: 1px solid #D0D4D8;
+      padding: 12px 24px;
+      display: flex; justify-content: space-between; align-items: center;
+      z-index: 10;
+    }
+    .toolbar h1 { margin: 0; font-size: 14px; font-weight: 500; color: #3D464D; }
+    .btn {
+      padding: 7px 14px; border-radius: 999px;
+      border: 1px solid #D0D4D8; background: white;
+      font-size: 12px; font-weight: 500; color: #3D464D;
+      cursor: pointer; text-decoration: none;
+    }
+    .btn-primary {
+      background: var(--cyan); color: white; border-color: var(--cyan);
+    }
+    .page {
+      width: 8.5in;
+      min-height: 11in;
+      margin: 24px auto;
+      padding: 0.5in;
+      background: white;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      page-break-after: always;
+    }
+    .page:last-child { page-break-after: auto; }
+    .hd {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px; margin-bottom: 16px;
+    }
+    .hd h1 { margin: 0 0 2px; font-size: 18px; font-weight: 500; }
+    .hd .sub { font-size: 11px; color: var(--muted); }
+    .brand img { height: 32px; }
+
+    .session-card {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .waveform-svg {
+      width: 100%;
+      height: 200px;
+      display: block;
+      margin-top: 10px;
+    }
+    .waveform-stats {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .session-card h2 {
+      font-size: 13px; font-weight: 600; margin: 0 0 8px;
+      color: var(--text);
+    }
+    .session-card .sub {
+      font-size: 10px; color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      padding: 8px 0;
+      border-top: 1px solid #E5E8EB;
+    }
+    .metric { font-size: 11px; }
+    .metric .k {
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 600;
+    }
+    .metric .v {
+      font-size: 14px; font-weight: 500;
+      color: var(--text);
+      margin-top: 2px;
+    }
+    .metric .u { font-size: 9px; color: var(--muted); margin-left: 2px; }
+
+    .trend-card {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .trend-card h3 {
+      font-size: 12px; font-weight: 600; margin: 0 0 4px;
+      color: var(--text);
+    }
+    .trend-card .sub { font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+    .trend-svg { width: 100%; height: 160px; display: block; }
+
+    .page-footer {
+      position: absolute; bottom: 0.3in; left: 0.5in; right: 0.5in;
+      display: flex; justify-content: space-between;
+      font-size: 9px; color: var(--muted);
+      padding-top: 6px; border-top: 1px solid #E5E8EB;
+    }
+
+    @media print {
+      body { background: white; }
+      .toolbar { display: none; }
+      .page {
+        width: 100%;
+        min-height: 0;
+        margin: 0;
+        padding: 0.4in 0.5in;
+        box-shadow: none;
+      }
+      @page { size: letter; margin: 0.3in; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>Therapy sessions — {{ patient.first_name }} {{ patient.last_name }} ({{ sessions | length }} selected)</h1>
+  <div style="display:flex; gap:8px;">
+    <a href="{{ url_for('patient_sessions', patient_id=patient.id) }}" class="btn">← Back</a>
+    <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+</div>
+
+{% set gen_stamp = generated_at.strftime('%d-%b-%Y %I:%M').replace(' 0', ' ') + generated_at.strftime(' %p') %}
+
+<div class="page">
+  <div class="hd">
+    <div>
+      <h1>Therapy session report</h1>
+      <div class="sub">
+        {{ patient.first_name }} {{ patient.last_name }}
+        {% if patient.mrn %} · ID {{ patient.mrn | replace('MRN-', '') }}{% endif %}
+        {% if patient.dob %} · DOB {{ patient.dob | date_only }}{% endif %}
+      </div>
+      <div class="sub" style="margin-top: 4px;">
+        {{ sessions | length }} selected session{{ 's' if sessions | length != 1 }}
+      </div>
+    </div>
+    <div class="brand">
+      <img src="{{ url_for('static', filename='img/arc-connect-logo.png') }}" alt="Arc Connect">
+    </div>
+  </div>
+
+  {% if metrics %}
+    {% set metric_defs = {
+      'peak_cough_flow':    {'label': 'Peak Cough Flow',    'unit': 'L/min',  'field': 'peak_flow_lpm',       'types': ['cough'],         'color': '#F27C1C'},
+      'volume':             {'label': 'Volume',             'unit': 'mL',     'field': 'volume_ml',           'types': ['cough'],         'color': '#F27C1C'},
+      'peak_insp_pressure': {'label': 'Peak Insp Pressure', 'unit': 'cmH₂O', 'field': 'peak_pressure_cmh2o', 'types': ['cough'],         'color': '#F27C1C'},
+      'peak_pressure':      {'label': 'Peak Pressure',      'unit': 'cmH₂O', 'field': 'peak_pressure_cmh2o', 'types': ['clear'],         'color': '#43C1ED'},
+      'spo2':               {'label': 'SpO₂',              'unit': '%',      'field': 'spo2_pct',            'types': ['cough','clear'], 'color': '#2E8EBC'},
+      'heart_rate':         {'label': 'Heart Rate',         'unit': 'bpm',    'field': 'heart_rate_bpm',      'types': ['cough','clear'], 'color': '#C0392B'}
+    } %}
+    <div style="margin-bottom: 14px;">
+      <h2 style="font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--text);">Trends across selected sessions</h2>
+      {% for mkey in metrics %}
+        {% set md = metric_defs[mkey] %}
+        {% set points = [] %}
+        {% for s in sessions %}
+          {% if s.session_type in md.types %}
+            {% set val = s[md.field] %}
+            {% if val is not none %}
+              {% set _ = points.append({'t': s.started_at, 'v': val}) %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        <div class="trend-card">
+          <h3 style="color: {{ md.color }};">{{ md.label }}</h3>
+          <div class="sub">
+            {{ points | length }} session{{ 's' if points | length != 1 }} with data
+            {% if md.types == ['cough'] %}(BiWaze Cough){% elif md.types == ['clear'] %}(BiWaze Clear){% endif %}
+          </div>
+          {% if points | length >= 1 %}
+            {% set vmin = (points | map(attribute='v') | min) %}
+            {% set vmax = (points | map(attribute='v') | max) %}
+            {% set span = (vmax - vmin) if vmax > vmin else (vmax if vmax else 1) %}
+            {% set y_hi = vmax + span * 0.15 %}
+            {% set y_lo = vmin - span * 0.15 %}
+            {% if y_lo < 0 and md.field != 'peak_flow_lpm' %}{% set y_lo = 0 %}{% endif %}
+            {% set y_range = y_hi - y_lo if y_hi > y_lo else 1 %}
+            {% set vb_w = 1000 %}
+            {% set vb_h = 260 %}
+            {% set px0 = 70 %}
+            {% set px1 = vb_w - 20 %}
+            {% set py0 = 20 %}
+            {% set py1 = vb_h - 40 %}
+            {% set pw = px1 - px0 %}
+            {% set ph = py1 - py0 %}
+            {% set n = points | length %}
+            <svg class="trend-svg" viewBox="0 0 {{ vb_w }} {{ vb_h }}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="{{ px0 }}" y="{{ py0 }}" width="{{ pw }}" height="{{ ph }}" fill="#FAFBFC" stroke="#B3B8BD" stroke-width="0.8"/>
+              {% for k in range(5) %}
+                {% set gy = py0 + ph * k / 4 %}
+                {% set gv = y_hi - y_range * k / 4 %}
+                <line x1="{{ px0 }}" y1="{{ gy }}" x2="{{ px1 }}" y2="{{ gy }}" stroke="#E0E3E6" stroke-width="0.4" stroke-dasharray="3 3"/>
+                <text x="{{ px0 - 6 }}" y="{{ gy + 3 }}" fill="#6C737B" font-size="10" text-anchor="end" font-family="Roboto">{{ "%.0f" % gv }}</text>
+              {% endfor %}
+              <text x="14" y="{{ py0 + ph / 2 }}" fill="#6C737B" font-size="10" font-family="Roboto" transform="rotate(-90 14 {{ py0 + ph / 2 }})" text-anchor="middle">{{ md.label }} ({{ md.unit }})</text>
+              {% if n > 1 %}
+                <polyline fill="none" stroke="{{ md.color }}" stroke-width="1.3" stroke-linejoin="round"
+                  points="{% for p in points %}{{ px0 + pw * loop.index0 / (n - 1) }},{{ py0 + ph * (1 - (p.v - y_lo) / y_range) }} {% endfor %}"/>
+              {% endif %}
+              {% for p in points %}
+                {% set cx = px0 + pw * (loop.index0 / (n - 1) if n > 1 else 0.5) %}
+                {% set cy = py0 + ph * (1 - (p.v - y_lo) / y_range) %}
+                <circle cx="{{ cx }}" cy="{{ cy }}" r="3.5" fill="{{ md.color }}" stroke="white" stroke-width="1"/>
+                <text x="{{ cx }}" y="{{ py1 + 14 }}" fill="#6C737B" font-size="9" text-anchor="middle" font-family="Roboto">{{ p.t | date_only }}</text>
+              {% endfor %}
+            </svg>
+          {% else %}
+            <div style="font-size: 10px; color: var(--muted); padding: 20px 0; text-align: center;">No data for selected sessions.</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% for s in sessions %}
+    <div class="session-card">
+      <h2>
+        {{ 'BiWaze Cough' if s.session_type == 'cough' else 'BiWaze Clear' }}
+        — {{ s.started_at | date_only }} at {{ s.started_at | time_only }}
+      </h2>
+      <div class="sub">
+        {% if s.serial_number %}Serial {{ s.serial_number }} · {% endif %}
+        Mode: {{ s.mode or '—' }}
+        · Status: {% if s.completed %}completed{% else %}incomplete{% endif %}
+      </div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="k">Duration</div>
+          <div class="v">{{ (s.duration_seconds // 60) }}m {{ (s.duration_seconds % 60) }}s</div>
+        </div>
+        <div class="metric">
+          <div class="k">Peak pressure</div>
+          <div class="v">
+            {% if s.peak_pressure_cmh2o %}{{ "%.1f" % s.peak_pressure_cmh2o }}<span class="u">cmH₂O</span>
+            {% else %}—{% endif %}
+          </div>
+        </div>
+        {% if s.session_type == 'cough' %}
+          <div class="metric">
+            <div class="k">Peak flow</div>
+            <div class="v">
+              {% if s.peak_flow_lpm %}{{ "%.0f" % s.peak_flow_lpm }}<span class="u">L/min</span>
+              {% else %}—{% endif %}
+            </div>
+          </div>
+        {% else %}
+          <div class="metric">
+            <div class="k">Session type</div>
+            <div class="v">BiWaze Clear</div>
+          </div>
+        {% endif %}
+        <div class="metric">
+          <div class="k">Completed</div>
+          <div class="v">{% if s.completed %}✓{% else %}—{% endif %}</div>
+        </div>
+        {% if s.spo2_pct is not none %}
+          <div class="metric">
+            <div class="k">SpO₂ (avg)</div>
+            <div class="v">{{ "%.1f" % s.spo2_pct }}<span class="u">%</span></div>
+          </div>
+        {% endif %}
+        {% if s.heart_rate_bpm is not none %}
+          <div class="metric">
+            <div class="k">Heart rate (avg)</div>
+            <div class="v">{{ "%.0f" % s.heart_rate_bpm }}<span class="u">bpm</span></div>
+          </div>
+        {% endif %}
+      </div>
+      {% if s.waveform and s.waveform.samples %}
+        {% set samples = s.waveform.samples %}
+        {% set n = samples | length %}
+        {% set pmax = samples | max %}
+        {% set pmin = samples | min %}
+        {% set y_hi = (pmax | round(0, 'ceil')) + 5 %}
+        {% set y_lo = (pmin | round(0, 'floor')) - 5 %}
+        {% set y_range = y_hi - y_lo %}
+        {% set vb_w = 1000 %}
+        {% set vb_h = 300 %}
+        {% set plot_x0 = 50 %}
+        {% set plot_x1 = vb_w - 20 %}
+        {% set plot_y0 = 15 %}
+        {% set plot_y1 = vb_h - 30 %}
+        {% set plot_w = plot_x1 - plot_x0 %}
+        {% set plot_h = plot_y1 - plot_y0 %}
+        <svg class="waveform-svg" viewBox="0 0 {{ vb_w }} {{ vb_h }}" preserveAspectRatio="none"
+             xmlns="http://www.w3.org/2000/svg">
+          <rect x="{{ plot_x0 }}" y="{{ plot_y0 }}" width="{{ plot_w }}" height="{{ plot_h }}"
+                fill="#FAFBFC" stroke="#B3B8BD" stroke-width="0.8"/>
+          {% for pval in [-40, -20, 0, 20, 40] %}
+            {% if pval <= y_hi and pval >= y_lo %}
+              {% set y = plot_y0 + plot_h * (1 - (pval - y_lo) / y_range) %}
+              <line x1="{{ plot_x0 }}" y1="{{ y }}" x2="{{ plot_x1 }}" y2="{{ y }}"
+                    stroke="{{ '#888' if pval == 0 else '#E0E3E6' }}"
+                    stroke-width="{{ 0.8 if pval == 0 else 0.4 }}"
+                    stroke-dasharray="{{ '0' if pval == 0 else '3 3' }}"/>
+              <text x="{{ plot_x0 - 6 }}" y="{{ y + 3 }}" fill="#6C737B" font-size="9"
+                    text-anchor="end" font-family="Roboto">{{ pval }}</text>
+            {% endif %}
+          {% endfor %}
+          {% for k in range(6) %}
+            {% set x = plot_x0 + plot_w * k / 5 %}
+            {% set sec = (s.duration_seconds * k / 5) | round(0) | int %}
+            <line x1="{{ x }}" y1="{{ plot_y1 }}" x2="{{ x }}" y2="{{ plot_y1 + 3 }}" stroke="#888" stroke-width="0.6"/>
+            <text x="{{ x }}" y="{{ plot_y1 + 14 }}" fill="#6C737B" font-size="9"
+                  text-anchor="middle" font-family="Roboto">{{ sec }}s</text>
+          {% endfor %}
+          <text x="12" y="{{ plot_y0 + plot_h / 2 }}" fill="#6C737B" font-size="9"
+                font-family="Roboto" transform="rotate(-90 12 {{ plot_y0 + plot_h / 2 }})"
+                text-anchor="middle">Pressure (cmH₂O)</text>
+          <polyline
+            fill="none"
+            stroke="#43C1ED"
+            stroke-width="1.3"
+            stroke-linejoin="round"
+            points="{% for v in samples %}{{ plot_x0 + plot_w * loop.index0 / (n - 1) }},{{ plot_y0 + plot_h * (1 - (v - y_lo) / y_range) }} {% endfor %}"
+          />
+        </svg>
+        <div class="waveform-stats">
+          <span>{{ n }} samples · {{ s.waveform.sample_rate_hz }} Hz</span>
+          <span>Max {{ pmax }} cmH₂O · Min {{ pmin }} cmH₂O</span>
+        </div>
+      {% endif %}
+      {% if s.notes %}
+        <div style="margin-top: 8px; font-size: 10px; color: var(--muted);">
+          <strong>Notes:</strong> {{ s.notes }}
+        </div>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <div class="page-footer">
+    <span>Confidential Report Generated on {{ gen_stamp }}</span>
+    <span>{{ patient.first_name }} {{ patient.last_name }}</span>
+  </div>
+</div>
+
+</body>
+</html>

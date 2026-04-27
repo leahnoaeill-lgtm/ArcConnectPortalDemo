@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="{{ url_for('static', filename='img/arc-connect-logo.png') }}" alt="Arc Connect">
+    </div>
+    <h1>Arc Connect Portal</h1>
+    <div class="login-sub">Demo mode — pick a user to sign in as</div>
+
+    {% set groups = {} %}
+    {% for u in users %}
+      {% set _ = groups.setdefault(u.org_name, []).append(u) %}
+    {% endfor %}
+
+    <form method="POST" action="{{ url_for('login') }}" id="loginForm">
+      <input type="hidden" name="user_id" id="userId">
+    </form>
+
+    {% for org_name, org_users in groups.items() %}
+      <div class="user-group">
+        <div class="user-group-label">
+          {{ org_name }}
+          {% if org_users[0].parent_org_name %}
+            <span class="muted">— subsidiary of {{ org_users[0].parent_org_name }}</span>
+          {% elif org_users[0].org_type == 'parent' %}
+            <span class="muted">— parent organization</span>
+          {% endif %}
+        </div>
+        {% for u in org_users %}
+          <button type="button" class="user-option"
+                  onclick="document.getElementById('userId').value={{ u.id }}; document.getElementById('loginForm').submit();">
+            <div class="user-avatar">
+              {{ u.first_name[0] if u.first_name else '?' }}{{ u.last_name[0] if u.last_name else '' }}
+            </div>
+            <div class="user-main">
+              <div class="name">{{ u.first_name }} {{ u.last_name }}</div>
+              <div class="meta">{{ u.email }}</div>
+            </div>
+            <div>
+              <span class="badge role-{{ u.role }}">{{ u.role | replace('_',' ') | title }}</span>
+            </div>
+          </button>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

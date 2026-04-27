@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set is_edit = location is not none %}
+{% block title %}{{ 'Edit location' if is_edit else 'Add location' }} · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('parent_overview') }}" class="btn btn-sm">← Back</a>
+      <h1 class="mt-2">{{ 'Edit location' if is_edit else 'Add location' }}</h1>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="POST" class="card-body"
+          action="{{ url_for('parent_location_edit', org_id=location.id) if is_edit else url_for('parent_location_new') }}">
+      <div class="form-grid">
+        <div class="form-group required span-2">
+          <label>Location name</label>
+          <input type="text" name="name" required value="{{ location.name if is_edit else '' }}">
+          <div class="help">Shown in the location switcher and on patient lists.</div>
+        </div>
+        <div class="form-group span-2">
+          <label>Address line 1</label>
+          <input type="text" name="address_line1" value="{{ location.address_line1 or '' if is_edit else '' }}">
+        </div>
+        <div class="form-group span-2">
+          <label>Address line 2</label>
+          <input type="text" name="address_line2" value="{{ location.address_line2 or '' if is_edit else '' }}">
+        </div>
+        <div class="form-group">
+          <label>City</label>
+          <input type="text" name="city" value="{{ location.city or '' if is_edit else '' }}">
+        </div>
+        <div class="form-group">
+          <label>State</label>
+          <input type="text" name="state" value="{{ location.state or '' if is_edit else '' }}">
+        </div>
+        <div class="form-group">
+          <label>ZIP</label>
+          <input type="text" name="zip" value="{{ location.zip or '' if is_edit else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="tel" name="phone" value="{{ location.phone or '' if is_edit else '' }}">
+        </div>
+        <div class="form-group span-2">
+          <label>Email</label>
+          <input type="email" name="email" value="{{ location.email or '' if is_edit else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Timezone</label>
+          <select name="timezone">
+            {% set tzs = ['America/New_York','America/Chicago','America/Denver','America/Phoenix','America/Los_Angeles','America/Anchorage','Pacific/Honolulu'] %}
+            {% set cur = location.timezone if is_edit else 'America/New_York' %}
+            {% for tz in tzs %}
+              <option value="{{ tz }}" {% if cur == tz %}selected{% endif %}>{{ tz }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('parent_overview') }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">{{ 'Save changes' if is_edit else 'Add location' }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

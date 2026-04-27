@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Task #{{ task.id }} · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('tasks') }}" class="btn btn-sm">← Back to tasks</a>
+      <h1 class="mt-2">{{ task.title }}</h1>
+      <div class="subtitle">
+        <span class="badge task-status-{{ task.status }}">{{ status_labels[task.status] }}</span>
+        <span class="badge priority-{{ task.priority }}">{{ task.priority | title }}</span>
+        {% if task.due_at %}
+          · Due {{ task.due_at | dt }}
+          {% if task.due_at < now_iso and task.status not in ('completed','cancelled') %}
+            <span class="status-red" style="font-weight: 700;">· OVERDUE</span>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <div class="card">
+        <div class="card-header"><h2>Task detail</h2></div>
+        <div class="card-body">
+          {% if task.description %}
+            <p>{{ task.description }}</p>
+          {% else %}
+            <p class="muted">No description.</p>
+          {% endif %}
+
+          {% if task.alert_id %}
+            <div class="mt-2" style="padding: 10px 14px; background: var(--ac-red-light); border-left: 3px solid var(--ac-red); border-radius: var(--radius);">
+              <div class="small muted" style="font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Linked alert</div>
+              <div style="font-weight: 600; margin-top: 2px;">
+                <span class="badge severity-{{ task.alert_severity }}">{{ task.alert_severity | upper }}</span>
+                {{ task.alert_message }}
+              </div>
+              <div class="small muted">Triggered {{ task.alert_triggered_at | dt }}</div>
+            </div>
+          {% endif %}
+
+          {% if task.pt_last %}
+            <div class="mt-2 small">
+              <strong>Patient:</strong>
+              <a href="{{ url_for('patient_detail', patient_id=task.patient_id) }}">{{ task.pt_first }} {{ task.pt_last }}</a>
+              <span class="mono muted">({{ task.pt_mrn }})</span>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if inbox_item and inbox_item.kind == 'message' %}
+        <div class="card">
+          <div class="card-header">
+            <h2>Patient conversation</h2>
+            <span class="badge inbox-status-{{ inbox_item.status }}">{{ inbox_item.status | title }}</span>
+          </div>
+          <div class="card-body">
+            <div class="inbox-thread">
+              {% for m in message_thread %}
+                <div class="msg msg-{{ m.direction }}">
+                  <div class="msg-who">
+                    {% if m.direction == 'from_patient' %}
+                      {{ task.pt_first }} {{ task.pt_last }}
+                    {% else %}
+                      {{ m.author_first or 'Provider' }} {{ m.author_last or '' }}
+                    {% endif %}
+                    <span class="muted small">· {{ m.created_at | dt }}</span>
+                  </div>
+                  <div class="msg-body">{{ m.body }}</div>
+                </div>
+              {% endfor %}
+            </div>
+            {% if task.status not in ('completed', 'cancelled') %}
+              <form method="POST" action="{{ url_for('inbox_reply', item_id=inbox_item.id) }}" class="inbox-reply-form mt-2">
+                <textarea name="body" rows="2" placeholder="Reply to {{ task.pt_first }}…" required></textarea>
+                <button type="submit" class="btn btn-sm btn-primary">Send reply &amp; complete task</button>
+              </form>
+              <div class="small muted mt-1">Sending a reply auto-completes this task.</div>
+            {% endif %}
+          </div>
+        </div>
+      {% elif inbox_item and inbox_item.kind == 'mood' %}
+        <div class="card">
+          <div class="card-header"><h2>Mood check-in</h2></div>
+          <div class="card-body">
+            <div class="small muted">The patient left a note on an unfavorable mood check-in. Consider reaching out or documenting in Clinical history.</div>
+            <div class="mt-2"><a href="{{ url_for('patient_detail', patient_id=task.patient_id) }}#mood" class="btn btn-sm">View patient mood history</a></div>
+          </div>
+        </div>
+      {% endif %}
+
+      {# ── Activity + comments ── #}
+      <div class="card">
+        <div class="card-header"><h2>Activity</h2></div>
+        <div class="card-body">
+          {% for ev in activity %}
+            <div class="activity-item">
+              <div class="activity-marker activity-{{ ev.kind }}"></div>
+              <div>
+                <div class="small">
+                  <strong>{% if ev.first_name %}{{ ev.first_name }} {{ ev.last_name or '' }}{% else %}System{% endif %}</strong>
+                  <span class="muted">· {{ ev.occurred_at | dt }}</span>
+                </div>
+                {% if ev.kind == 'comment' %}
+                  <div class="activity-body activity-comment">{{ ev.detail }}</div>
+                {% elif ev.kind == 'created' %}
+                  <div class="muted small">created the task{% if ev.detail %} · {{ ev.detail }}{% endif %}</div>
+                {% elif ev.kind == 'status_changed' %}
+                  <div class="muted small">status: {{ ev.detail }}</div>
+                {% elif ev.kind == 'reassigned' %}
+                  <div class="muted small">{{ ev.detail }}</div>
+                {% elif ev.kind == 'completed' %}
+                  <div class="muted small">marked completed{% if ev.detail %} · {{ ev.detail }}{% endif %}</div>
+                {% else %}
+                  <div class="muted small">{{ ev.detail }}</div>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+
+          <form method="POST" action="{{ url_for('task_comment', task_id=task.id) }}" class="mt-2">
+            <div class="form-group">
+              <textarea name="body" rows="2" placeholder="Add a comment or note…" required></textarea>
+            </div>
+            <div class="text-right">
+              <button type="submit" class="btn btn-sm btn-primary">Add comment</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-header"><h2>Assignment</h2></div>
+        <div class="card-body">
+          <div class="form-group">
+            <label>Currently assigned to</label>
+            <div style="font-weight: 600;">{% if task.assignee_first %}{{ task.assignee_first }} {{ task.assignee_last or '' }}{% else %}Unassigned{% endif %}</div>
+            {% if task.assignee_email %}<div class="small muted">{{ task.assignee_email }}</div>{% endif %}
+          </div>
+          <form method="POST" action="{{ url_for('task_assign', task_id=task.id) }}" class="mt-2">
+            <div class="form-group">
+              <label>Reassign to</label>
+              <select name="assigned_to_user_id">
+                {% for u in users %}
+                  <option value="{{ u.id }}" {% if u.id == task.assigned_to_user_id %}selected{% endif %}>{{ u.last_name }}, {{ u.first_name }} ({{ u.role }}){% if u.id == current_user.id %} — me{% endif %}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary">Reassign</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Change status</h2></div>
+        <div class="card-body">
+          <form method="POST" action="{{ url_for('task_status', task_id=task.id) }}" class="flex gap-1" style="flex-wrap: wrap;">
+            {% for key, label in status_labels.items() %}
+              <button type="submit" name="status" value="{{ key }}"
+                      class="btn btn-sm task-status-btn {{ 'btn-primary' if task.status == key else '' }}"
+                      {% if task.status == key %}disabled{% endif %}>{{ label }}</button>
+            {% endfor %}
+          </form>
+          {% if task.status == 'completed' and task.alert_id %}
+            <div class="small muted mt-2">✓ Linked alert was auto-acknowledged when this task completed.</div>
+          {% endif %}
+          {% if task.completed_at %}
+            <div class="small muted mt-2">Completed {{ task.completed_at | dt }}{% if task.creator_first %} · created by {{ task.creator_first }} {{ task.creator_last or '' }}{% endif %}</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Metadata</h2></div>
+        <div class="card-body small">
+          <div><strong>Created by:</strong> {{ task.creator_first }} {{ task.creator_last or '' }}</div>
+          <div class="muted">{{ task.created_at | dt }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

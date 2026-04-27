@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}Parent rollup · Arc Connect Portal{% endblock %}
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""/>
+{% endblock %}
+{% block body %}
+<div class="page">
+
+  <div class="page-header">
+    <div>
+      <h1>{{ parent_org.name }}</h1>
+      <div class="subtitle">Rollup across all {{ locations|length }} locations</div>
+    </div>
+    <div class="actions">
+      <a href="{{ url_for('parent_location_new') }}" class="btn btn-primary">+ Add Satellite location</a>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <a href="#locations" class="kpi kpi-slate kpi-link">
+      <div class="label">Locations</div>
+      <div class="value">{{ locations|length }}</div>
+      <div class="sub">Jump to location cards ↓</div>
+    </a>
+    <a href="{{ url_for('parent_patients') }}" class="kpi kpi-link">
+      <div class="label">Patients</div>
+      <div class="value">{{ totals.patients }}</div>
+      <div class="sub">View all across locations →</div>
+    </a>
+    <a href="{{ url_for('parent_devices') }}" class="kpi kpi-slate kpi-link">
+      <div class="label">Devices</div>
+      <div class="value">{{ totals.devices }}</div>
+      <div class="sub">{{ totals.devices_in_use }} in use · view all →</div>
+    </a>
+    <a href="{{ url_for('parent_alerts', severity='critical') }}" class="kpi kpi-red kpi-link">
+      <div class="label">Critical alerts</div>
+      <div class="value">{{ totals.critical_alerts }}</div>
+      <div class="sub">{{ totals.active_alerts }} total active · view all →</div>
+    </a>
+  </div>
+
+  <!-- ══════════════════ Chart selector card ══════════════════ -->
+  <div class="card mb-3">
+    <div class="card-header">
+      <h2>Network overview</h2>
+      <div class="flex gap-1" style="align-items: center;">
+        <label for="chartPicker" class="small muted" style="font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Show:</label>
+        <select id="chartPicker" class="chart-picker" onchange="switchChart(this.value)">
+          <option value="histogram">Adherence distribution</option>
+          <option value="leaderboard">Location leaderboard</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- ── Histogram view ── -->
+    <div class="card-body" id="view-histogram">
+      <div class="chart-intro">
+        Distribution of {{ bucket_total }} active patients across adherence buckets (network-wide).
+        {% if bucket_unknown %} {{ bucket_unknown }} patient{{ 's' if bucket_unknown != 1 }} with no adherence data on file.{% endif %}
+      </div>
+      <div class="histogram">
+        {% for b in buckets %}
+          <div class="histogram-row">
+            <div class="histogram-label">{{ b.label }}</div>
+            <div class="histogram-track">
+              <div class="histogram-bar {{ b.class }}" style="width: {{ b.bar_width_pct }}%"></div>
+            </div>
+            <div class="histogram-value">
+              <strong>{{ b.count }}</strong> <span class="muted small">({{ b.pct_of_total }}%)</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="chart-legend">
+        <span><span class="legend-swatch status-red-bg"></span> At risk (&lt;40%)</span>
+        <span><span class="legend-swatch status-yellow-bg"></span> Warning (40–79%)</span>
+        <span><span class="legend-swatch status-green-bg"></span> On track (≥80%)</span>
+      </div>
+    </div>
+
+    <!-- ── Leaderboard view ── -->
+    <div class="card-body no-pad" id="view-leaderboard" style="display: none;">
+      <div class="chart-intro" style="padding: 16px 20px 0;">
+        Each metric compared across {{ loc_metrics|length }} location{{ 's' if loc_metrics|length != 1 }}.
+        <strong style="color: var(--ac-cyan-dark);">Cyan</strong> = best, <strong style="color: var(--biwaze-cough-dark);">orange</strong> = worst.
+      </div>
+      <table class="table leaderboard">
+        <thead>
+          <tr>
+            <th>Location</th>
+            <th class="num-col">Patients</th>
+            {% for m in metric_defs %}
+              <th class="num-col">{{ m.label }}{% if m.unit %} <span class="muted">({{ m.unit }})</span>{% endif %}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for loc in loc_metrics %}
+            <tr>
+              <td>
+                <a href="{{ url_for('switch_location', org_id=loc.id) }}" style="font-weight: 600;">{{ loc.name }}</a>
+                <div class="small muted">{{ loc.city }}{% if loc.state %}, {{ loc.state }}{% endif %}</div>
+              </td>
+              <td class="num-col num">{{ loc.patient_count }}</td>
+              {% for m in metric_defs %}
+                <td class="num-col num leaderboard-cell {{ loc.tiers[m.key] }}">
+                  {{ loc.values[m.key] }}{% if m.unit %}{{ m.unit }}{% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+          {% if not loc_metrics %}
+            <tr><td colspan="{{ 2 + (metric_defs|length) }}" class="empty-state">No locations with patient data yet.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══════════════════ Network map ══════════════════ -->
+  <div class="card mb-3">
+    <div class="card-header">
+      <h2>Network map</h2>
+      <span class="small muted">Click a hotspot to open that location</span>
+    </div>
+    <div class="card-body no-pad">
+      <div id="network-map" style="height: 420px; border-radius: 0 0 var(--radius-lg) var(--radius-lg);"></div>
+    </div>
+  </div>
+
+  <script>
+    function switchChart(view) {
+      document.getElementById('view-histogram').style.display   = (view === 'histogram')   ? '' : 'none';
+      document.getElementById('view-leaderboard').style.display = (view === 'leaderboard') ? '' : 'none';
+    }
+  </script>
+
+  <div class="flex-between mb-2" id="locations">
+    <h2 style="margin: 0;">Locations</h2>
+    <a href="{{ url_for('parent_location_new') }}" class="btn btn-sm btn-primary">+ Add Satellite location</a>
+  </div>
+  <div class="location-grid">
+    {% for loc in locations %}
+      <div class="location-card">
+        <a href="{{ url_for('switch_location', org_id=loc.id) }}" class="location-card-body">
+          <h3>{{ loc.name }}</h3>
+          <div class="location-meta">
+            {% if loc.city %}{{ loc.city }}{% if loc.state %}, {{ loc.state }}{% endif %}{% endif %}
+          </div>
+          <div class="location-stats">
+            <div class="stat-item">
+              <div class="n">{{ loc.patient_count }}</div>
+              <div class="l">Patients</div>
+            </div>
+            <div class="stat-item">
+              <div class="n">{{ loc.devices_in_use }}/{{ loc.device_count }}</div>
+              <div class="l">Devices in use</div>
+            </div>
+            <div class="stat-item {{ 'alert' if loc.critical_alerts > 0 else '' }}">
+              <div class="n">{{ loc.critical_alerts }}</div>
+              <div class="l">Critical alerts</div>
+            </div>
+          </div>
+          <div class="mt-2 small muted">
+            Avg adherence: <strong>{{ loc.avg_adherence or '—' }}%</strong> ·
+            {{ loc.user_count }} users
+          </div>
+        </a>
+        <div class="location-card-actions">
+          <a href="{{ url_for('parent_location_edit', org_id=loc.id) }}" class="btn btn-sm">Edit</a>
+          <a href="{{ url_for('user_new', location=loc.id) }}" class="btn btn-sm">+ Add admin</a>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<script>
+(function() {
+  const map = L.map('network-map', {
+    scrollWheelZoom: false,
+    zoomControl: true,
+  }).setView([39.5, -98.5], 4);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 18,
+  }).addTo(map);
+
+  const cyan  = '#43C1ED';
+  const slate = '#5A656F';
+  const red   = '#C00000';
+  const green = '#00B050';
+  const yellow= '#FCBE03';
+
+  // HQ pin (diamond-style, different color)
+  {% if parent_org.latitude and parent_org.longitude %}
+  const hq = L.circleMarker([{{ parent_org.latitude }}, {{ parent_org.longitude }}], {
+    radius: 10, fillColor: slate, color: 'white', weight: 3, fillOpacity: 1
+  }).addTo(map);
+  hq.bindPopup(`
+    <div style="font-family: Roboto, sans-serif;">
+      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: ${slate};">Headquarters</div>
+      <div style="font-size: 14px; font-weight: 600; margin-top: 4px;">{{ parent_org.name }}</div>
+      <div style="font-size: 12px; color: #888; margin-top: 2px;">{{ parent_org.city }}, {{ parent_org.state }}</div>
+    </div>
+  `);
+  {% endif %}
+
+  const locations = [
+    {% for loc in locations %}
+      {% if loc.latitude and loc.longitude %}
+      {
+        id: {{ loc.id }},
+        name: {{ loc.name | tojson }},
+        city: {{ (loc.city or '') | tojson }},
+        state: {{ (loc.state or '') | tojson }},
+        phone: {{ (loc.phone or '') | tojson }},
+        lat: {{ loc.latitude }},
+        lng: {{ loc.longitude }},
+        patients: {{ loc.patient_count }},
+        devices_in_use: {{ loc.devices_in_use }},
+        device_count: {{ loc.device_count }},
+        critical: {{ loc.critical_alerts }},
+        active: {{ loc.active_alerts }},
+        adherence: {{ loc.avg_adherence or 'null' }},
+        users: {{ loc.user_count }},
+        url: {{ url_for('switch_location', org_id=loc.id) | tojson }}
+      },
+      {% endif %}
+    {% endfor %}
+  ];
+
+  // Draw a line from HQ to each location to show the network
+  {% if parent_org.latitude and parent_org.longitude %}
+  locations.forEach(function(loc) {
+    L.polyline(
+      [[{{ parent_org.latitude }}, {{ parent_org.longitude }}], [loc.lat, loc.lng]],
+      { color: cyan, weight: 1.5, opacity: 0.4, dashArray: '4 4' }
+    ).addTo(map);
+  });
+  {% endif %}
+
+  locations.forEach(function(loc) {
+    let color = green;
+    if (loc.critical > 0) color = red;
+    else if (loc.active > 0) color = yellow;
+
+    const marker = L.circleMarker([loc.lat, loc.lng], {
+      radius: 14,
+      fillColor: color,
+      color: 'white',
+      weight: 3,
+      fillOpacity: 0.95
+    }).addTo(map);
+
+    const popup = `
+      <div style="font-family: Roboto, sans-serif; min-width: 220px;">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: ${slate};">Location</div>
+        <div style="font-size: 15px; font-weight: 600; margin-top: 4px; color: ${cyan};">${loc.name}</div>
+        <div style="font-size: 12px; color: #888; margin: 4px 0 10px;">
+          ${loc.city}${loc.state ? ', ' + loc.state : ''}
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 8px 0; border-top: 1px solid #eee; border-bottom: 1px solid #eee; margin-bottom: 10px;">
+          <div><div style="font-size: 18px; font-weight: 300; color: #333;">${loc.patients}</div><div style="font-size: 9px; color: #888; text-transform: uppercase;">Patients</div></div>
+          <div><div style="font-size: 18px; font-weight: 300; color: #333;">${loc.devices_in_use}/${loc.device_count}</div><div style="font-size: 9px; color: #888; text-transform: uppercase;">Devices</div></div>
+          <div><div style="font-size: 18px; font-weight: 300; color: ${loc.critical > 0 ? red : '#333'};">${loc.critical}</div><div style="font-size: 9px; color: #888; text-transform: uppercase;">Critical</div></div>
+        </div>
+        <div style="font-size: 11px; color: #888; margin-bottom: 10px;">
+          Avg adherence <strong>${loc.adherence !== null ? loc.adherence + '%' : '—'}</strong> · ${loc.users} users
+        </div>
+        <a href="${loc.url}" style="display: block; background: ${cyan}; color: white; padding: 6px 12px; text-align: center; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 12px;">Open location →</a>
+      </div>
+    `;
+    marker.bindPopup(popup);
+    marker.on('mouseover', function() { this.openPopup(); });
+  });
+
+  // Auto-fit to show all markers (HQ + locations) with padding
+  const allPoints = locations.map(function(l) { return [l.lat, l.lng]; });
+  {% if parent_org.latitude and parent_org.longitude %}
+  allPoints.push([{{ parent_org.latitude }}, {{ parent_org.longitude }}]);
+  {% endif %}
+  if (allPoints.length > 0) {
+    map.fitBounds(allPoints, { padding: [40, 40] });
+  }
+})();
+</script>
+{% endblock %}

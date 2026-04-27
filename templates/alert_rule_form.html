@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if rule else 'Add' }} alert rule · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('alert_rules') }}" class="btn btn-sm">← Back</a>
+      <h1 class="mt-2">{{ 'Edit' if rule else 'Add' }} alert rule</h1>
+      <div class="subtitle">Define what to monitor and how the team gets notified</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="POST" class="card-body">
+      <div class="form-grid">
+        <div class="form-group required span-2">
+          <label>Rule name</label>
+          <input type="text" name="name" required value="{{ rule.name if rule else '' }}" placeholder="e.g. Missed therapy (48 hours)">
+        </div>
+        <div class="form-group span-2">
+          <label>Description</label>
+          <textarea name="description" rows="2" placeholder="Optional — what triggers this rule and what action is expected">{{ rule.description if rule else '' }}</textarea>
+        </div>
+        <div class="form-group required">
+          <label>Metric to monitor</label>
+          <select name="metric" required>
+            <option value="">— select —</option>
+            {% for m_id, m_desc, m_unit, m_example in metrics %}
+              <option value="{{ m_id }}" {% if rule and rule.metric == m_id %}selected{% endif %}>{{ m_desc }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group required">
+          <label>Severity</label>
+          <select name="severity" required>
+            <option value="info" {% if rule and rule.severity == 'info' %}selected{% endif %}>Info</option>
+            <option value="warning" {% if rule and rule.severity == 'warning' %}selected{% endif %}>Warning</option>
+            <option value="critical" {% if rule and rule.severity == 'critical' %}selected{% endif %}>Critical</option>
+          </select>
+        </div>
+        <div class="form-group required">
+          <label>Threshold value</label>
+          <input type="number" name="threshold_value" step="any" required value="{{ rule.threshold_value if rule else '' }}">
+          <div class="help">Unit depends on metric (hours, %, days). See Alert rules page.</div>
+        </div>
+        <div class="form-group">
+          <label>Evaluation window (hours)</label>
+          <input type="number" name="window_hours" step="1" value="{{ rule.window_hours if rule else '' }}">
+          <div class="help">Rolling window to evaluate against. Leave blank for metrics that don't need one.</div>
+        </div>
+
+        <div class="form-group span-2 mt-2">
+          <label>Notification channels</label>
+          <div class="check-group" style="flex-direction: row; gap: 24px;">
+            <label><input type="checkbox" name="notify_email" {% if not rule or rule.notify_email %}checked{% endif %}> ✉ Email</label>
+            <label><input type="checkbox" name="notify_in_app" {% if not rule or rule.notify_in_app %}checked{% endif %}> 🔔 In-app</label>
+            <label><input type="checkbox" name="notify_sms" {% if rule and rule.notify_sms %}checked{% endif %}> 📱 Text</label>
+          </div>
+        </div>
+
+        <div class="form-group span-2">
+          <label>Notify which roles</label>
+          <div class="check-group" style="flex-direction: row; gap: 24px;">
+            {% set active_roles = rule_roles if rule_roles is defined else ['admin','clinician'] %}
+            <label><input type="checkbox" name="notify_recipient_roles" value="admin" {% if 'admin' in active_roles %}checked{% endif %}> Admins</label>
+            <label><input type="checkbox" name="notify_recipient_roles" value="clinician" {% if 'clinician' in active_roles %}checked{% endif %}> Clinicians</label>
+            <label><input type="checkbox" name="notify_recipient_roles" value="billing" {% if 'billing' in active_roles %}checked{% endif %}> Billing</label>
+          </div>
+        </div>
+
+        <div class="form-group span-2">
+          <label>Rule status</label>
+          <div class="check-group">
+            <label><input type="checkbox" name="is_active" {% if not rule or rule.is_active %}checked{% endif %}> Rule is active (uncheck to disable without deleting)</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <a href="{{ url_for('alert_rules') }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">{{ 'Save changes' if rule else 'Create rule' }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

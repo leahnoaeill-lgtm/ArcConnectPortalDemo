@@ -1,0 +1,523 @@
+{% extends "base.html" %}
+{% from "_chip.html" import chip %}
+{% block title %}Dashboard · {{ current_org.name }}{% endblock %}
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+{% endblock %}
+{% block body %}
+<div class="page">
+
+  <div class="page-header">
+    <div>
+      <h1>{{ current_org.name }}</h1>
+    </div>
+    {% if current_org.logo_path %}
+      <img src="{{ url_for('static', filename=current_org.logo_path) }}" class="location-logo" alt="{{ current_org.name }} logo">
+    {% endif %}
+  </div>
+
+  <div class="kpis">
+    <a href="{{ url_for('patients') }}" class="kpi kpi-link">
+      <div class="label">Total patients</div>
+      <div class="value">{{ kpis.total_patients }}</div>
+    </a>
+    <a href="{{ url_for('patients', sort='cough_adh', dir='asc') }}" class="kpi kpi-red kpi-link">
+      <div class="label">At risk</div>
+      <div class="value">{{ kpis.at_risk }}</div>
+      <div class="sub">{{ kpis.critical }} critical</div>
+    </a>
+    <a href="{{ url_for('patients', sort='cough_adh', dir='desc') }}" class="kpi kpi-green kpi-link">
+      <div class="label">On track</div>
+      <div class="value">{{ kpis.on_track }}</div>
+      <div class="sub">≥ 80% adherence</div>
+    </a>
+    <a href="{{ url_for('devices', tab='assigned') }}" class="kpi kpi-slate kpi-link">
+      <div class="label">Devices in use</div>
+      <div class="value">{{ device_kpis.in_use }}/{{ device_kpis.total }}</div>
+      <div class="sub">{{ device_kpis.in_stock }} in stock · {{ device_kpis.maintenance }} maintenance</div>
+    </a>
+  </div>
+
+  {# ── My tasks widget ── #}
+  <div class="card">
+    <div class="card-header">
+      <a href="{{ url_for('tasks', view='my') }}" class="card-title-link">
+        <h2>My tasks
+          {% if task_counts and task_counts.my_open %}
+            <span class="tab-count">{{ task_counts.my_open }}</span>
+          {% endif %}
+          {% if task_counts and task_counts.my_overdue %}
+            <span class="tab-count" style="background: var(--ac-red); color: white;">{{ task_counts.my_overdue }} overdue</span>
+          {% endif %}
+        </h2>
+      </a>
+      <div class="flex gap-1">
+        <a href="{{ url_for('task_new') }}" class="btn btn-sm btn-primary">+ New task</a>
+        <a href="{{ url_for('tasks') }}" class="btn btn-sm btn-link">All tasks →</a>
+      </div>
+    </div>
+    <div class="card-body no-pad">
+      {% if my_tasks %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Task</th>
+            <th>Patient</th>
+            <th>Due</th>
+            <th>Priority</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in my_tasks %}
+            {% set is_overdue = t.due_at and t.due_at < now_iso and t.status not in ('completed','cancelled') %}
+            <tr class="clickable {{ 'row-overdue' if is_overdue else '' }}" onclick="window.location='{{ url_for('task_detail', task_id=t.id) }}'">
+              <td><span class="badge task-status-{{ t.status }}">{{ status_labels[t.status] }}</span></td>
+              <td style="font-weight: 600;">
+                {{ t.title }}
+                {% if t.alert_severity %}<span class="badge severity-{{ t.alert_severity }}" style="margin-left: 6px;">{{ t.alert_severity | upper }}</span>{% endif %}
+              </td>
+              <td class="small">{% if t.pt_last %}{{ t.pt_first }} {{ t.pt_last }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td class="small {{ 'status-red' if is_overdue else '' }}">
+                {% if t.due_at %}{{ t.due_at | dt }}{% if is_overdue %} <strong>OVERDUE</strong>{% endif %}{% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              <td><span class="badge priority-{{ t.priority }}">{{ t.priority | title }}</span></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% set shown = my_tasks | length %}
+      {% set total = task_counts.my_open or 0 %}
+      {% if total > shown %}
+        <a href="{{ url_for('tasks', view='my') }}" class="more-row-link">
+          {{ total - shown }} more task{{ 's' if (total - shown) != 1 }} — view all {{ total }} →
+        </a>
+      {% endif %}
+      {% else %}
+        <div class="empty-state">
+          <p>No open tasks assigned to you. ✓ <a href="{{ url_for('task_new') }}">Create one →</a></p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-header">
+        <a href="{{ url_for('patients') }}" class="card-title-link">
+          <h2>At-risk patients (top 8)</h2>
+        </a>
+        <a href="{{ url_for('patients') }}" class="btn btn-sm btn-link">View all patients →</a>
+      </div>
+      <div class="card-body no-pad">
+        {% if patients %}
+        <table class="table sortable" data-default-sort="coughAdh" data-default-dir="asc">
+          <thead>
+            <tr>
+              <th data-sort-key="name">Patient</th>
+              <th data-sort-key="coughAdh">BiWaze Cough <span class="col-header-hint">(30D)</span></th>
+              <th data-sort-key="clearAdh">BiWaze Clear <span class="col-header-hint">(30D)</span></th>
+              <th data-sort-key="alerts">Alerts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in patients %}
+              {% set alert_total = (p.critical_alerts or 0) + (p.warning_alerts or 0) %}
+              <tr class="clickable"
+                  data-sort-name="{{ (p.last_name ~ ' ' ~ p.first_name) | lower }}"
+                  data-sort-cough-adh="{{ p.cough_pct if p.cough_pct is not none else '' }}"
+                  data-sort-clear-adh="{{ p.clear_pct if p.clear_pct is not none else '' }}"
+                  data-sort-alerts="{{ p.critical_alerts * 1000 + p.warning_alerts }}"
+                  onclick="window.location='{{ url_for('patient_detail', patient_id=p.id) }}'">
+                <td>
+                  <div style="font-weight:600;">{{ p.first_name }} {{ p.last_name }}</div>
+                  {% if p.mrn %}<div class="mono muted small">ID: {{ p.mrn | replace('MRN-', '') }}</div>{% endif %}
+                </td>
+                <td>
+                  {% if p.has_cough %}
+                    <a href="#" class="chip-link" onclick="event.stopPropagation(); openChipPopover(event, {{ p.id }}, 'cough'); return false;">
+                      {{ chip(p.cough_pct, p.critical_alerts, p.warning_alerts, p.worst_severity) }}
+                    </a>
+                  {% else %}<span class="muted small">— not prescribed —</span>{% endif %}
+                </td>
+                <td>
+                  {% if p.has_clear %}
+                    <a href="#" class="chip-link" onclick="event.stopPropagation(); openChipPopover(event, {{ p.id }}, 'clear'); return false;">
+                      {{ chip(p.clear_pct, p.critical_alerts, p.warning_alerts, p.worst_severity) }}
+                    </a>
+                  {% else %}<span class="muted small">— not prescribed —</span>{% endif %}
+                </td>
+                <td>
+                  {% if alert_total %}
+                    <span class="badge severity-{{ p.worst_severity or 'info' }}">{{ alert_total }}</span>
+                  {% else %}<span class="muted">—</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+          <div class="empty-state">
+            <div class="big">👥</div>
+            <p>No patients yet. <a href="{{ url_for('patient_new') }}">Add the first one →</a></p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <a href="{{ url_for('alerts') }}" class="card-title-link">
+          <h2>Active alerts</h2>
+        </a>
+        <a href="{{ url_for('alerts') }}" class="btn btn-sm btn-link">View all →</a>
+      </div>
+      <div class="card-body">
+        {% if alerts %}
+          {% for a in alerts %}
+            <div class="alert-row severity-{{ a.severity }}" style="grid-template-columns: 90px 1fr; margin-bottom: 6px;">
+              <div>
+                <span class="badge severity-{{ a.severity }}">{{ a.severity | upper }}</span>
+              </div>
+              <div class="alert-body">
+                <div class="title">{{ a.first_name }} {{ a.last_name }}</div>
+                <div class="detail">{{ a.message }}</div>
+                <div class="small muted mt-1">{{ a.triggered_at | dt }}</div>
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state">
+            <p>No active alerts. ✓</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Population health explorer (collapsible chart picker) ── #}
+  <div class="card">
+    <div class="card-header">
+      <h2>Population health</h2>
+      <select id="popChartPicker" class="filter-select" style="min-width: 240px;">
+        <option value="adh_dist">Adherence distribution</option>
+        <option value="trend">Adherence trend (30 days)</option>
+        <option value="funnel">Onboarding funnel</option>
+        <option value="dx">Diagnosis mix</option>
+        <option value="map">Referring clinic heat map</option>
+      </select>
+    </div>
+    <div class="card-body">
+      <div id="popChart-adh_dist" class="pop-chart"></div>
+      <div id="popChart-trend"    class="pop-chart" hidden></div>
+      <div id="popChart-funnel"   class="pop-chart" hidden></div>
+      <div id="popChart-dx"       class="pop-chart" hidden></div>
+      <div id="popChart-map"      class="pop-chart" hidden>
+        <div id="clinicMap" style="height: 420px; border-radius: var(--radius); overflow: hidden;"></div>
+        <div class="small muted mt-2">Circle size scales with patient count. Color = average adherence (red &lt; 50%, yellow &lt; 80%, green ≥ 80%).</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Data payloads for JS #}
+<script id="popData" type="application/json">
+{{ {
+  'adh_dist': pop_charts.adh_dist,
+  'trend':    pop_charts.trend,
+  'funnel':   pop_charts.funnel,
+  'dx':       pop_charts.diagnosis_mix,
+  'clinics':  pop_charts.clinics,
+  'center':   pop_charts.clinic_center,
+} | tojson }}
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+  const data = JSON.parse(document.getElementById('popData').textContent);
+  const picker = document.getElementById('popChartPicker');
+
+  // Brand palette
+  const CYAN = '#43C1ED', CYAN_DARK = '#2E8BAD';
+  const SLATE = '#5A656F', SLATE_DEEP = '#3D464D', SLATE_LIGHT = '#EAECEE';
+  const GREEN = '#00B050', YELLOW = '#FCBE03', RED = '#C00000';
+  // BiWaze product brand colors. Clear reuses the Arc Connect brand cyan.
+  const COUGH = '#F27C1C', COUGH_DARK = '#C46212';   // orange
+  const CLEAR = CYAN,       CLEAR_DARK = CYAN_DARK;  // brand cyan/blue
+  const DX_COLORS = ['#43C1ED', '#5A656F', '#00B050', '#FCBE03', '#C00000', '#8B6CC6', '#E88B3F', '#4B9AA8'];
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  // ── 1. Adherence distribution ────────────────────────────────
+  function renderAdhDist() {
+    const el = document.getElementById('popChart-adh_dist');
+    const rows = data.adh_dist;
+    const max = Math.max(1, ...rows.flatMap(r => [r.cough, r.clear]));
+    const W = 720, H = 300, P = 36;
+    const innerW = W - P*2, innerH = H - P*2;
+    const barGroupW = innerW / rows.length;
+    const barW = (barGroupW - 16) / 2;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" class="pop-svg" xmlns="http://www.w3.org/2000/svg">`;
+    // y gridlines
+    for (let i = 0; i <= 4; i++) {
+      const y = P + innerH * (i/4);
+      const val = Math.round(max * (1 - i/4));
+      svg += `<line x1="${P}" y1="${y}" x2="${W-P}" y2="${y}" stroke="${SLATE_LIGHT}" stroke-width="1"/>`;
+      svg += `<text x="${P-6}" y="${y+3}" text-anchor="end" font-size="10" fill="${SLATE}">${val}</text>`;
+    }
+    rows.forEach((r, i) => {
+      const gx = P + barGroupW * i + barGroupW/2;
+      const coughH = (r.cough / max) * innerH;
+      const clearH = (r.clear / max) * innerH;
+      // Each bar carries data attributes so the shared tooltip handler
+      // (defined below) can read label + device + count on hover.
+      svg += `<rect x="${gx - barW - 4}" y="${P+innerH-coughH}" width="${barW}" height="${coughH}" fill="${COUGH}" rx="2"
+                    class="pop-bar-interactive"
+                    data-label="${esc(r.label)}" data-device="BiWaze Cough" data-count="${r.cough}" data-color="${COUGH}"/>`;
+      svg += `<rect x="${gx + 4}"          y="${P+innerH-clearH}" width="${barW}" height="${clearH}" fill="${CLEAR}" rx="2"
+                    class="pop-bar-interactive"
+                    data-label="${esc(r.label)}" data-device="BiWaze Clear" data-count="${r.clear}" data-color="${CLEAR}"/>`;
+      if (r.cough > 0) svg += `<text x="${gx - barW/2 - 4}" y="${P+innerH-coughH-4}" text-anchor="middle" font-size="11" font-weight="600" fill="${COUGH_DARK}">${r.cough}</text>`;
+      if (r.clear > 0) svg += `<text x="${gx + barW/2 + 4}" y="${P+innerH-clearH-4}" text-anchor="middle" font-size="11" font-weight="600" fill="${CLEAR_DARK}">${r.clear}</text>`;
+      svg += `<text x="${gx}" y="${H-10}" text-anchor="middle" font-size="12" fill="${SLATE_DEEP}" font-weight="500">${esc(r.label)}</text>`;
+    });
+    svg += '</svg>';
+    // Legend + a single tooltip element reused across bars
+    const legend = `
+      <div class="pop-legend">
+        <span><span class="sw" style="background:${COUGH}"></span>BiWaze Cough</span>
+        <span><span class="sw" style="background:${CLEAR}"></span>BiWaze Clear</span>
+      </div>
+      <div class="pop-chart-tooltip" id="adhDistTooltip" hidden></div>`;
+    el.innerHTML = legend + svg;
+    wireBarTooltip(el, document.getElementById('adhDistTooltip'));
+  }
+
+  // Shared hover tooltip for SVG bars. Any <rect class="pop-bar-interactive">
+  // with data-label / data-device / data-count attrs gets a styled popover
+  // showing how many patients fall in that bucket.
+  function wireBarTooltip(container, tip) {
+    if (!container || !tip) return;
+    function show(e) {
+      const bar = e.target;
+      const label = bar.getAttribute('data-label');
+      const device = bar.getAttribute('data-device');
+      const count = parseInt(bar.getAttribute('data-count'), 10) || 0;
+      const color = bar.getAttribute('data-color') || '#5A656F';
+      const plural = count === 1 ? 'patient' : 'patients';
+      tip.innerHTML = `
+        <div class="pop-tip-head">
+          <span class="pop-tip-sw" style="background:${color}"></span>
+          <span>${device}</span>
+        </div>
+        <div class="pop-tip-num">${count} ${plural}</div>
+        <div class="pop-tip-sub">Adherence ${label}</div>`;
+      tip.hidden = false;
+    }
+    function move(e) {
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      // Offset above + right of cursor; flip to left if near right edge.
+      const tipW = tip.offsetWidth;
+      const containerW = container.clientWidth;
+      let left = x + 14;
+      if (left + tipW > containerW - 8) left = x - tipW - 14;
+      tip.style.left = Math.max(8, left) + 'px';
+      tip.style.top = Math.max(8, y - tip.offsetHeight - 6) + 'px';
+    }
+    function hide() { tip.hidden = true; }
+    container.querySelectorAll('.pop-bar-interactive').forEach(bar => {
+      bar.addEventListener('mouseenter', show);
+      bar.addEventListener('mousemove', move);
+      bar.addEventListener('mouseleave', hide);
+    });
+  }
+
+  // ── 2. Adherence trend ───────────────────────────────────────
+  function renderTrend() {
+    const el = document.getElementById('popChart-trend');
+    const pts = data.trend;
+    const W = 720, H = 300, P = 36;
+    const innerW = W - P*2, innerH = H - P*2;
+    const max = 100;
+    const xStep = innerW / (pts.length - 1 || 1);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" class="pop-svg" xmlns="http://www.w3.org/2000/svg">`;
+    // y gridlines
+    [0, 25, 50, 75, 100].forEach(val => {
+      const y = P + innerH * (1 - val/max);
+      svg += `<line x1="${P}" y1="${y}" x2="${W-P}" y2="${y}" stroke="${SLATE_LIGHT}" stroke-width="1"/>`;
+      svg += `<text x="${P-6}" y="${y+3}" text-anchor="end" font-size="10" fill="${SLATE}">${val}%</text>`;
+    });
+    // Target band at 80%
+    const yTarget = P + innerH * (1 - 80/max);
+    svg += `<line x1="${P}" y1="${yTarget}" x2="${W-P}" y2="${yTarget}" stroke="${GREEN}" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.55"/>`;
+    svg += `<text x="${W-P+4}" y="${yTarget+3}" font-size="10" fill="${GREEN}" font-weight="600">Target 80%</text>`;
+    // Line path
+    const coords = pts.map((p, i) => [P + xStep * i, P + innerH * (1 - p.pct/max)]);
+    const path = 'M ' + coords.map(c => `${c[0].toFixed(1)},${c[1].toFixed(1)}`).join(' L ');
+    // Area fill under line
+    const areaPath = path + ` L ${coords[coords.length-1][0]},${P+innerH} L ${coords[0][0]},${P+innerH} Z`;
+    svg += `<path d="${areaPath}" fill="${CYAN}" opacity="0.10"/>`;
+    svg += `<path d="${path}" stroke="${CYAN_DARK}" stroke-width="2" fill="none" stroke-linejoin="round"/>`;
+    // Endpoint dots
+    coords.forEach((c, i) => {
+      if (i === 0 || i === coords.length-1 || i === Math.floor(coords.length/2)) {
+        svg += `<circle cx="${c[0]}" cy="${c[1]}" r="3" fill="${CYAN_DARK}"/>`;
+      }
+    });
+    // X labels every 7 days
+    for (let i = 0; i < pts.length; i += 7) {
+      const x = P + xStep * i;
+      const d = new Date(pts[i].date);
+      const lbl = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      svg += `<text x="${x}" y="${H-10}" text-anchor="middle" font-size="10" fill="${SLATE}">${esc(lbl)}</text>`;
+    }
+    svg += '</svg>';
+    el.innerHTML = svg;
+  }
+
+  // ── 3. Onboarding funnel ─────────────────────────────────────
+  function renderFunnel() {
+    const el = document.getElementById('popChart-funnel');
+    const rows = data.funnel;
+    const max = Math.max(1, ...rows.map(r => r.count));
+    let html = '<div class="pop-funnel">';
+    rows.forEach((r, i) => {
+      const pct = Math.round((r.count / max) * 100);
+      const prevCount = i > 0 ? rows[i-1].count : r.count;
+      const conv = i > 0 && prevCount > 0 ? Math.round((r.count / prevCount) * 100) : 100;
+      html += `
+        <div class="pop-funnel-row">
+          <div class="pop-funnel-label">${esc(r.label)}</div>
+          <div class="pop-funnel-track">
+            <div class="pop-funnel-fill" style="width:${pct}%">
+              <span class="pop-funnel-count">${r.count}</span>
+            </div>
+          </div>
+          <div class="pop-funnel-conv">${i === 0 ? '' : conv + '%'}</div>
+        </div>`;
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  // ── 4. Diagnosis mix (donut) ─────────────────────────────────
+  function renderDx() {
+    const el = document.getElementById('popChart-dx');
+    const rows = data.dx;
+    const total = rows.reduce((s, r) => s + r.count, 0);
+    const W = 720, H = 320, cx = 200, cy = H/2, R = 110, r = 70;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" class="pop-svg" xmlns="http://www.w3.org/2000/svg">`;
+    let angle = -Math.PI / 2;
+    rows.forEach((row, i) => {
+      if (row.count === 0) return;
+      const slice = (row.count / total) * Math.PI * 2;
+      const end = angle + slice;
+      const large = slice > Math.PI ? 1 : 0;
+      const x1 = cx + Math.cos(angle) * R, y1 = cy + Math.sin(angle) * R;
+      const x2 = cx + Math.cos(end) * R,   y2 = cy + Math.sin(end) * R;
+      const x3 = cx + Math.cos(end) * r,   y3 = cy + Math.sin(end) * r;
+      const x4 = cx + Math.cos(angle) * r, y4 = cy + Math.sin(angle) * r;
+      const color = DX_COLORS[i % DX_COLORS.length];
+      svg += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${R} ${R} 0 ${large} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L ${x3.toFixed(1)} ${y3.toFixed(1)} A ${r} ${r} 0 ${large} 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${color}"/>`;
+      angle = end;
+    });
+    // Center label
+    svg += `<text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="28" font-weight="300" fill="${SLATE_DEEP}">${total}</text>`;
+    svg += `<text x="${cx}" y="${cy+16}" text-anchor="middle" font-size="11" fill="${SLATE}">active patients</text>`;
+    svg += '</svg>';
+    // Legend next to donut
+    let legend = '<div class="pop-dx-legend">';
+    rows.forEach((row, i) => {
+      const pct = total > 0 ? Math.round((row.count / total) * 100) : 0;
+      legend += `<div class="pop-dx-row">
+        <span class="sw" style="background:${DX_COLORS[i % DX_COLORS.length]}"></span>
+        <span class="pop-dx-name">${esc(row.label)}</span>
+        <span class="pop-dx-count">${row.count} <span class="muted">· ${pct}%</span></span>
+      </div>`;
+    });
+    legend += '</div>';
+    el.innerHTML = '<div class="pop-dx-wrap">' + svg + legend + '</div>';
+  }
+
+  // ── 5. Referring clinic heat map ─────────────────────────────
+  let mapInit = false;
+  function renderMap() {
+    if (mapInit) return;
+    mapInit = true;
+    const clinics = data.clinics;
+    const [clat, clng] = data.center;
+    const map = L.map('clinicMap', { scrollWheelZoom: false }).setView([clat, clng], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+      maxZoom: 18,
+    }).addTo(map);
+    if (!clinics.length) return;
+    const maxCount = Math.max(...clinics.map(c => c.patient_count));
+    const bounds = [];
+    clinics.forEach(c => {
+      bounds.push([c.lat, c.lng]);
+      let color = SLATE;
+      if (c.avg_adh !== null) {
+        color = c.avg_adh >= 80 ? GREEN : (c.avg_adh >= 50 ? YELLOW : RED);
+      }
+      const radius = 10 + Math.round(18 * (c.patient_count / maxCount));
+      const marker = L.circleMarker([c.lat, c.lng], {
+        radius: radius,
+        fillColor: color,
+        color: 'white',
+        weight: 2,
+        fillOpacity: 0.85,
+      }).addTo(map);
+      const popup = `
+        <div style="font-family: Roboto, sans-serif; min-width: 180px;">
+          <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: ${SLATE}; font-weight: 600;">Referring clinic</div>
+          <div style="font-size: 14px; font-weight: 600; margin-top: 3px;">${esc(c.name)}</div>
+          <div style="font-size: 11px; color: #888;">${esc(c.city || '')}${c.state ? ', ' + esc(c.state) : ''}</div>
+          <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+            <div><div style="font-size: 18px; font-weight: 300;">${c.patient_count}</div><div style="font-size: 9px; text-transform: uppercase; color: #888;">Patients</div></div>
+            <div><div style="font-size: 18px; font-weight: 300; color: ${color};">${c.avg_adh !== null ? c.avg_adh + '%' : '—'}</div><div style="font-size: 9px; text-transform: uppercase; color: #888;">Avg adherence</div></div>
+          </div>
+        </div>`;
+      marker.bindPopup(popup);
+    });
+    if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 11 });
+    // Defer one refresh since the map may be hidden on init
+    setTimeout(() => map.invalidateSize(), 100);
+  }
+
+  // ── Picker wiring ────────────────────────────────────────────
+  const renderers = {
+    'adh_dist': renderAdhDist,
+    'trend':    renderTrend,
+    'funnel':   renderFunnel,
+    'dx':       renderDx,
+    'map':      renderMap,
+  };
+  const rendered = {};
+  function show(key) {
+    document.querySelectorAll('.pop-chart').forEach(n => { n.hidden = true; });
+    document.getElementById('popChart-' + key).hidden = false;
+    if (!rendered[key]) { renderers[key](); rendered[key] = true; }
+    else if (key === 'map') {
+      // Leaflet needs invalidateSize whenever its container is re-shown
+      setTimeout(() => { if (window._clinicMap) window._clinicMap.invalidateSize(); }, 50);
+    }
+  }
+  // Persist last-selected chart across navigation via localStorage.
+  const STORAGE_KEY = 'ac-dashboard-chart';
+  picker.addEventListener('change', () => {
+    show(picker.value);
+    try { localStorage.setItem(STORAGE_KEY, picker.value); } catch(e) {}
+  });
+  let initial = 'adh_dist';
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && renderers[saved]) initial = saved;
+  } catch(e) {}
+  picker.value = initial;
+  show(initial);
+})();
+</script>
+{% endblock %}

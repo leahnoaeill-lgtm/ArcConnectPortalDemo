@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}ABMRC support · Super admin{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Customer organizations</h1>
+      <div class="subtitle">{{ orgs | length }} organization{{ 's' if orgs|length != 1 }} on file · view-only access under signed BAA</div>
+    </div>
+    <div class="actions">
+      <a href="{{ url_for('super_org_new') }}" class="btn btn-primary">+ New organization</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body no-pad">
+      <table class="table sortable" data-default-sort="name" data-default-dir="asc">
+        <thead>
+          <tr>
+            <th data-sort-key="name">Organization</th>
+            <th data-sort-key="status">Status</th>
+            <th data-sort-key="baa">BAA</th>
+            <th class="num-col" data-sort-key="patients">Patients</th>
+            <th class="num-col" data-sort-key="devices">Devices</th>
+            <th class="num-col" data-sort-key="alerts">Active alerts</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in orgs %}
+            <tr data-sort-name="{{ o.name | lower }}"
+                data-sort-status="{{ o.status }}"
+                data-sort-baa="{{ o.baa_state }}"
+                data-sort-patients="{{ o.patient_count }}"
+                data-sort-devices="{{ o.device_count }}"
+                data-sort-alerts="{{ o.active_alerts }}">
+              <td>
+                <div style="font-weight: 600;">{{ o.name }}</div>
+                <div class="small muted">
+                  {% if o.city %}{{ o.city }}{% if o.state %}, {{ o.state }}{% endif %}{% endif %}
+                </div>
+              </td>
+              <td>
+                {% if o.status == 'active' %}
+                  <span class="badge status-active">Active</span>
+                {% elif o.status == 'pending_setup' %}
+                  <span class="badge status-inactive">Pending setup</span>
+                {% else %}
+                  <span class="badge severity-warning">Suspended</span>
+                {% endif %}
+              </td>
+              <td class="small">
+                {% if o.baa_state == 'active' %}
+                  <span class="status-green">✓ Active</span>
+                  {% if o.baa_days_left is not none %}<div class="muted">expires in {{ o.baa_days_left }} d</div>{% endif %}
+                {% elif o.baa_state == 'expiring' %}
+                  <span style="color: #B28600;">⚠ Expires soon</span>
+                  <div class="muted">{{ o.baa_days_left }} d left</div>
+                {% elif o.baa_state == 'expired' %}
+                  <span class="status-red">✗ Expired</span>
+                  <div class="muted">{{ -o.baa_days_left }} d ago</div>
+                {% elif o.baa_state == 'revoked' %}
+                  <span class="status-red">✗ Revoked</span>
+                {% else %}
+                  <span class="muted">— none on file —</span>
+                {% endif %}
+              </td>
+              <td class="num-col num">{{ o.patient_count }}</td>
+              <td class="num-col num">{{ o.device_count }}</td>
+              <td class="num-col num">{{ o.active_alerts }}</td>
+              <td>
+                <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                  {% if o.status == 'active' and o.baa_state in ('active','expiring') %}
+                    <form method="POST" action="{{ url_for('super_set_acting_org', org_id=o.id) }}" style="display: inline;">
+                      <button type="submit" class="btn btn-sm btn-primary">Open ▸</button>
+                    </form>
+                  {% endif %}
+                  {% if o.status == 'active' %}
+                    <form method="POST" action="{{ url_for('super_org_suspend', org_id=o.id) }}" style="display: inline;" onsubmit="return confirm('Suspend {{ o.name }}? This pauses access for everyone in the org.');">
+                      <button type="submit" class="btn btn-sm">Suspend</button>
+                    </form>
+                  {% elif o.status == 'suspended' %}
+                    <form method="POST" action="{{ url_for('super_org_activate', org_id=o.id) }}" style="display: inline;">
+                      <button type="submit" class="btn btn-sm btn-primary">Reactivate</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

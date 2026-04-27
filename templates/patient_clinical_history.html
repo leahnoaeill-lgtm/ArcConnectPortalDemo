@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Clinical history · {{ patient.first_name }} {{ patient.last_name }}{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="btn btn-sm">← Back to patient</a>
+      <h1 class="mt-2">Clinical history — {{ patient.first_name }} {{ patient.last_name }}</h1>
+      <div class="subtitle">{{ history | length }} observation{{ 's' if history|length != 1 }} on file · Patient ID {{ patient.mrn }}</div>
+    </div>
+    <div class="actions">
+      <a href="{{ url_for('patient_clinical_history_new', patient_id=patient.id) }}" class="btn btn-primary">+ Add observation</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body no-pad">
+      {% if history %}
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Observation date</th>
+              <th>Hospital admission</th>
+              <th class="num-col">SpO₂</th>
+              <th class="num-col">FEV1</th>
+              <th class="num-col">FVC</th>
+              <th>Oxygen therapy</th>
+              <th>Notes</th>
+              <th>Recorded by</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for h in history %}
+              <tr>
+                <td>{{ h.observation_date | date_only }}</td>
+                <td class="small">
+                  {% if h.hospital_admission_date %}
+                    <div><strong>{{ h.hospital_admission_date | date_only }}</strong>{% if h.hospital_discharge_date %} → {{ h.hospital_discharge_date | date_only }}{% endif %}</div>
+                    {% if h.admission_reason %}<div class="muted">{{ h.admission_reason }}</div>{% endif %}
+                  {% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td class="num-col num">
+                  {% if h.spo2_pct %}{{ h.spo2_pct }}<span class="muted small">%</span>{% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td class="num-col num">
+                  {% if h.fev1_liters %}{{ h.fev1_liters }}<span class="muted small">L</span>{% if h.fev1_pct_predicted %} <span class="small muted">({{ h.fev1_pct_predicted }}% pred)</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td class="num-col num">
+                  {% if h.fvc_liters %}{{ h.fvc_liters }}<span class="muted small">L</span>{% if h.fvc_pct_predicted %} <span class="small muted">({{ h.fvc_pct_predicted }}% pred)</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td class="small">
+                  {% if h.on_oxygen_therapy %}
+                    <span class="status-green">✓ On O₂</span>
+                    <div class="muted">
+                      {% if h.oxygen_flow_lpm %}{{ h.oxygen_flow_lpm }} L/min{% endif %}
+                      {% if h.oxygen_type %} · {{ h.oxygen_type | replace('_',' ') }}{% endif %}
+                    </div>
+                  {% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td class="small" style="max-width: 260px;">{{ h.notes or '—' }}</td>
+                <td class="small muted">
+                  {% if h.by_first %}{{ h.by_first }} {{ h.by_last or '' }}{% else %}—{% endif %}
+                </td>
+                <td>
+                  <a href="{{ url_for('patient_clinical_history_edit', patient_id=patient.id, obs_id=h.id) }}" class="btn btn-sm">Edit</a>
+                  <form method="POST" action="{{ url_for('patient_clinical_history_delete', patient_id=patient.id, obs_id=h.id) }}" style="display:inline;" onsubmit="return confirm('Delete this observation?');">
+                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty-state">
+          <p>No clinical observations yet. <a href="{{ url_for('patient_clinical_history_new', patient_id=patient.id) }}">Add the first one →</a></p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

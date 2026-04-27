@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}{{ device.serial_number }} · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('devices') }}" class="btn btn-sm">← Back to devices</a>
+      <h1 class="mt-2"><span class="mono">{{ device.serial_number }}</span>
+        <span class="badge status-{{ device.status }}">{{ device.status | replace('_',' ') | title }}</span>
+      </h1>
+      <div class="subtitle">
+        {{ device.model | model_label }} ·
+        Firmware {{ device.firmware_version or '—' }} ·
+        Added {{ device.upload_date | date_only }}
+      </div>
+    </div>
+    <div class="actions">
+      {% set active = assignments | selectattr('returned_date','none') | list %}
+      {% if not active %}
+        <a href="{{ url_for('device_assign', device_id=device.id) }}" class="btn btn-primary">Assign to patient</a>
+      {% else %}
+        <a href="{{ url_for('device_assign', device_id=device.id) }}" class="btn btn-primary">Reassign</a>
+        <form method="POST" action="{{ url_for('device_unassign', device_id=device.id, assignment_id=active[0].id) }}" onsubmit="return confirm('Unassign this device from {{ active[0].first_name }} {{ active[0].last_name }} and return to inventory?');" style="display:inline;">
+          <button type="submit" class="btn btn-danger">Unassign</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <div class="card">
+        <div class="card-header"><h2>Assignment history</h2></div>
+        <div class="card-body no-pad">
+          {% if assignments %}
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Patient</th>
+                <th>Assigned</th>
+                <th>Status</th>
+                <th>Assigned by</th>
+                <th>Consent form</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in assignments %}
+                <tr>
+                  <td>
+                    <a href="{{ url_for('patient_detail', patient_id=a.patient_id) }}">
+                      {{ a.first_name }} {{ a.last_name }}
+                    </a>
+                    {% if a.mrn %}<div class="mono muted small">ID: {{ a.mrn | replace('MRN-', '') }}</div>{% endif %}
+                  </td>
+                  <td>{{ a.assigned_date | date_only }}</td>
+                  <td>
+                    {% if a.returned_date %}
+                      {{ a.returned_date | date_only }}
+                    {% else %}
+                      <span class="badge status-in_use">Active</span>
+                    {% endif %}
+                  </td>
+                  <td class="small muted">
+                    {% if a.by_first %}{{ a.by_first }} {{ a.by_last or '' }}{% else %}—{% endif %}
+                  </td>
+                  <td>
+                    {% if a.consent_form_path %}
+                      <a href="{{ url_for('static', filename=a.consent_form_path) }}" target="_blank" class="btn btn-sm">📄 View</a>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+            <div class="empty-state">
+              <p>This device has never been assigned.</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-header"><h2>Device details</h2></div>
+        <div class="card-body">
+          <div class="form-group mb-2">
+            <label>Serial number</label>
+            <div class="mono">{{ device.serial_number }}</div>
+          </div>
+          <div class="form-group mb-2">
+            <label>Model</label>
+            <div>{{ device.model | model_label }}</div>
+          </div>
+          <div class="form-group mb-2">
+            <label>Firmware version</label>
+            <div class="mono">{{ device.firmware_version or '—' }}</div>
+          </div>
+          <div class="form-group mb-2">
+            <label>Upload date</label>
+            <div>{{ device.upload_date | date_only }}</div>
+          </div>
+          <div class="form-group mb-2">
+            <label>Last communication</label>
+            <div>
+              {% if device.last_communication %}
+                {{ device.last_communication | dt }}
+              {% else %}
+                <span class="muted">Never</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="form-group mb-2">
+            <label>Warranty end</label>
+            <div>{{ device.warranty_end | date_only }}</div>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <div><span class="badge status-{{ device.status }}">{{ device.status | replace('_',' ') | title }}</span></div>
+          </div>
+          {% if device.notes %}
+          <div class="form-group mt-2">
+            <label>Notes</label>
+            <div class="small">{{ device.notes }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

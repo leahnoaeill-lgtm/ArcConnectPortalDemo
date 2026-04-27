@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}{{ clinic.name }} · Arc Connect Portal{% endblock %}
+{% block body %}
+{% set can_delete = current_user.role == 'admin' %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('referring_clinics') }}" class="btn btn-sm">← Back to clinics</a>
+      <h1 class="mt-2">
+        {{ clinic.name }}
+        {% if clinic.is_active %}
+          <span class="badge status-active">Active</span>
+        {% else %}
+          <span class="badge status-inactive">Inactive</span>
+        {% endif %}
+      </h1>
+      <div class="subtitle">
+        {% if clinic.city %}{{ clinic.city }}{% if clinic.state %}, {{ clinic.state }}{% endif %}{% endif %}
+        {% if clinic.patient_count %} · {{ clinic.patient_count }} patient{{ 's' if clinic.patient_count != 1 }}{% endif %}
+      </div>
+    </div>
+    <div class="actions">
+      <a href="{{ url_for('referring_clinic_edit', clinic_id=clinic.id) }}" class="btn">Edit clinic</a>
+      {% if clinic.is_active %}
+        <form method="POST" action="{{ url_for('referring_clinic_deactivate', clinic_id=clinic.id) }}" style="display:inline;">
+          <button type="submit" class="btn">Deactivate</button>
+        </form>
+      {% else %}
+        <form method="POST" action="{{ url_for('referring_clinic_activate', clinic_id=clinic.id) }}" style="display:inline;">
+          <button type="submit" class="btn">Reactivate</button>
+        </form>
+      {% endif %}
+      {% if can_delete %}
+        <form method="POST" action="{{ url_for('referring_clinic_delete', clinic_id=clinic.id) }}" style="display:inline;"
+              onsubmit="return confirm('Delete {{ clinic.name }}?\n\nThis permanently removes the clinic and all {{ providers | length }} of its providers.\n\n{{ clinic.patient_count }} patient(s) currently reference this clinic as their referring clinic and will lose that link (referral history is preserved).\n\nThis cannot be undone.');">
+          <button type="submit" class="btn btn-danger">Delete</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div>
+      {# ── Clinic info card ── #}
+      <div class="card">
+        <div class="card-header"><h2>Clinic info</h2></div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Name</label>
+              <div style="font-weight: 600;">{{ clinic.name }}</div>
+            </div>
+            <div class="form-group">
+              <label>NPI</label>
+              <div class="mono">{{ clinic.npi or '—' }}</div>
+            </div>
+            <div class="form-group">
+              <label>Phone</label>
+              <div>{% if clinic.phone %}<a href="tel:{{ clinic.phone }}">{{ clinic.phone }}</a>{% else %}<span class="muted">—</span>{% endif %}</div>
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <div>{% if clinic.email %}<a href="mailto:{{ clinic.email }}">{{ clinic.email }}</a>{% else %}<span class="muted">—</span>{% endif %}</div>
+            </div>
+            <div class="form-group span-2">
+              <label>Website</label>
+              <div>{% if clinic.website_url %}<a href="{{ clinic.website_url }}" target="_blank" rel="noopener">{{ clinic.website_url }}</a>{% else %}<span class="muted">—</span>{% endif %}</div>
+            </div>
+            <div class="form-group span-2">
+              <label>Address</label>
+              {% set _parts = [] %}
+              {% if clinic.address_line1 %}{% set _ = _parts.append(clinic.address_line1) %}{% endif %}
+              {% if clinic.address_line2 %}{% set _ = _parts.append(clinic.address_line2) %}{% endif %}
+              {% set _cs = [] %}
+              {% if clinic.city %}{% set _ = _cs.append(clinic.city) %}{% endif %}
+              {% if clinic.state %}{% set _ = _cs.append(clinic.state) %}{% endif %}
+              {% if _cs %}{% set _ = _parts.append(_cs | join(', ') ~ (' ' ~ clinic.zip if clinic.zip else '')) %}{% endif %}
+              {% set _full = _parts | join(', ') %}
+              <div>
+                {% if _full %}
+                  <a href="https://www.google.com/maps/search/?api=1&query={{ (clinic.name ~ ' ' ~ _full) | urlencode }}" target="_blank" rel="noopener">{{ _full }}</a>
+                {% else %}<span class="muted">—</span>{% endif %}
+              </div>
+            </div>
+            {% if clinic.notes %}
+              <div class="form-group span-2">
+                <label>Notes</label>
+                <div>{{ clinic.notes }}</div>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      {# ── Providers card ── #}
+      <div class="card">
+        <div class="card-header">
+          <h2>Providers <span class="tab-count">{{ providers | length }}</span></h2>
+          <a href="{{ url_for('referring_provider_new', clinic_id=clinic.id) }}" class="btn btn-sm btn-primary">+ Add provider</a>
+        </div>
+        <div class="card-body no-pad">
+          {% if providers %}
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Credentials</th>
+                <th>Specialty</th>
+                <th>Contact</th>
+                <th class="num-col">Patients</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in providers %}
+                <tr>
+                  <td style="font-weight: 600;">{{ p.last_name }}, {{ p.first_name }}
+                    {% if p.npi %}<div class="mono muted small">NPI {{ p.npi }}</div>{% endif %}
+                  </td>
+                  <td>
+                    {% if p.credentials %}<span class="badge" style="background: var(--ac-slate); color: white;">{{ p.credentials }}</span>{% else %}<span class="muted">—</span>{% endif %}
+                  </td>
+                  <td class="small">{{ p.specialty or '—' }}</td>
+                  <td class="small">
+                    {% if p.phone %}<div><a href="tel:{{ p.phone }}">{{ p.phone }}</a></div>{% endif %}
+                    {% if p.email %}<div class="muted"><a href="mailto:{{ p.email }}">{{ p.email }}</a></div>{% endif %}
+                  </td>
+                  <td class="num-col num">{{ p.patient_count }}</td>
+                  <td>
+                    {% if p.is_active %}
+                      <span class="badge status-active">Active</span>
+                    {% else %}
+                      <span class="badge status-inactive">Inactive</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="flex gap-1">
+                      <a href="{{ url_for('referring_provider_edit', provider_id=p.id) }}" class="btn btn-sm">Edit</a>
+                      {% if p.is_active %}
+                        <form method="POST" action="{{ url_for('referring_provider_deactivate', provider_id=p.id) }}" style="display:inline;">
+                          <button type="submit" class="btn btn-sm">Deactivate</button>
+                        </form>
+                      {% else %}
+                        <form method="POST" action="{{ url_for('referring_provider_activate', provider_id=p.id) }}" style="display:inline;">
+                          <button type="submit" class="btn btn-sm">Reactivate</button>
+                        </form>
+                      {% endif %}
+                      {% if can_delete %}
+                        <form method="POST" action="{{ url_for('referring_provider_delete', provider_id=p.id) }}" style="display:inline;"
+                              onsubmit="return confirm('Delete {{ p.first_name }} {{ p.last_name }}? Any patients linked to this provider will lose the referral reference. This cannot be undone.');">
+                          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                        </form>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+            <div class="empty-state">
+              <p>No providers in this clinic yet. <a href="{{ url_for('referring_provider_new', clinic_id=clinic.id) }}">Add the first one →</a></p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {# ── Referral history ── #}
+      {% if referral_history %}
+        <div class="card">
+          <div class="card-header">
+            <h2>Patient referral history <span class="tab-count">{{ referral_history | length }}</span></h2>
+          </div>
+          <div class="card-body no-pad">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Patient</th>
+                  <th>Provider</th>
+                  <th>Assigned</th>
+                  <th>Removed</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for h in referral_history %}
+                  <tr class="clickable" onclick="window.location='{{ url_for('patient_detail', patient_id=h.patient_id) }}'">
+                    <td>
+                      <strong>{{ h.first_name }} {{ h.last_name }}</strong>
+                      {% if h.mrn %}<div class="mono muted small">ID: {{ h.mrn | replace('MRN-', '') }}</div>{% endif %}
+                    </td>
+                    <td class="small">
+                      {% if h.prov_last %}Dr. {{ h.prov_last }}{% else %}<span class="muted">—</span>{% endif %}
+                    </td>
+                    <td class="small">{{ h.assigned_at | date_only }}</td>
+                    <td class="small">{% if h.removed_at %}{{ h.removed_at | date_only }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                    <td>
+                      {% if h.removed_at %}
+                        <span class="badge status-inactive">Past</span>
+                      {% else %}
+                        <span class="badge status-active">Current</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

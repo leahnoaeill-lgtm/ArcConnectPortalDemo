@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}New organization · ABMRC{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Back</a>
+      <h1 class="mt-2">New customer organization</h1>
+      <div class="subtitle">All three sections are required: organization details, signed BAA, and an initial parent admin invite.</div>
+    </div>
+  </div>
+
+  <form method="POST" enctype="multipart/form-data">
+    <div class="card">
+      <div class="card-header"><h2>Organization details</h2></div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-group required span-2">
+            <label>Organization name</label>
+            <input type="text" name="name" required>
+            <div class="help">Shown across the customer's portal as their parent/account name.</div>
+          </div>
+          <div class="form-group span-2">
+            <label>Address line 1</label>
+            <input type="text" name="address_line1">
+          </div>
+          <div class="form-group">
+            <label>City</label>
+            <input type="text" name="city">
+          </div>
+          <div class="form-group">
+            <label>State</label>
+            <input type="text" name="state">
+          </div>
+          <div class="form-group">
+            <label>ZIP</label>
+            <input type="text" name="zip">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" name="phone">
+          </div>
+          <div class="form-group span-2">
+            <label>Email</label>
+            <input type="email" name="email">
+          </div>
+          <div class="form-group">
+            <label>Default timezone</label>
+            <select name="timezone">
+              {% for tz in ['America/New_York','America/Chicago','America/Denver','America/Phoenix','America/Los_Angeles','America/Anchorage','Pacific/Honolulu'] %}
+                <option value="{{ tz }}">{{ tz }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header"><h2>Business Associate Agreement</h2></div>
+      <div class="card-body">
+        <div class="small muted mb-2">
+          A signed BAA is required before this organization can be created.
+          ABMRC's super-admin access to the customer's PHI is gated by this
+          document's effective period.
+        </div>
+        <div class="form-grid">
+          <div class="form-group required span-2">
+            <label>Signed BAA (PDF)</label>
+            <input type="file" name="baa_document" accept=".pdf,application/pdf" required>
+          </div>
+          <div class="form-group required">
+            <label>Signed date</label>
+            <input type="date" name="signed_date" required>
+          </div>
+          <div class="form-group required">
+            <label>Effective from</label>
+            <input type="date" name="effective_from" required>
+          </div>
+          <div class="form-group required">
+            <label>Expires on</label>
+            <input type="date" name="expires_on" required>
+          </div>
+          <div class="form-group">
+            <label>Signed by — name</label>
+            <input type="text" name="signed_by_name" placeholder="e.g., Jane Doe">
+          </div>
+          <div class="form-group">
+            <label>Signed by — title</label>
+            <input type="text" name="signed_by_title" placeholder="e.g., CCO">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header"><h2>Parent admin invite</h2></div>
+      <div class="card-body">
+        <div class="small muted mb-2">
+          The first admin you invite becomes the customer's parent group admin.
+          They'll receive an invite link to set up their portal access.
+        </div>
+        <div class="form-grid">
+          <div class="form-group required">
+            <label>First name</label>
+            <input type="text" name="invite_first_name" required>
+          </div>
+          <div class="form-group required">
+            <label>Last name</label>
+            <input type="text" name="invite_last_name" required>
+          </div>
+          <div class="form-group required span-2">
+            <label>Email</label>
+            <input type="email" name="invite_email" required>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <a href="{{ url_for('super_dashboard') }}" class="btn">Cancel</a>
+      <button type="submit" class="btn btn-primary">Create organization & send invite</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

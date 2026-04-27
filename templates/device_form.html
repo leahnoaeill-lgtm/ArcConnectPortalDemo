@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Add device · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Add device to inventory</h1>
+      <div class="subtitle">Register a new BiWaze device</div>
+    </div>
+    <a href="{{ url_for('devices') }}" class="btn">← Back</a>
+  </div>
+
+  <div class="card">
+    <form method="POST" class="card-body">
+      <div class="form-grid">
+        <div class="form-group required">
+          <label>Serial number</label>
+          <input type="text" name="serial_number" required autofocus placeholder="CNS00A000"
+                 pattern="[CK]NS\d{2}A\d{3}"
+                 title="Format: CNSXXAXXX (Cough) or KNSXXAXXX (Clear), where X is a digit.">
+          <div class="help">Format: <span class="mono">CNSXXAXXX</span> for BiWaze Cough, <span class="mono">KNSXXAXXX</span> for BiWaze Clear.</div>
+        </div>
+        <div class="form-group required">
+          <label>Model</label>
+          <select name="model" required>
+            <option value="">— select —</option>
+            <option value="biwaze_cough">BiWaze Cough</option>
+            <option value="biwaze_clear">BiWaze Clear</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Firmware version</label>
+          <input type="text" name="firmware_version" placeholder="e.g. 3.4.1">
+          <div class="help">As shown on the device setup screen.</div>
+        </div>
+        <div class="form-group">
+          <label>Upload date</label>
+          <input type="date" name="upload_date" value="{{ today if today else '' }}">
+          <div class="help">When the device was added to your inventory. Defaults to today.</div>
+        </div>
+        <div class="form-group span-2">
+          <label>Warranty end date</label>
+          <input type="date" name="warranty_end">
+        </div>
+        <div class="form-group span-2">
+          <label>Notes</label>
+          <textarea name="notes" rows="2" placeholder="e.g. received from manufacturer, inspected by J. Reyes"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('devices') }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">Add device</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

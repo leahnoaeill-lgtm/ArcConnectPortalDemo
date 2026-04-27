@@ -1,0 +1,910 @@
+{% extends "base.html" %}
+{% block title %}{{ patient.first_name }} {{ patient.last_name }} · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('patients') }}" class="btn btn-sm">← Back to patients</a>
+      <h1 class="mt-2">{{ patient.first_name }} {{ patient.last_name }}
+        <span class="badge status-{{ patient.status }}">{{ patient.status | title }}</span>
+      </h1>
+      <div class="subtitle">
+        {% if patient.mrn %}Patient ID: {{ patient.mrn }}{% else %}No Patient ID{% endif %}
+        {% if patient.dob %} · DOB {{ patient.dob | date_only }}{% endif %}
+        {% if patient.diagnosis %} · {{ patient.diagnosis }}{% endif %}
+        ·
+        {% if patient.mobile_app_enabled %}
+          <span class="mobile-app-pill mobile-app-on" title="Patient has paired the Arc Connect mobile app — messaging / surveys / mood check-ins are deliverable.">
+            📱 App paired
+            {% if patient.mobile_app_last_sync %}
+              <span class="mobile-app-sync">· last sync {{ patient.mobile_app_last_sync | dt }}</span>
+            {% else %}
+              <span class="mobile-app-sync">· never synced</span>
+            {% endif %}
+          </span>
+        {% else %}
+          <span class="mobile-app-pill mobile-app-off" title="Patient has not paired the mobile app — engagement features are inactive until they do.">📱 App not paired</span>
+        {% endif %}
+      </div>
+      {% set _addr_parts = [] %}
+      {% if patient.address_line1 %}{% set _ = _addr_parts.append(patient.address_line1) %}{% endif %}
+      {% if patient.address_line2 %}{% set _ = _addr_parts.append(patient.address_line2) %}{% endif %}
+      {% set _city_state = [] %}
+      {% if patient.city %}{% set _ = _city_state.append(patient.city) %}{% endif %}
+      {% if patient.state %}{% set _ = _city_state.append(patient.state) %}{% endif %}
+      {% if _city_state %}{% set _ = _addr_parts.append(_city_state | join(', ') ~ (' ' ~ patient.zip if patient.zip else '')) %}{% endif %}
+      {% set _full_addr = _addr_parts | join(', ') %}
+      <div class="patient-contact small muted mt-1">
+        {% if patient.phone %}<a href="tel:{{ patient.phone }}">📞 {{ patient.phone }}</a>{% endif %}
+        {% if patient.email %} · <a href="mailto:{{ patient.email }}">✉ {{ patient.email }}</a>{% endif %}
+        {% if _full_addr %} · <a href="https://www.google.com/maps/search/?api=1&query={{ _full_addr | urlencode }}" target="_blank" rel="noopener">📍 {{ _full_addr }}</a>{% endif %}
+      </div>
+    </div>
+    <div class="actions">
+      <details class="report-chooser">
+        <summary class="btn btn-primary">Print Therapy Summary</summary>
+        <div class="report-chooser-panel">
+          <div class="rc-label">Select range</div>
+          <div class="rc-range-buttons">
+            <a href="{{ url_for('patient_report', patient_id=patient.id, range='30') }}" target="_blank" class="btn btn-sm">30 days</a>
+            <a href="{{ url_for('patient_report', patient_id=patient.id, range='60') }}" target="_blank" class="btn btn-sm">60 days</a>
+            <a href="{{ url_for('patient_report', patient_id=patient.id, range='90') }}" target="_blank" class="btn btn-sm">90 days</a>
+          </div>
+          <div class="rc-divider">or custom</div>
+          <form method="GET" action="{{ url_for('patient_report', patient_id=patient.id) }}" target="_blank">
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
+              <div class="form-group">
+                <label>Start</label>
+                <input type="date" name="start" required>
+              </div>
+              <div class="form-group">
+                <label>End</label>
+                <input type="date" name="end" required>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary" style="width: 100%;">Generate report</button>
+          </form>
+        </div>
+      </details>
+      <a href="{{ url_for('patient_edit', patient_id=patient.id) }}" class="btn">Edit patient</a>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi kpi-{% if patient.adherence_pct_30d is not none and patient.adherence_pct_30d < 50 %}red{% elif patient.adherence_pct_30d is not none and patient.adherence_pct_30d < 80 %}yellow{% else %}green{% endif %}">
+      <div class="label">Adherence (30d)</div>
+      <div class="value">{{ patient.adherence_pct_30d if patient.adherence_pct_30d is not none else '—' }}%</div>
+    </div>
+    <div class="kpi kpi-slate">
+      <div class="label">Last session</div>
+      <div class="value" style="font-size: 16px;">{{ patient.last_session_at | dt }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Active devices</div>
+      <div class="value">{{ assignments | selectattr('returned_date','none') | list | length }}</div>
+    </div>
+    <div class="kpi kpi-red">
+      <div class="label">Open alerts</div>
+      <div class="value">{{ alerts | selectattr('resolved_at','none') | list | length }}</div>
+    </div>
+  </div>
+
+  {% set open_alerts = alerts | selectattr('resolved_at','none') | list %}
+
+  <div class="patient-layout">
+    <aside class="patient-sidebar">
+      <nav>
+        <a href="#therapy" class="patient-nav-link" data-section="therapy">
+          Therapy data
+        </a>
+        <a href="#alerts" class="patient-nav-link" data-section="alerts">
+          Alerts
+          {% if open_alerts %}<span class="patient-nav-count">{{ open_alerts | length }}</span>{% endif %}
+        </a>
+        <a href="#prescription" class="patient-nav-link" data-section="prescription">
+          Prescription
+          {% if rx_modalities %}<span class="patient-nav-count">{{ rx_modalities | length }}</span>{% endif %}
+        </a>
+        <a href="#device" class="patient-nav-link" data-section="device">
+          Device
+          {% set active_devices = assignments | selectattr('returned_date','none') | list %}
+          {% if active_devices %}<span class="patient-nav-count">{{ active_devices | length }}</span>{% endif %}
+        </a>
+        <a href="#journey" class="patient-nav-link" data-section="journey">
+          Journey
+        </a>
+        <a href="#clinical" class="patient-nav-link" data-section="clinical">
+          Clinical history
+          {% if clinical_total %}<span class="patient-nav-count">{{ clinical_total }}</span>{% endif %}
+        </a>
+        <a href="#goals" class="patient-nav-link" data-section="goals">
+          Goals
+          {% if goals_week %}<span class="patient-nav-count">{{ goals_week | length }}</span>{% endif %}
+        </a>
+        <a href="#mood" class="patient-nav-link" data-section="mood">
+          Mood check-ins
+        </a>
+        <a href="#surveys" class="patient-nav-link" data-section="surveys">
+          Surveys
+          {% if surveys %}<span class="patient-nav-count">{{ surveys | length }}</span>{% endif %}
+        </a>
+        <a href="#insurance" class="patient-nav-link" data-section="insurance">
+          Insurance
+        </a>
+        <a href="#referring" class="patient-nav-link" data-section="referring">
+          Referring clinic
+        </a>
+      </nav>
+    </aside>
+
+    <div class="patient-content">
+
+      {# ── Alerts (open alerts on this patient) ── #}
+      <section id="alerts" class="patient-section patient-section-alerts">
+        <div class="patient-section-header">
+          <h2>Alerts <span class="tab-count">{{ open_alerts | length }} open</span></h2>
+          <a href="{{ url_for('alerts', show='active') }}?patient={{ patient.id }}" class="btn btn-sm btn-link">View all alerts →</a>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            {% if open_alerts %}
+              {% for a in open_alerts %}
+                <div class="alert-row severity-{{ a.severity }}{% if a.acknowledged_at %} acknowledged{% endif %}" style="grid-template-columns: 90px 1fr auto; margin-bottom: 8px;">
+                  <div>
+                    <span class="badge severity-{{ a.severity }}">{{ a.severity | upper }}</span>
+                    <div class="small muted mt-1">{{ a.triggered_at | dt }}</div>
+                  </div>
+                  <div class="alert-body">
+                    <div class="title">{{ a.message }}</div>
+                    {% if a.detail %}<div class="detail">{{ a.detail }}</div>{% endif %}
+                    {% if a.acknowledged_at %}<div class="small muted mt-1">✓ Acked {{ a.acknowledged_at | dt }}</div>{% endif %}
+                  </div>
+                  <div class="alert-actions">
+                    {% if not a.acknowledged_at %}
+                    <form method="POST" action="{{ url_for('alert_acknowledge', alert_id=a.id) }}" style="display:inline;">
+                      <button type="submit" class="btn btn-sm">Acknowledge</button>
+                    </form>
+                    {% endif %}
+                    <form method="POST" action="{{ url_for('alert_resolve', alert_id=a.id) }}" style="display:inline;" onsubmit="return confirm('Resolve this alert? This marks the underlying condition as cleared and closes any linked task. Use Acknowledge instead if you\u2019re only triaging.');">
+                      <button type="submit" class="btn btn-sm btn-danger">Resolve</button>
+                    </form>
+                  </div>
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="muted small">No active alerts on this patient. ✓</div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      {# ── Journey ── #}
+      <section id="journey" class="patient-section">
+        <div class="patient-section-header">
+          <h2>Journey</h2>
+          <div class="subtitle">Milestones from prescription to ongoing therapy</div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            {% set any_journey = namespace(found=false) %}
+            {% for modality in rx_modalities %}
+              {% if therapy[modality].journey %}{% set any_journey.found = true %}{% endif %}
+            {% endfor %}
+            {% if any_journey.found %}
+              {% for modality in rx_modalities %}
+                {% set t = therapy[modality] %}
+                {% set label = 'BiWaze Cough' if modality == 'cough' else 'BiWaze Clear' %}
+                {% if t.journey %}
+                  {% if rx_modalities|length > 1 %}
+                    <h3 style="font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--ac-slate);">{{ label }}</h3>
+                  {% endif %}
+                  <div class="cp-journey">
+                    {% for e in t.journey %}
+                      <div class="cp-journey-item stage-{{ e.stage }}">
+                        <div class="cp-journey-rail">
+                          <div class="cp-journey-dot">{{ e.icon or '●' }}</div>
+                          {% if not loop.last %}<div class="cp-journey-line"></div>{% endif %}
+                        </div>
+                        <div class="cp-journey-body">
+                          <div class="cp-journey-date">{{ e.date or 'ongoing' }}</div>
+                          <div class="cp-journey-label">{{ e.label }}</div>
+                          <div class="cp-journey-detail">{{ e.detail }}</div>
+                        </div>
+                      </div>
+                    {% endfor %}
+                  </div>
+                  {% if not loop.last %}<div style="height: 18px;"></div>{% endif %}
+                {% endif %}
+              {% endfor %}
+            {% else %}
+              <div class="muted small">No milestones recorded yet.</div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      {# ── Prescription ── #}
+      <section id="prescription" class="patient-section">
+        <div class="patient-section-header">
+          <h2>Prescription</h2>
+          <div class="subtitle">Active orders per modality</div>
+        </div>
+        {% if rx_modalities %}
+          {% for modality in rx_modalities %}
+            {% set t = therapy[modality] %}
+            {% set label = 'BiWaze Cough' if modality == 'cough' else 'BiWaze Clear' %}
+            {% set _rx_href = url_for('patient_prescription_edit', patient_id=patient.id, modality=modality) %}
+            <div class="card card-linked" data-href="{{ _rx_href }}">
+              <div class="card-header">
+                <h2>{{ label }}</h2>
+                <a href="{{ _rx_href }}" class="btn btn-sm">{% if t.rx %}Edit{% else %}Add{% endif %}</a>
+              </div>
+              <div class="card-body">
+                {% if t.rx %}
+                  {% if modality == 'cough' %}
+                    <div class="rx-grid">
+                      <div><span class="rx-label">Cycles</span><span class="rx-value">{{ t.rx.cough_cycles }}</span></div>
+                      <div><span class="rx-label">Insp P</span><span class="rx-value">{{ t.rx.cough_insp_pressure_cmh2o | round | int }} <span class="rx-unit">cmH₂O</span></span></div>
+                      <div><span class="rx-label">Insp T</span><span class="rx-value">{{ t.rx.cough_insp_time_sec }} <span class="rx-unit">sec</span></span></div>
+                      <div><span class="rx-label">Exp P</span><span class="rx-value">{{ t.rx.cough_exp_pressure_cmh2o | round | int }} <span class="rx-unit">cmH₂O</span></span></div>
+                      <div><span class="rx-label">Exp T</span><span class="rx-value">{{ t.rx.cough_exp_time_sec }} <span class="rx-unit">sec</span></span></div>
+                      <div><span class="rx-label">Pause P</span><span class="rx-value">{{ t.rx.cough_pause_pressure_cmh2o | round | int }} <span class="rx-unit">cmH₂O</span></span></div>
+                      <div><span class="rx-label">Pause T</span><span class="rx-value">{{ t.rx.cough_pause_time_sec }} <span class="rx-unit">sec</span></span></div>
+                    </div>
+                  {% else %}
+                    <div class="rx-grid">
+                      <div><span class="rx-label">PEP P</span><span class="rx-value">{{ t.rx.clear_pep_pressure_cmh2o | round | int }} <span class="rx-unit">cmH₂O</span></span></div>
+                      <div><span class="rx-label">PEP T</span><span class="rx-value">{{ (t.rx.clear_pep_time_sec | int) // 60 }}m {{ (t.rx.clear_pep_time_sec | int) % 60 }}s</span></div>
+                      <div><span class="rx-label">OSC P</span><span class="rx-value">{{ t.rx.clear_osc_pressure_cmh2o | round | int }} <span class="rx-unit">cmH₂O</span></span></div>
+                      <div><span class="rx-label">OSC T</span><span class="rx-value">{{ (t.rx.clear_osc_time_sec | int) // 60 }}m {{ (t.rx.clear_osc_time_sec | int) % 60 }}s</span></div>
+                      <div><span class="rx-label">NEB</span><span class="rx-value">{% if t.rx.clear_neb_enabled %}<span class="status-green">ON</span>{% else %}<span class="muted">OFF</span>{% endif %}</span></div>
+                      <div><span class="rx-label">O₂ bleed</span><span class="rx-value">
+                        {% if t.rx.clear_bleed_in_oxygen %}
+                          <span class="status-green">ON{% if t.rx.clear_oxygen_flow_lpm %} @ {{ t.rx.clear_oxygen_flow_lpm | round | int }} L/min{% endif %}</span>
+                        {% else %}<span class="muted">OFF</span>{% endif %}
+                      </span></div>
+                    </div>
+                    {% if t.rx.clear_neb_enabled and t.rx.clear_neb_medication %}
+                      <div class="small mt-1"><strong>Nebulizer:</strong> {{ t.rx.clear_neb_medication }}</div>
+                    {% endif %}
+                  {% endif %}
+                  {% if t.rx.prov_last %}
+                    <div class="small muted mt-2">
+                      Prescribed by Dr. {{ t.rx.prov_last }}{% if t.rx.prov_cred %}, {{ t.rx.prov_cred }}{% endif %}
+                      {% if t.rx.prescribed_date %} · {{ t.rx.prescribed_date | date_only }}{% endif %}
+                    </div>
+                  {% endif %}
+                  {% if t.rx.document_path %}
+                    <div class="small mt-2" style="padding: 8px 12px; background: var(--ac-bg); border-radius: var(--radius);">
+                      📎 <a href="{{ url_for('static', filename=t.rx.document_path) }}" target="_blank" rel="noopener">
+                        {{ t.rx.document_filename or 'View prescription document' }}
+                      </a>
+                    </div>
+                  {% endif %}
+                {% else %}
+                  <div class="muted small">No prescription on file.
+                    <a href="{{ url_for('patient_prescription_edit', patient_id=patient.id, modality=modality) }}">Add one →</a>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="card"><div class="card-body muted small">No active prescriptions.</div></div>
+        {% endif %}
+      </section>
+
+      {# ── Device ── #}
+      <section id="device" class="patient-section">
+        <div class="patient-section-header">
+          <h2>Device</h2>
+          <div class="subtitle">Assignments, past and present</div>
+        </div>
+        <div class="card">
+          <div class="card-body no-pad">
+            {% if assignments %}
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Serial</th>
+                  <th>Model</th>
+                  <th>Firmware</th>
+                  <th>Assigned</th>
+                  <th>Status</th>
+                  <th>Consent</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for a in assignments %}
+                  <tr>
+                    <td class="mono">{{ a.serial_number }}</td>
+                    <td>{{ a.model | model_label }}</td>
+                    <td class="mono small">{{ a.firmware_version or '—' }}</td>
+                    <td>{{ a.assigned_date | date_only }}</td>
+                    <td>
+                      {% if a.returned_date %}
+                        {{ a.returned_date | date_only }}
+                      {% else %}
+                        <span class="badge status-in_use">Active</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if a.consent_form_path %}
+                        <a href="{{ url_for('static', filename=a.consent_form_path) }}" target="_blank" class="btn btn-sm">📄 View</a>
+                      {% else %}
+                        <span class="muted small">—</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <a href="{{ url_for('device_detail', device_id=a.device_id) }}" class="btn btn-sm">Device ▸</a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+              <div class="empty-state">
+                <div class="big">📱</div>
+                <p>No devices assigned yet. <a href="{{ url_for('devices', tab='unassigned') }}">Pick one from inventory →</a></p>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      {# ── Therapy data ── #}
+      <section id="therapy" class="patient-section">
+        <div class="patient-section-header">
+          <h2>Therapy data</h2>
+          <div class="subtitle">Adherence and recent sessions</div>
+        </div>
+        {% if rx_modalities %}
+          {% for modality in rx_modalities %}
+            {% set t = therapy[modality] %}
+            {% set label = 'BiWaze Cough' if modality == 'cough' else 'BiWaze Clear' %}
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <h2>{{ label }}</h2>
+                  <div class="small muted">Rx: {{ therapy_goal_per_day }} sessions/day · {{ t.completed_30d }} of {{ t.goal_30d }} completed in last 30 days</div>
+                </div>
+                <div class="adherence">
+                  <span class="{{ t.pct_30d | adherence_class }}" style="font-size: 28px; font-family: var(--font-head); font-weight: 300;">{{ t.pct_30d }}%</span>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="therapy-grid-row">
+                  <div class="therapy-grid-label">Last 30 days</div>
+                  <div class="therapy-grid" title="Each cell = one day. Color = sessions completed vs Rx of {{ therapy_goal_per_day }}/day.">
+                    {% for cell in t.grid %}
+                      {% set cls = 'therapy-grid-cell-' + ('green' if cell.count >= therapy_goal_per_day else ('yellow' if cell.count > 0 else 'red')) %}
+                      <div class="therapy-grid-cell {{ cls }}" title="{{ cell.date }} — {{ cell.count }} session{{ 's' if cell.count != 1 }}"></div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <div class="mt-3">
+                  <div class="flex-between">
+                    <strong style="font-size: 13px;">Recent sessions</strong>
+                    <a href="{{ url_for('patient_sessions', patient_id=patient.id, modality=modality) }}" class="btn btn-sm btn-link">View all &amp; print →</a>
+                  </div>
+                  {% if t.recent %}
+                    <table class="table session-list mt-1">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Time</th>
+                          <th>Duration</th>
+                          <th>Mode</th>
+                          <th class="num-col">Peak pressure</th>
+                          {% if modality == 'cough' %}<th class="num-col">Peak flow</th>{% endif %}
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for s in t.recent %}
+                          {% set sd_href = url_for('session_detail', patient_id=patient.id, session_id=s.id) %}
+                          <tr class="clickable" onclick="window.location='{{ sd_href }}'">
+                            <td>{{ s.started_at | date_only }}</td>
+                            <td class="small muted">{{ s.started_at | time_only }}</td>
+                            <td class="small">{{ (s.duration_seconds // 60) }}m {{ (s.duration_seconds % 60) }}s</td>
+                            <td class="small">{{ s.mode }}</td>
+                            <td class="num-col num">{{ "%.1f" % s.peak_pressure_cmh2o if s.peak_pressure_cmh2o else '—' }} <span class="muted small">cmH₂O</span></td>
+                            {% if modality == 'cough' %}
+                              <td class="num-col num">{{ "%.0f" % s.peak_flow_lpm if s.peak_flow_lpm else '—' }} <span class="muted small">L/min</span></td>
+                            {% endif %}
+                            <td><a href="{{ sd_href }}" class="btn btn-sm" onclick="event.stopPropagation();">Waveform ▸</a></td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% else %}
+                    <div class="empty-state small">No {{ label }} sessions recorded yet.</div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="card"><div class="card-body muted small">No prescribed modalities — therapy data will appear here once a prescription is added.</div></div>
+        {% endif %}
+      </section>
+
+      {# ── Clinical history ── #}
+      <section id="clinical" class="patient-section">
+        <div class="patient-section-header">
+          <h2>Clinical history</h2>
+          <div class="flex gap-1">
+            {% if clinical_total %}<a href="{{ url_for('patient_clinical_history', patient_id=patient.id) }}" class="btn btn-sm">View all ({{ clinical_total }})</a>{% endif %}
+            <a href="{{ url_for('patient_clinical_history_new', patient_id=patient.id) }}" class="btn btn-sm btn-primary">+ Add</a>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div class="form-group">
+              <label>Diagnosis</label>
+              <div>{% if patient.diagnosis %}{{ patient.diagnosis }}{% else %}<span class="muted">Not recorded</span>{% endif %}</div>
+            </div>
+            <div class="form-group mt-2">
+              <label>Assigned clinician (internal)</label>
+              <div>{% if patient.clinician_first %}{{ patient.clinician_first }} {{ patient.clinician_last or '' }}{% else %}<span class="muted">Not assigned</span>{% endif %}</div>
+            </div>
+            {% if patient.capped_rental_start %}
+            <div class="form-group mt-2">
+              <label>Capped rental</label>
+              <div class="small">{{ patient.capped_rental_start | date_only }} → {{ patient.capped_rental_end | date_only }}</div>
+            </div>
+            {% endif %}
+
+            <hr style="border: 0; border-top: 1px solid var(--ac-border); margin: 18px 0;">
+
+            <strong style="font-size: 13px;">Recent observations</strong>
+            {% if clinical_recent %}
+              {% for h in clinical_recent %}
+                <div class="hx-item">
+                  <div class="flex-between">
+                    <div style="font-weight: 600;">{{ h.observation_date | date_only }}</div>
+                    {% if h.hospital_admission_date %}
+                      <span class="badge severity-warning">Hospital</span>
+                    {% endif %}
+                  </div>
+                  <div class="hx-vitals mt-1">
+                    {% if h.spo2_pct %}<span><span class="hx-k">SpO₂</span> {{ h.spo2_pct }}%</span>{% endif %}
+                    {% if h.fev1_liters %}<span><span class="hx-k">FEV1</span> {{ h.fev1_liters }}L{% if h.fev1_pct_predicted %} ({{ h.fev1_pct_predicted }}%){% endif %}</span>{% endif %}
+                    {% if h.fvc_liters %}<span><span class="hx-k">FVC</span> {{ h.fvc_liters }}L{% if h.fvc_pct_predicted %} ({{ h.fvc_pct_predicted }}%){% endif %}</span>{% endif %}
+                    {% if h.on_oxygen_therapy %}
+                      <span class="status-green"><span class="hx-k">O₂</span>
+                        {% if h.oxygen_flow_lpm %}{{ h.oxygen_flow_lpm }}L/min{% endif %}
+                        {% if h.oxygen_type %} {{ h.oxygen_type }}{% endif %}
+                      </span>
+                    {% endif %}
+                  </div>
+                  {% if h.admission_reason %}<div class="small muted mt-1"><em>{{ h.admission_reason }}</em></div>{% endif %}
+                  {% if h.notes %}<div class="small mt-1">{{ h.notes }}</div>{% endif %}
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="muted small mt-2">
+                No clinical observations yet.
+                <a href="{{ url_for('patient_clinical_history_new', patient_id=patient.id) }}">Add one →</a>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      {# ── Mood check-ins ── #}
+      {# ── Goals (what the patient is tracking this week) ── #}
+      {% set goal_meta = {
+        'therapy_cough':       {'label': 'BiWaze Cough',       'color': 'var(--biwaze-cough-dark)'},
+        'therapy_clear':       {'label': 'BiWaze Clear',       'color': 'var(--ac-cyan-dark)'},
+        'vest':                {'label': 'Vest',               'color': '#6D4CA6'},
+        'breathing_treatment': {'label': 'Breathing Treatments','color': '#2E8EBC'},
+        'steps':               {'label': 'Steps',              'color': '#4CAF50'},
+        'sleep':               {'label': 'Sleep',              'color': '#334155'}
+      } %}
+      <section id="goals" class="patient-section">
+        <div class="patient-section-header">
+          <h2>Goals <span class="tab-count">{{ goals_week | length }} active</span></h2>
+          <a href="{{ url_for('patient_goals', patient_id=patient.id) }}" class="btn btn-sm btn-link">View history →</a>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div class="small muted mb-2">
+              Current week · {{ goals_week_start | date_only }} – {{ goals_week_end | date_only }}
+            </div>
+            {% if goals_week %}
+              <table class="table goals-week">
+                <thead>
+                  <tr>
+                    <th style="width: 36%;">Goal</th>
+                    <th class="num-col" style="width: 110px;">Target / day</th>
+                    <th>This week</th>
+                    <th class="num-col" style="width: 90px;">Met</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for gw in goals_week %}
+                    {% set meta = goal_meta.get(gw.goal.goal_type, {'label': gw.goal.goal_type, 'color': '#555'}) %}
+                    <tr>
+                      <td>
+                        <span style="font-weight: 500; color: {{ meta.color }};">{{ meta.label }}</span>
+                      </td>
+                      <td class="num-col">
+                        {% if gw.goal.unit == 'sessions' %}{{ gw.goal.target_value | int }} <span class="muted small">sessions</span>
+                        {% elif gw.goal.unit == 'steps' %}{{ "{:,}".format(gw.goal.target_value | int) }} <span class="muted small">steps</span>
+                        {% else %}{{ gw.goal.target_value }} <span class="muted small">hrs</span>{% endif %}
+                      </td>
+                      <td>
+                        <div class="goal-week-strip">
+                          {% for d in gw.days %}
+                            {% set pct = 0 %}
+                            {% if d.actual is not none and gw.goal.target_value > 0 %}
+                              {% set pct = ((d.actual / gw.goal.target_value) * 100) | round(0) | int %}
+                              {% if pct > 120 %}{% set pct = 120 %}{% endif %}
+                            {% endif %}
+                            <div class="goal-day {% if d.is_future %}goal-day-future{% elif d.hit %}goal-day-hit{% elif d.actual is not none %}goal-day-partial{% else %}goal-day-miss{% endif %}"
+                                 title="{{ d.weekday }} {{ d.date }} — {% if d.actual is none %}no data{% elif gw.goal.unit == 'sessions' %}{{ d.actual | int }} / {{ gw.goal.target_value | int }} sessions{% elif gw.goal.unit == 'steps' %}{{ '{:,}'.format(d.actual | int) }} / {{ '{:,}'.format(gw.goal.target_value | int) }} steps{% else %}{{ d.actual }} / {{ gw.goal.target_value }} hrs{% endif %}">
+                              <div class="goal-day-wd">{{ d.weekday[0] }}</div>
+                              <div class="goal-day-bar-wrap">
+                                <div class="goal-day-bar" style="height: {{ pct if not d.is_future else 0 }}%; background: {{ meta.color }};"></div>
+                              </div>
+                            </div>
+                          {% endfor %}
+                        </div>
+                      </td>
+                      <td class="num-col">
+                        <span style="font-weight: 500;">{{ gw.met }}/{{ gw.eligible_days }}</span>
+                        <div class="small muted">{% if gw.eligible_days %}{{ ((gw.met / gw.eligible_days) * 100) | round(0) | int }}%{% else %}—{% endif %}</div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% else %}
+              <div class="muted small">This patient hasn't set up any goals yet.</div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section id="mood" class="patient-section">
+        <div class="patient-section-header">
+          <h2>Mood check-ins</h2>
+          <div class="subtitle">Daily self-report from the Arc Connect app (last 30 days)</div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            {% set moods_logged = mood_trend | selectattr('mood') | list | length %}
+            {% if moods_logged %}
+              <div class="mood-strip">
+                {% for d in mood_trend %}
+                  {% set emoji = {'sad':'😞','meh':'😐','ok':'🙂','happy':'😄'} %}
+                  <button type="button"
+                          class="mood-dot mood-{{ d.mood or 'none' }}"
+                          data-date="{{ d.date | date_only }}"
+                          data-mood="{{ d.mood or '' }}"
+                          data-note="{{ d.note or '' }}"
+                          aria-label="Mood on {{ d.date | date_only }}">
+                    {% if d.mood %}{{ emoji[d.mood] }}{% else %}·{% endif %}
+                  </button>
+                {% endfor %}
+              </div>
+              {# Popover (single instance; positioned by JS) #}
+              <div id="moodPopover" class="mood-popover" hidden>
+                <div class="mood-popover-hd"><span id="moodPopDate"></span></div>
+                <div class="mood-popover-body" id="moodPopBody"></div>
+              </div>
+              <div class="mood-axis">
+                <span>{{ mood_trend[0].date | date_only }}</span>
+                <span>today</span>
+              </div>
+            {% else %}
+              <div class="muted small">No mood check-ins yet.</div>
+            {% endif %}
+
+            {% if mood_recent_notes %}
+              <hr style="border:0; border-top:1px solid var(--ac-border); margin:16px 0;">
+              <strong style="font-size: 13px;">Recent notes</strong>
+              <div class="mood-notes mt-2">
+                {% for n in mood_recent_notes %}
+                  {% set emoji = {'sad':'😞','meh':'😐','ok':'🙂','happy':'😄'} %}
+                  <div class="mood-note-item">
+                    <div class="mood-note-emoji mood-{{ n.mood }}">{{ emoji[n.mood] }}</div>
+                    <div>
+                      <div class="small muted">{{ n.recorded_at | dt }}</div>
+                      <div>"{{ n.response_text }}"</div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      {# ── Surveys (30/60/90 day) ── #}
+      <section id="surveys" class="patient-section">
+        <div class="patient-section-header">
+          <h2>Surveys</h2>
+          <div class="subtitle">30-, 60-, and 90-day patient check-ins</div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div class="survey-milestones">
+              {% for milestone in [30, 60, 90] %}
+                {% set s = (surveys | selectattr('milestone', 'equalto', milestone) | list | first) %}
+                <div class="survey-milestone-card
+                     {% if s and s.opted_out %}survey-opted-out
+                     {% elif s and not s.completed_at %}survey-pending{% endif %}">
+                  <div class="survey-milestone-hd">
+                    <div class="survey-milestone-name">{{ milestone }}-day</div>
+                    {% if s and s.opted_out %}
+                      <div class="survey-score-pill" style="background: var(--ac-slate-light); color: var(--ac-slate-deep);">Opted out</div>
+                    {% elif s and s.completed_at %}
+                      <div class="survey-score-pill
+                           {% if s.score_0_100 >= 80 %}status-green
+                           {% elif s.score_0_100 >= 50 %}status-yellow
+                           {% else %}status-red{% endif %}">{{ s.score_0_100 }}%</div>
+                    {% elif s %}
+                      <div class="survey-score-pill" style="background: var(--ac-cyan-light); color: var(--ac-cyan-dark);">Awaiting response</div>
+                    {% else %}
+                      <span class="muted small">Not sent</span>
+                    {% endif %}
+                  </div>
+                  {% if s and s.opted_out %}
+                    <div class="small muted">Declined {{ s.opted_out_at | date_only }}</div>
+                    {% if s.opted_out_reason %}
+                      <div class="small muted mt-1"><em>{{ s.opted_out_reason }}</em></div>
+                    {% endif %}
+                  {% elif s and s.completed_at %}
+                    <div class="small muted">Completed {{ s.completed_at | date_only }}</div>
+                    <div class="survey-responses mt-2">
+                      {% for key, label in survey_questions %}
+                        {% set val = s[key] %}
+                        <div class="survey-q-row">
+                          <span class="survey-q-label">{{ label }}</span>
+                          <span class="survey-q-dots">
+                            {% for i in range(1, 6) %}
+                              <span class="survey-dot {{ 'filled' if val and i <= val }}"></span>
+                            {% endfor %}
+                          </span>
+                        </div>
+                      {% endfor %}
+                    </div>
+                    {% if s.q6_open_response %}
+                      <div class="survey-open mt-2">
+                        <div class="small muted" style="text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;">Open response</div>
+                        <div>"{{ s.q6_open_response }}"</div>
+                      </div>
+                    {% endif %}
+                  {% elif s %}
+                    <div class="small muted">Sent {{ s.sent_at | date_only }} — waiting on the patient to complete in the mobile app.</div>
+                  {% else %}
+                    <div class="small muted mt-1">The 6-question check-in will be sent to the patient on the Arc Connect app at this milestone.</div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {# ── Insurance ── #}
+      <section id="insurance" class="patient-section">
+        {% set _ins_href = url_for('patient_insurance_edit', patient_id=patient.id) %}
+        <div class="patient-section-header">
+          <h2>Insurance</h2>
+          <a href="{{ _ins_href }}" class="btn btn-sm">Edit</a>
+        </div>
+        <div class="card card-linked" data-href="{{ _ins_href }}">
+          <div class="card-body">
+            {% if insurance %}
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Payer</label>
+                  <div style="font-weight: 600;">{{ insurance.payer_name }}</div>
+                  <div class="small muted">
+                    {{ insurance.plan_type or '' }}
+                    · <span class="badge status-{{ 'active' if insurance.coverage_type == 'primary' else 'inactive' }}">{{ insurance.coverage_type | title }}</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Member ID</label>
+                  <div class="mono">{{ insurance.member_id or '—' }}</div>
+                </div>
+                {% if insurance.group_number %}
+                  <div class="form-group">
+                    <label>Group #</label>
+                    <div class="mono">{{ insurance.group_number }}</div>
+                  </div>
+                {% endif %}
+                {% if 'cough' in rx_modalities or insurance.cough_approval_date %}
+                  <div class="form-group">
+                    <label>BiWaze Cough approval</label>
+                    <div>
+                      {% if insurance.cough_approval_date %}
+                        {{ insurance.cough_approval_date | date_only }}
+                        {% if insurance.cough_auth_number %}<div class="mono muted small">Auth #{{ insurance.cough_auth_number }}</div>{% endif %}
+                      {% else %}<span class="status-red">Pending</span>{% endif %}
+                    </div>
+                  </div>
+                {% endif %}
+                {% if 'clear' in rx_modalities or insurance.clear_approval_date %}
+                  <div class="form-group">
+                    <label>BiWaze Clear approval</label>
+                    <div>
+                      {% if insurance.clear_approval_date %}
+                        {{ insurance.clear_approval_date | date_only }}
+                        {% if insurance.clear_auth_number %}<div class="mono muted small">Auth #{{ insurance.clear_auth_number }}</div>{% endif %}
+                      {% else %}<span class="status-red">Pending</span>{% endif %}
+                    </div>
+                  </div>
+                {% endif %}
+                {% if insurance.effective_date %}
+                  <div class="form-group">
+                    <label>Effective</label>
+                    <div class="small">{{ insurance.effective_date | date_only }}{% if insurance.next_review_date %} — review by {{ insurance.next_review_date | date_only }}{% endif %}</div>
+                  </div>
+                {% endif %}
+              </div>
+            {% else %}
+              <div class="muted small">
+                No insurance on file.
+                <a href="{{ url_for('patient_insurance_edit', patient_id=patient.id) }}">Add insurance →</a>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      {# ── Referring clinic ── #}
+      <section id="referring" class="patient-section">
+        {% set _ref_href = url_for('patient_referral_edit', patient_id=patient.id) %}
+        <div class="patient-section-header">
+          <h2>Referring clinic</h2>
+          <a href="{{ _ref_href }}" class="btn btn-sm">Edit</a>
+        </div>
+        <div class="card card-linked" data-href="{{ _ref_href }}">
+          <div class="card-body">
+            {% if patient.clinic_name or patient.prov_last %}
+              <div class="form-grid">
+                {% if patient.prov_last %}
+                  <div class="form-group">
+                    <label>Referring provider</label>
+                    <div style="font-weight: 600;">
+                      {{ patient.prov_first }} {{ patient.prov_last }}{% if patient.prov_credentials %}, {{ patient.prov_credentials }}{% endif %}
+                    </div>
+                    {% if patient.prov_specialty %}<div class="small muted">{{ patient.prov_specialty }}</div>{% endif %}
+                    <div class="small mt-1">
+                      {% if patient.prov_phone %}<a href="tel:{{ patient.prov_phone }}">📞 {{ patient.prov_phone }}</a>{% endif %}
+                      {% if patient.prov_email %}<br><a href="mailto:{{ patient.prov_email }}">✉ {{ patient.prov_email }}</a>{% endif %}
+                      {% if patient.prov_npi %}<br><span class="mono muted">NPI {{ patient.prov_npi }}</span>{% endif %}
+                    </div>
+                  </div>
+                {% endif %}
+                {% if patient.clinic_name %}
+                  {% set _cl_parts = [] %}
+                  {% if patient.clinic_city %}{% set _ = _cl_parts.append(patient.clinic_city) %}{% endif %}
+                  {% if patient.clinic_state %}{% set _ = _cl_parts.append(patient.clinic_state) %}{% endif %}
+                  {% set _cl_loc = _cl_parts | join(', ') %}
+                  {% set _cl_map_q = (patient.clinic_name ~ ' ' ~ _cl_loc) | trim %}
+                  <div class="form-group">
+                    <label>Referring clinic</label>
+                    <div style="font-weight: 600;">{{ patient.clinic_name }}</div>
+                    {% if _cl_loc %}
+                      <div class="small muted">
+                        <a href="https://www.google.com/maps/search/?api=1&query={{ _cl_map_q | urlencode }}" target="_blank" rel="noopener">{{ _cl_loc }}</a>
+                      </div>
+                    {% endif %}
+                    <div class="small mt-1">
+                      {% if patient.clinic_phone %}<a href="tel:{{ patient.clinic_phone }}">📞 {{ patient.clinic_phone }}</a>{% endif %}
+                      {% if patient.clinic_email %}<br><a href="mailto:{{ patient.clinic_email }}">✉ {{ patient.clinic_email }}</a>{% endif %}
+                      {% if patient.clinic_url %}<br><a href="{{ patient.clinic_url }}" target="_blank" rel="noopener">{{ patient.clinic_url }}</a>{% endif %}
+                      {% if patient.clinic_npi %}<br><span class="mono muted">NPI {{ patient.clinic_npi }}</span>{% endif %}
+                    </div>
+                  </div>
+                {% endif %}
+              </div>
+            {% else %}
+              <div class="muted small">
+                No referring clinic or provider on file.
+                <a href="{{ url_for('patient_referral_edit', patient_id=patient.id) }}">Assign one →</a>
+              </div>
+            {% endif %}
+
+            {% if referral_history and referral_history | length > 1 %}
+              <hr style="border:0; border-top:1px solid var(--ac-border); margin:16px 0;">
+              <strong style="font-size: 13px;">Referral history</strong>
+              <div class="referral-history mt-2">
+                {% for h in referral_history %}
+                  <div class="referral-history-row {% if not h.removed_at %}is-current{% endif %}">
+                    <div class="referral-history-dot"></div>
+                    <div class="referral-history-body">
+                      <div class="small">
+                        <strong>{{ h.clinic_name or '(clinic removed)' }}</strong>
+                        {% if h.prov_last %} · Dr. {{ h.prov_last }}{% endif %}
+                        {% if not h.removed_at %}<span class="badge status-active" style="margin-left: 6px;">Current</span>{% endif %}
+                      </div>
+                      <div class="small muted">
+                        {{ h.assigned_at | date_only }}
+                        {% if h.removed_at %} → {{ h.removed_at | date_only }}{% else %} → present{% endif %}
+                        {% if h.by_last %} · by {{ h.by_first }} {{ h.by_last }}{% endif %}
+                        {% if h.reason %} · {{ h.reason }}{% endif %}
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+    </div>{# /patient-content #}
+  </div>{# /patient-layout #}
+</div>
+
+<script>
+// Scroll-spy: highlight the sidebar link whose section is currently in view.
+(function() {
+  const links = document.querySelectorAll('.patient-nav-link');
+  if (!links.length) return;
+  const sections = Array.from(links)
+    .map(l => document.getElementById(l.dataset.section))
+    .filter(Boolean);
+  function onScroll() {
+    const y = window.scrollY + 120; // offset for sticky topbar + header breathing room
+    let activeId = sections[0] && sections[0].id;
+    for (const s of sections) {
+      if (s.offsetTop <= y) activeId = s.id;
+    }
+    links.forEach(l => l.classList.toggle('active', l.dataset.section === activeId));
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+
+// Mood strip popover — click a dot to see date / mood / optional note.
+// Replaces the old `title` tooltip (which didn't work on touch and wasn't
+// keyboard-accessible).
+(function() {
+  const pop = document.getElementById('moodPopover');
+  if (!pop) return;
+  const popDate = document.getElementById('moodPopDate');
+  const popBody = document.getElementById('moodPopBody');
+  const moodLabel = { happy: 'Happy 😄', ok: 'OK 🙂', meh: 'Meh 😐', sad: 'Sad 😞' };
+  function openPop(btn) {
+    const date = btn.dataset.date;
+    const mood = btn.dataset.mood;
+    const note = btn.dataset.note;
+    popDate.textContent = date;
+    let body = '';
+    if (!mood) {
+      body = '<em style="color: var(--ac-gray);">No check-in on this day.</em>';
+    } else {
+      body = '<div style="font-weight: 600; margin-bottom: 6px;">' + (moodLabel[mood] || mood) + '</div>';
+      if (note) body += '<div>"' + note.replace(/"/g, '&quot;').replace(/</g, '&lt;') + '"</div>';
+      else body += '<div style="color: var(--ac-gray);"><em>No note</em></div>';
+    }
+    popBody.innerHTML = body;
+    pop.hidden = false;
+    const r = btn.getBoundingClientRect();
+    pop.style.top = (window.scrollY + r.bottom + 8) + 'px';
+    const popW = 260;
+    let left = window.scrollX + r.left + r.width / 2 - popW / 2;
+    left = Math.max(12, Math.min(left, window.scrollX + document.documentElement.clientWidth - popW - 12));
+    pop.style.left = left + 'px';
+  }
+  function closePop() { pop.hidden = true; }
+  document.querySelectorAll('.mood-dot').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openPop(btn); });
+  });
+  document.addEventListener('click', (e) => {
+    if (!pop.contains(e.target)) closePop();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
+})();
+</script>
+{% endblock %}

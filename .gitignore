@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+# Local secrets / overrides
+.env
+.env.local
+*.local
+
+# Note: arcconnect.db IS committed intentionally so the demo runs out-of-the-box.
+# Re-seed any time with: rm arcconnect.db && python3 seed.py

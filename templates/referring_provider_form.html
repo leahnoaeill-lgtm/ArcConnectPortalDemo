@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if provider else 'Add' }} provider · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('referring_providers') }}" class="btn btn-sm">← Back</a>
+      <h1 class="mt-2">{{ 'Edit provider' if provider else 'Add referring provider' }}</h1>
+      <div class="subtitle">External MD, NP, or PA who refers patients</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="POST" class="card-body">
+      <div class="form-grid">
+        <div class="form-group required span-2">
+          <label>Clinic (which practice?)</label>
+          <select name="clinic_id" required>
+            <option value="">— select clinic —</option>
+            {% for c in clinics %}
+              <option value="{{ c.id }}"
+                      {% if provider and provider.clinic_id == c.id %}selected{% elif not provider and prefill_clinic_id == c.id %}selected{% endif %}>
+                {{ c.name }}
+              </option>
+            {% endfor %}
+          </select>
+          <div class="help">Don't see it? <a href="{{ url_for('referring_clinic_new') }}">Add a new clinic</a> first.</div>
+        </div>
+        <div class="form-group required">
+          <label>First name</label>
+          <input type="text" name="first_name" required value="{{ provider.first_name if provider else '' }}">
+        </div>
+        <div class="form-group required">
+          <label>Last name</label>
+          <input type="text" name="last_name" required value="{{ provider.last_name if provider else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Credentials</label>
+          <input type="text" name="credentials" value="{{ provider.credentials if provider else '' }}"
+                 placeholder="MD, DO, NP, PA" maxlength="20">
+        </div>
+        <div class="form-group">
+          <label>Specialty</label>
+          <input type="text" name="specialty" value="{{ provider.specialty if provider else '' }}"
+                 placeholder="Pulmonology, Neurology, etc.">
+        </div>
+        <div class="form-group">
+          <label>NPI number</label>
+          <input type="text" name="npi" value="{{ provider.npi if provider else '' }}" maxlength="10">
+          <div class="help">10-digit individual NPI.</div>
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="tel" name="phone" value="{{ provider.phone if provider else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" name="email" value="{{ provider.email if provider else '' }}">
+        </div>
+        <div class="form-group span-2">
+          <label>Notes</label>
+          <textarea name="notes" rows="2">{{ provider.notes if provider else '' }}</textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('referring_providers') }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">{{ 'Save changes' if provider else 'Add provider' }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

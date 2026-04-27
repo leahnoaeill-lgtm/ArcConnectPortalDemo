@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% set editing = patient is defined and patient %}
+{% block title %}{{ 'Edit' if editing else 'Add' }} patient · Arc Connect Portal{% endblock %}
+{% block body %}
+{% set rx_mods = patient_mods if patient_mods is defined else [] %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>{{ 'Edit' if editing else 'Add' }} patient</h1>
+      <div class="subtitle">
+        {% if editing %}{{ patient.first_name }} {{ patient.last_name }} · Patient ID {{ patient.mrn }}{% else %}Create a new patient record{% endif %}
+      </div>
+    </div>
+    <a href="{{ url_for('patient_detail', patient_id=patient.id) if editing else url_for('patients') }}" class="btn">← Back</a>
+  </div>
+
+  <div class="card">
+    <form method="POST" action="{{ url_for('patient_edit', patient_id=patient.id) if editing else url_for('patient_new') }}" class="card-body">
+      <div class="form-grid">
+        <div class="form-group required">
+          <label>First name</label>
+          <input type="text" name="first_name" required value="{{ patient.first_name if editing else '' }}">
+        </div>
+        <div class="form-group required">
+          <label>Last name</label>
+          <input type="text" name="last_name" required value="{{ patient.last_name if editing else '' }}">
+        </div>
+        <div class="form-group required">
+          <label>Patient ID</label>
+          <input type="text" name="mrn" required value="{{ patient.mrn if editing else '' }}">
+          <div class="help">Your patient identifier — e.g. MRN from Brightree (unique within your organization).</div>
+        </div>
+        <div class="form-group">
+          <label>Date of birth</label>
+          <input type="date" name="dob" value="{{ patient.dob if editing else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="tel" name="phone" value="{{ patient.phone if editing else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" name="email" value="{{ patient.email if editing else '' }}">
+        </div>
+        <div class="form-group span-2">
+          <label>Address — line 1</label>
+          <input type="text" name="address_line1" value="{{ patient.address_line1 if editing else '' }}">
+        </div>
+        <div class="form-group span-2">
+          <label>Address — line 2</label>
+          <input type="text" name="address_line2" value="{{ patient.address_line2 if editing else '' }}">
+        </div>
+        <div class="form-group">
+          <label>City</label>
+          <input type="text" name="city" value="{{ patient.city if editing else '' }}">
+        </div>
+        <div class="form-group">
+          <label>State</label>
+          <input type="text" name="state" maxlength="2" value="{{ patient.state if editing else '' }}">
+        </div>
+        <div class="form-group">
+          <label>ZIP</label>
+          <input type="text" name="zip" maxlength="10" value="{{ patient.zip if editing else '' }}">
+        </div>
+        <div class="form-group">&nbsp;</div>
+        <div class="form-group">
+          <label>Preferred language</label>
+          <select name="preferred_language">
+            {% for lang, label in [('en-US','English (US)'),('es-US','Spanish (US)'),('zh','Chinese'),('other','Other')] %}
+              <option value="{{ lang }}" {% if editing and patient.preferred_language == lang %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group span-2">
+          <label>Diagnosis</label>
+          <input type="text" name="diagnosis" value="{{ patient.diagnosis if editing else '' }}"
+                 placeholder="e.g., ALS, COPD, Bronchiectasis">
+          <div class="help">Primary respiratory diagnosis driving the BiWaze prescription.</div>
+        </div>
+        <div class="form-group">
+          <label>Rx frequency (per day)</label>
+          <input type="number" name="rx_frequency_per_day" min="1" max="6" step="1"
+                 value="{{ patient.rx_frequency_per_day if editing else '' }}">
+          <div class="help">Prescribed therapies per day (drives adherence math).</div>
+        </div>
+        <div class="form-group span-2">
+          <label>Prescribed modalities</label>
+          <div class="check-group" style="flex-direction: row; gap: 20px;">
+            <label><input type="checkbox" name="rx_modalities" value="cough" {% if 'cough' in rx_mods %}checked{% endif %}> BiWaze Cough</label>
+            <label><input type="checkbox" name="rx_modalities" value="clear" {% if 'clear' in rx_mods %}checked{% endif %}> BiWaze Clear</label>
+          </div>
+        </div>
+        <div class="form-group span-2">
+          <label>Assigned clinician (internal)</label>
+          <select name="assigned_clinician_user_id">
+            <option value="">— none —</option>
+            {% for c in clinicians %}
+              <option value="{{ c.id }}" {% if editing and patient.assigned_clinician_user_id == c.id %}selected{% endif %}>{{ c.first_name }} {{ c.last_name }} ({{ c.role | replace('_',' ') | title }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Referring clinic</label>
+          <select name="referring_clinic_id" id="clinicSelect" onchange="filterProviders()">
+            <option value="">— none (self-referred) —</option>
+            {% for c in clinics or [] %}
+              <option value="{{ c.id }}" {% if editing and patient.referring_clinic_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="help">
+            {% if not clinics %}<a href="{{ url_for('referring_clinic_new') }}" target="_blank">Add a clinic →</a>{% endif %}
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Referring provider</label>
+          <select name="referring_provider_id" id="providerSelect">
+            <option value="">— none —</option>
+            {% for p in providers or [] %}
+              <option value="{{ p.id }}" data-clinic="{{ p.clinic_id }}"
+                {% if editing and patient.referring_provider_id == p.id %}selected{% endif %}>
+                {{ p.last_name }}, {{ p.first_name }} {{ p.credentials or '' }} — {{ p.clinic_name }}
+              </option>
+            {% endfor %}
+          </select>
+          <div class="help">Picking a provider auto-sets the clinic.</div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('patient_detail', patient_id=patient.id) if editing else url_for('patients') }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">{{ 'Save changes' if editing else 'Add patient' }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function filterProviders() {
+  var clinicId = document.getElementById('clinicSelect').value;
+  var providerSel = document.getElementById('providerSelect');
+  var selectedProvider = providerSel.value;
+  Array.from(providerSel.options).forEach(function(opt) {
+    if (!opt.value) { opt.hidden = false; return; }
+    var matches = !clinicId || opt.dataset.clinic === clinicId;
+    opt.hidden = !matches;
+    if (opt.value === selectedProvider && !matches) providerSel.value = '';
+  });
+}
+document.getElementById('providerSelect').addEventListener('change', function() {
+  var opt = this.options[this.selectedIndex];
+  var clinicId = opt.dataset.clinic;
+  if (clinicId) document.getElementById('clinicSelect').value = clinicId;
+});
+</script>
+{% endblock %}

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% from "_chip.html" import chip %}
+{% block title %}All patients · {{ parent_org.name }}{% endblock %}
+{% block body %}
+
+{% macro sort_link(key, label, current_sort, current_dir) %}
+  {% set next_dir = 'desc' if (current_sort == key and current_dir == 'asc') else 'asc' %}
+  {% set arrow = ('↑' if current_dir == 'asc' else '↓') if current_sort == key else '↕' %}
+  {% set cls = 'sort-active' if current_sort == key else '' %}
+  <a href="?status={{ status }}&location={{ filter_location }}&sort={{ key }}&dir={{ next_dir }}" class="sort-link {{ cls }}">{{ label }} {{ arrow }}</a>
+{% endmacro %}
+
+{# Stable location chip color: pick from a small brand-aligned palette by id. #}
+{% set loc_palette = ['#E3F5FC','#FDEFE2','#EFE7F7','#E6F4EA','#FEF6DB','#E8ECEF'] %}
+{% set loc_fg_palette = ['#2E8BAD','#C46212','#6D4CA6','#2E7D32','#8B6E00','#4A5058'] %}
+{% macro loc_chip(loc_id, loc_name) %}
+  {% set i = loc_id % (loc_palette | length) %}
+  <span class="loc-chip" style="background: {{ loc_palette[i] }}; color: {{ loc_fg_palette[i] }};">{{ loc_name }}</span>
+{% endmacro %}
+
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>All patients</h1>
+      <div class="subtitle">
+        {{ patients|length }} {{ status }} patient{% if patients|length != 1 %}s{% endif %}
+        {% if filter_location %}
+          {% for l in locations %}{% if l.id == filter_location %} · {{ l.name }}{% endif %}{% endfor %}
+        {% else %} across {{ locations|length }} locations{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <label class="small muted">Status</label>
+    <select class="filter-select" onchange="location = updateQuery({status: this.value})">
+      <option value="active"   {% if status == 'active'   %}selected{% endif %}>Active</option>
+      <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option>
+    </select>
+    <label class="small muted">Location</label>
+    <select class="filter-select" onchange="location = updateQuery({location: this.value})">
+      <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
+      {% for l in locations %}
+        <option value="{{ l.id }}" {% if filter_location == l.id %}selected{% endif %}>{{ l.name }}</option>
+      {% endfor %}
+    </select>
+    {% if filter_location or status != 'active' %}
+      <a href="{{ url_for('parent_patients') }}" class="filter-clear">Reset</a>
+    {% endif %}
+  </div>
+
+  {% if patients %}
+    <div class="card">
+      <div class="card-body no-pad">
+        <table class="table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>{{ sort_link('name', 'Patient', sort, direction) }}</th>
+              <th>{{ sort_link('location', 'Location', sort, direction) }}</th>
+              <th>{{ sort_link('disease', 'Disease', sort, direction) }}</th>
+              <th>BiWaze Cough
+                <div class="sort-sub">
+                  {{ sort_link('cough_adh', '%', sort, direction) }}
+                  <span class="sort-sep">·</span>
+                  {{ sort_link('alerts', '⚠', sort, direction) }}
+                </div>
+              </th>
+              <th>BiWaze Clear
+                <div class="sort-sub">
+                  {{ sort_link('clear_adh', '%', sort, direction) }}
+                  <span class="sort-sep">·</span>
+                  {{ sort_link('alerts', '⚠', sort, direction) }}
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in patients %}
+              {% set next_path = '/patients/' + (p.id | string) %}
+              {% set row_href = url_for('switch_location', org_id=p.loc_id, next=next_path) %}
+              <tr class="clickable" onclick="window.location='{{ row_href }}'">
+                <td><span class="dot {{ p.adherence_pct_30d | adherence_class }}"></span></td>
+                <td style="font-weight: 600;">
+                  {{ p.first_name }} {{ p.last_name }}
+                  {% if p.mrn %}<div class="mono muted small">ID: {{ p.mrn | replace('MRN-', '') }}</div>{% endif %}
+                </td>
+                <td>{{ loc_chip(p.loc_id, p.loc_name) }}</td>
+                <td class="small" style="max-width: 200px;">
+                  {% if p.diagnosis %}{{ p.diagnosis }}{% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td>
+                  {% if p.has_cough %}
+                    <a href="#" class="chip-link"
+                       onclick="event.stopPropagation(); openChipPopover(event, {{ p.id }}, 'cough'); return false;">
+                      {{ chip(p.cough_pct, p.critical_alerts, p.warning_alerts, p.worst_severity) }}
+                    </a>
+                  {% else %}<span class="muted small">—</span>{% endif %}
+                </td>
+                <td>
+                  {% if p.has_clear %}
+                    <a href="#" class="chip-link"
+                       onclick="event.stopPropagation(); openChipPopover(event, {{ p.id }}, 'clear'); return false;">
+                      {{ chip(p.clear_pct, p.critical_alerts, p.warning_alerts, p.worst_severity) }}
+                    </a>
+                  {% else %}<span class="muted small">—</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="empty-state"><p>No {{ status }} patients match the current filter.</p></div>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+function updateQuery(overrides) {
+  const u = new URL(window.location.href);
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === null || v === '' || v === '0' || v === 'all') u.searchParams.delete(k);
+    else u.searchParams.set(k, v);
+  }
+  return u.pathname + (u.search || '');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Tasks · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Tasks</h1>
+    </div>
+    <div class="actions">
+      <a href="{{ url_for('task_new') }}" class="btn btn-primary">+ New task</a>
+    </div>
+  </div>
+
+  {% if rollup %}
+    {# Location chip palette — matches the other rollup screens. #}
+    {% set loc_palette = ['#E3F5FC','#FDEFE2','#EFE7F7','#E6F4EA','#FEF6DB','#E8ECEF'] %}
+    {% set loc_fg_palette = ['#2E8BAD','#C46212','#6D4CA6','#2E7D32','#8B6E00','#4A5058'] %}
+  {% endif %}
+
+  <div class="filter-bar">
+    <label class="small muted">View</label>
+    <select class="filter-select" onchange="location = updateQuery({view: this.value})">
+      <option value="my"               {% if view == 'my'               %}selected{% endif %}>My tasks ({{ counts.my or 0 }})</option>
+      <option value="open"             {% if view == 'open'             %}selected{% endif %}>All open ({{ counts.open or 0 }})</option>
+      <option value="overdue"          {% if view == 'overdue'          %}selected{% endif %}>Overdue ({{ counts.overdue or 0 }})</option>
+      <option value="pending_external" {% if view == 'pending_external' %}selected{% endif %}>Pending external ({{ counts.pending_external or 0 }})</option>
+      <option value="completed"        {% if view == 'completed'        %}selected{% endif %}>Completed ({{ counts.completed or 0 }})</option>
+      <option value="all"              {% if view == 'all'              %}selected{% endif %}>All</option>
+    </select>
+    {% if rollup %}
+      <label class="small muted">Location</label>
+      <select class="filter-select" onchange="location = updateQuery({location: this.value})">
+        <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
+        {% for l in locations %}
+          <option value="{{ l.id }}" {% if filter_location == l.id %}selected{% endif %}>{{ l.name }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+  </div>
+
+  {% if view == 'my' and assigned_alerts %}
+    <div class="small muted" style="margin: 10px 0 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">
+      Alerts on my patients
+    </div>
+  {% endif %}
+
+  {% if view == 'my' and assigned_alerts %}
+    <div class="card">
+      <div class="card-header">
+        <a href="{{ url_for('alerts', show='active') }}" class="card-title-link">
+          <h2>Alerts on my patients <span class="tab-count">{{ assigned_alerts | length }}</span></h2>
+        </a>
+        <a href="{{ url_for('alerts', show='active') }}" class="btn btn-sm btn-link">All alerts →</a>
+      </div>
+      <div class="card-body no-pad">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Patient</th>
+              <th>Alert</th>
+              <th>Triggered</th>
+              <th>Task?</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in assigned_alerts %}
+              {% set row_href = url_for('task_detail', task_id=a.task_id) if a.task_id else url_for('patient_detail', patient_id=a.patient_id) %}
+              <tr class="clickable" onclick="window.location='{{ row_href }}'">
+                <td><span class="badge severity-{{ a.severity }}">{{ a.severity | upper }}</span></td>
+                <td class="small">
+                  <strong>{{ a.pt_first }} {{ a.pt_last }}</strong>
+                  {% if a.pt_mrn %}<div class="mono muted small">ID: {{ a.pt_mrn | replace('MRN-', '') }}</div>{% endif %}
+                </td>
+                <td class="small" style="max-width: 360px;">
+                  <div>{{ a.message }}</div>
+                  {% if a.detail %}<div class="small muted">{{ a.detail }}</div>{% endif %}
+                </td>
+                <td class="small muted">
+                  {{ a.triggered_at | dt }}
+                  {% if a.acknowledged_at %}<div class="small status-green">✓ Acked</div>{% endif %}
+                </td>
+                <td class="small">
+                  {% if a.task_id %}
+                    <a href="{{ url_for('task_detail', task_id=a.task_id) }}" onclick="event.stopPropagation();">Task #{{ a.task_id }}</a>
+                  {% else %}
+                    <form method="POST" action="{{ url_for('alert_create_task', alert_id=a.id) }}" style="display:inline;" onclick="event.stopPropagation();">
+                      <input type="hidden" name="assigned_to_user_id" value="{{ current_user.id }}">
+                      <button type="submit" class="btn btn-sm">+ Create task</button>
+                    </form>
+                  {% endif %}
+                </td>
+                <td>
+                  <a href="{{ url_for('patient_detail', patient_id=a.patient_id) }}" class="btn btn-sm" onclick="event.stopPropagation();">Open patient ▸</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if view == 'my' and assigned_alerts %}
+    <div class="small muted" style="margin: 18px 0 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">
+      Tasks
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-body no-pad">
+      {% if tasks %}
+      {% set _prio_rank = {'high': 1, 'normal': 2, 'low': 3} %}
+      {% set _status_rank = {'todo': 1, 'in_progress': 2, 'pending_external': 3, 'completed': 4, 'cancelled': 5} %}
+      <form method="POST" action="{{ url_for('task_bulk') }}" id="taskBulkForm">
+      <div class="bulk-bar" id="taskBulkBar">
+        <label class="bulk-select-all">
+          <input type="checkbox" id="taskSelectAll">
+          Select all
+        </label>
+        <span class="bulk-count" id="taskBulkCount">0 selected</span>
+        <div class="bulk-actions">
+          <select name="assigned_to_user_id" class="filter-select" id="taskBulkAssignee">
+            <option value="">Reassign to…</option>
+            {% for u in bulk_users or [] %}
+              <option value="{{ u.id }}">{{ u.last_name }}, {{ u.first_name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" name="action" value="reassign" class="btn btn-sm" disabled>Reassign</button>
+          <button type="submit" name="action" value="complete" class="btn btn-sm btn-primary" disabled>Complete</button>
+        </div>
+      </div>
+      <table class="table sortable">
+        <thead>
+          <tr>
+            <th style="width: 32px;"></th>
+            <th data-sort-key="status">Status</th>
+            <th data-sort-key="title">Task</th>
+            <th data-sort-key="patient">Patient</th>
+            {% if rollup %}<th data-sort-key="location">Location</th>{% endif %}
+            <th data-sort-key="alert">From alert</th>
+            <th data-sort-key="assignee">Assigned to</th>
+            <th data-sort-key="due">Due</th>
+            <th data-sort-key="priority">Priority</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tasks %}
+            {% set is_overdue = t.due_at and t.due_at < now_iso and t.status not in ('completed','cancelled') %}
+            {% set _sev_rank = {'critical': 1, 'warning': 2, 'info': 3} %}
+            <tr class="clickable {{ 'row-overdue' if is_overdue else '' }}"
+                data-sort-status="{{ _status_rank.get(t.status, 9) }}"
+                data-sort-title="{{ (t.title or '') | lower }}"
+                data-sort-patient="{{ ((t.pt_last or '') ~ ' ' ~ (t.pt_first or '')) | trim | lower }}"
+                data-sort-alert="{{ _sev_rank.get(t.alert_severity, 9) if t.alert_id else 9 }}"
+                data-sort-assignee="{{ ((t.assignee_last or '') ~ ' ' ~ (t.assignee_first or '')) | trim | lower }}"
+                data-sort-due="{{ t.due_at or '' }}"
+                data-sort-priority="{{ _prio_rank.get(t.priority, 9) }}"
+                {% if rollup %}data-sort-location="{{ (t.loc_name or '') | lower }}"{% endif %}
+                onclick="window.location='{{ url_for('task_detail', task_id=t.id) }}'">
+              <td onclick="event.stopPropagation();">
+                <input type="checkbox" name="ids" value="{{ t.id }}" class="task-select">
+              </td>
+              <td><span class="badge task-status-{{ t.status }}">{{ status_labels[t.status] }}</span></td>
+              <td style="font-weight: 600; max-width: 360px;">
+                {% if t.inbox_kind == 'message' %}
+                  <span class="badge inbox-kind-badge inbox-kind-message" style="margin-right: 6px;">Message</span>
+                {% elif t.inbox_kind == 'mood' %}
+                  <span class="badge inbox-kind-badge inbox-kind-mood" style="margin-right: 6px;">Mood</span>
+                {% elif t.inbox_kind == 'survey' %}
+                  <span class="badge inbox-kind-badge inbox-kind-survey" style="margin-right: 6px;">Survey</span>
+                {% endif %}
+                {{ t.title }}
+                {% if t.description %}<div class="small muted" style="font-weight: 400;">{{ t.description[:110] }}{% if t.description|length > 110 %}…{% endif %}</div>{% endif %}
+              </td>
+              <td class="small">
+                {% if t.pt_last %}
+                  {{ t.pt_first }} {{ t.pt_last }}
+                  {% if t.pt_mrn %}<div class="mono muted">ID: {{ t.pt_mrn | replace('MRN-', '') }}</div>{% endif %}
+                {% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              {% if rollup %}
+                {% set i = t.loc_id % (loc_palette | length) %}
+                <td><span class="loc-chip" style="background: {{ loc_palette[i] }}; color: {{ loc_fg_palette[i] }};">{{ t.loc_name }}</span></td>
+              {% endif %}
+              <td class="small">
+                {% if t.alert_id %}
+                  <span class="badge severity-{{ t.alert_severity }}">{{ t.alert_severity | upper }}</span>
+                  <div class="small muted" style="max-width: 200px;">{{ t.alert_message[:70] }}{% if t.alert_message and t.alert_message|length > 70 %}…{% endif %}</div>
+                {% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              <td class="small">{% if t.assignee_first %}{{ t.assignee_first }} {{ t.assignee_last or '' }}{% else %}<span class="muted">Unassigned</span>{% endif %}</td>
+              <td class="small {{ 'status-red' if is_overdue else '' }}">
+                {% if t.due_at %}
+                  {{ t.due_at | dt }}
+                  {% if is_overdue %}<div class="small" style="color: var(--ac-red); font-weight: 600;">OVERDUE</div>{% endif %}
+                {% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              <td><span class="badge priority-{{ t.priority }}">{{ t.priority | title }}</span></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </form>
+      <script>
+      (function() {
+        const form = document.getElementById('taskBulkForm');
+        if (!form) return;
+        const all = document.getElementById('taskSelectAll');
+        const boxes = form.querySelectorAll('input.task-select');
+        const count = document.getElementById('taskBulkCount');
+        const bar = document.getElementById('taskBulkBar');
+        const assigneeSel = document.getElementById('taskBulkAssignee');
+        const btnReassign = form.querySelector('button[value="reassign"]');
+        const btnComplete = form.querySelector('button[value="complete"]');
+        function update() {
+          const n = form.querySelectorAll('input.task-select:checked').length;
+          count.textContent = n + ' selected';
+          btnComplete.disabled = (n === 0);
+          btnReassign.disabled = (n === 0 || !assigneeSel.value);
+          bar.classList.toggle('is-active', n > 0);
+        }
+        all.addEventListener('change', () => { boxes.forEach(b => b.checked = all.checked); update(); });
+        boxes.forEach(b => b.addEventListener('change', update));
+        assigneeSel.addEventListener('change', update);
+        update();
+      })();
+      </script>
+      {% else %}
+        <div class="empty-state"><p>No tasks in this view.</p></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+function updateQuery(overrides) {
+  const u = new URL(window.location.href);
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === null || v === '' || v === '0' || v === 'all') u.searchParams.delete(k);
+    else u.searchParams.set(k, v);
+  }
+  return u.pathname + (u.search || '');
+}
+</script>
+{% endblock %}

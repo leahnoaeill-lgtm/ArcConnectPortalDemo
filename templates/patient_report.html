@@ -1,0 +1,372 @@
+{# Therapy Compliance Report — printable, modeled on Summary.pdf format.
+   Uses @media print so "Save as PDF" from the browser gives a clean output. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Therapy Compliance Report · {{ patient.first_name }} {{ patient.last_name }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    /* ── Shared (screen + print) ─────────────────────────────── */
+    :root {
+      --pdf-border: #B3B8BD;
+      --pdf-label: #4A5058;
+      --pdf-text:  #1F2328;
+      --pdf-muted: #6C737B;
+      --pdf-cyan:  #43C1ED;
+      --pdf-red:   #E8888B;
+      --pdf-blue:  #5EB3D6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Helvetica Neue', Helvetica, 'Roboto', Arial, sans-serif;
+      color: var(--pdf-text);
+      margin: 0;
+      background: #E5E8EB;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .report-toolbar {
+      position: sticky; top: 0;
+      background: white; border-bottom: 1px solid #D0D4D8;
+      padding: 12px 24px;
+      display: flex; justify-content: space-between; align-items: center;
+      z-index: 10;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .report-toolbar h1 {
+      font-size: 14px; font-weight: 500; margin: 0;
+      color: #3D464D;
+    }
+    .toolbar-actions { display: flex; gap: 8px; }
+    .tb-btn {
+      padding: 7px 14px; border-radius: 999px;
+      border: 1px solid #D0D4D8; background: white;
+      font-size: 12px; font-weight: 500; color: #3D464D;
+      cursor: pointer; text-decoration: none;
+      transition: background 0.15s;
+    }
+    .tb-btn:hover { background: #EAECEE; }
+    .tb-btn-primary {
+      background: var(--pdf-cyan); color: white; border-color: var(--pdf-cyan);
+    }
+    .tb-btn-primary:hover { background: #2E8BAD; border-color: #2E8BAD; }
+
+    /* ── The printable sheet ─────────────────────────────────── */
+    .page {
+      width: 8.5in;
+      min-height: 11in;
+      margin: 24px auto;
+      padding: 0.5in 0.5in 0.7in;
+      background: white;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      position: relative;
+      page-break-after: always;
+    }
+    .page:last-child { page-break-after: auto; }
+
+    .page-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 18px;
+    }
+    .page-header h1 {
+      font-size: 18px; font-weight: 500;
+      margin: 0 0 2px; color: var(--pdf-text);
+    }
+    .page-header .range {
+      font-size: 11px; color: var(--pdf-muted); margin-top: 2px;
+    }
+    .page-header .brand-mark {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .brand-mark img { height: 34px; }
+    .brand-mark .brand-text { font-size: 10px; color: var(--pdf-muted); }
+
+    /* Stats table: 4 columns, 5 rows (2 fact-pairs per row) */
+    .stats-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 14px;
+    }
+    .stats-table td {
+      border: 1px solid var(--pdf-border);
+      padding: 8px 12px;
+      font-size: 11px;
+      vertical-align: top;
+    }
+    .stats-table .stat-label {
+      width: 22%;
+      color: var(--pdf-label);
+      background: #FAFBFC;
+    }
+    .stats-table .stat-value {
+      width: 28%;
+      font-weight: 500;
+      color: var(--pdf-text);
+    }
+    .sd-footnote {
+      font-size: 9px; color: var(--pdf-muted);
+      margin-bottom: 20px;
+      font-style: italic;
+    }
+
+    /* Therapy Details chart */
+    .chart-title {
+      font-size: 13px; font-weight: 500; color: var(--pdf-text);
+      margin: 18px 0 8px;
+    }
+    .chart-box {
+      border: 1px solid var(--pdf-border);
+      border-radius: 2px;
+      padding: 16px;
+      min-height: 320px;
+      position: relative;
+    }
+    .chart-legend {
+      text-align: center;
+      font-size: 9px;
+      color: var(--pdf-text);
+      margin-bottom: 10px;
+      display: flex; justify-content: center; gap: 16px; align-items: center;
+    }
+    .chart-legend .sw {
+      display: inline-block; width: 10px; height: 10px;
+      margin-right: 4px; vertical-align: -1px;
+    }
+    .chart-legend .sw-pep { background: var(--pdf-red); }
+    .chart-legend .sw-osc { background: var(--pdf-blue); }
+    .chart-legend .sw-neb { background: #9EB2BD; }
+    .chart-legend .line-pep { color: var(--pdf-red); }
+    .chart-legend .line-osc { color: var(--pdf-blue); }
+
+    .chart-svg { width: 100%; height: 280px; display: block; }
+
+    .page-footer {
+      position: absolute; bottom: 0.35in; left: 0.5in; right: 0.5in;
+      display: flex; justify-content: space-between;
+      font-size: 9px; color: var(--pdf-muted);
+      padding-top: 8px; border-top: 1px solid #E5E8EB;
+    }
+
+    /* ── PRINT MODE ──────────────────────────────────────────── */
+    @media print {
+      body { background: white; }
+      .report-toolbar { display: none; }
+      .page {
+        width: 100%;
+        min-height: 0;
+        margin: 0;
+        padding: 0.4in 0.5in 0.6in;
+        box-shadow: none;
+        page-break-after: always;
+      }
+      .page:last-child { page-break-after: auto; }
+      @page { size: letter; margin: 0.3in; }
+    }
+  </style>
+</head>
+<body>
+
+{# ── Macro for a single-session SVG chart (matches Summary.pdf layout) ── #}
+{% macro render_session_chart(sess, modality, avg_pressure) -%}
+  {% set duration_min = (sess.duration_seconds or 0) / 60.0 %}
+  {% set bar_a = duration_min * (0.45 if modality == 'cough' else 0.55) %}
+  {% set bar_b = duration_min * (0.45 if modality == 'cough' else 0.40) %}
+  {% set bar_c = duration_min * (0.10 if modality == 'cough' else 0.05) %}
+  {% set left_max = 8 %}
+  {% set right_max = 40 %}
+  {% set plot_top = 20 %}
+  {% set plot_bottom = 220 %}
+  {% set plot_h = plot_bottom - plot_top %}
+  {% set bar_width = 18 %}
+  {% set cx = 360 %}
+  <svg class="chart-svg" viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg" role="img">
+    {% for i in range(9) %}
+      {% set y = plot_bottom - (i / 8.0) * plot_h %}
+      <line x1="40" y1="{{ y }}" x2="680" y2="{{ y }}" stroke="#E5E8EB" stroke-width="0.5"{% if i > 0 %} stroke-dasharray="2 3"{% endif %}/>
+      <text x="34" y="{{ y + 3 }}" text-anchor="end" font-size="9" fill="#4A5058">{{ i }}</text>
+    {% endfor %}
+    {% for j in range(9) %}
+      {% set y = plot_bottom - (j / 8.0) * plot_h %}
+      <text x="686" y="{{ y + 3 }}" text-anchor="start" font-size="9" fill="#4A5058">{{ j * 5 }}</text>
+    {% endfor %}
+    <text x="12" y="{{ (plot_top + plot_bottom) / 2 }}" transform="rotate(-90 12 {{ (plot_top + plot_bottom) / 2 }})" text-anchor="middle" font-size="9" fill="#4A5058">Duration (Minutes)</text>
+    <text x="710" y="{{ (plot_top + plot_bottom) / 2 }}" transform="rotate(90 710 {{ (plot_top + plot_bottom) / 2 }})" text-anchor="middle" font-size="9" fill="#4A5058">Pressure(cmH2o)</text>
+    {% set yA = plot_bottom - (bar_a / left_max) * plot_h %}
+    {% set yB = plot_bottom - (bar_b / left_max) * plot_h %}
+    {% set yC = plot_bottom - (bar_c / left_max) * plot_h %}
+    <rect x="{{ cx - bar_width - 10 }}" y="{{ yA }}" width="{{ bar_width }}" height="{{ plot_bottom - yA }}" fill="#E8888B"/>
+    <rect x="{{ cx + 10 }}"               y="{{ yB }}" width="{{ bar_width }}" height="{{ plot_bottom - yB }}" fill="#5EB3D6"/>
+    <rect x="{{ cx + bar_width + 30 }}"   y="{{ yC }}" width="{{ bar_width }}" height="{{ plot_bottom - yC }}" fill="#9EB2BD"/>
+    {% set y_avg_pep = plot_bottom - (avg_pressure / right_max) * plot_h %}
+    {% set y_avg_osc = plot_bottom - ((avg_pressure * 0.92) / right_max) * plot_h %}
+    <line x1="40" y1="{{ y_avg_pep }}" x2="680" y2="{{ y_avg_pep }}" stroke="#E8888B" stroke-width="1.5" stroke-dasharray="5 3"/>
+    <line x1="40" y1="{{ y_avg_osc }}" x2="680" y2="{{ y_avg_osc }}" stroke="#5EB3D6" stroke-width="1.5" stroke-dasharray="5 3"/>
+    <line x1="40" y1="{{ plot_bottom }}" x2="680" y2="{{ plot_bottom }}" stroke="#4A5058" stroke-width="1"/>
+    <text x="{{ cx + bar_width / 2 }}" y="{{ plot_bottom + 20 }}" text-anchor="middle" font-size="11" font-weight="600" fill="#1F2328">{{ sess.started_at | time_only }}</text>
+  </svg>
+{%- endmacro %}
+
+<div class="report-toolbar">
+  <h1>Therapy Compliance Report — {{ patient.first_name }} {{ patient.last_name }}</h1>
+  <div class="toolbar-actions">
+    <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="tb-btn">← Back</a>
+    <button type="button" class="tb-btn tb-btn-primary" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+</div>
+
+{% set gen_stamp = generated_at.strftime('%b %d, %Y %I:%M').replace(' 0', ' ') + generated_at.strftime(' %p') %}
+{% set range_label = start_date.strftime('%b %d, %Y') ~ ' - ' ~ end_date.strftime('%b %d, %Y') %}
+
+{# Compute total page count for footer paging #}
+{% set ns = namespace(total=0) %}
+{% for r in reports %}
+  {# 1 stats page + N therapy-detail pages (one per session) #}
+  {% set ns.total = ns.total + 1 + r.stats.sessions | length %}
+{% endfor %}
+{% set total_pages = ns.total %}
+{% set page_counter = namespace(n=0) %}
+
+{% for r in reports %}
+  {% set page_counter.n = page_counter.n + 1 %}
+  {# ── Page 1: Stats summary ── #}
+  <div class="page">
+    <div class="page-header">
+      <div>
+        <h1>Therapy Compliance Report</h1>
+        <div class="range">{{ range_label }}</div>
+      </div>
+      <div class="brand-mark">
+        <img src="{{ url_for('static', filename='img/arc-connect-logo.png') }}" alt="Arc Connect">
+      </div>
+    </div>
+
+    <table class="stats-table">
+      <tr>
+        <td class="stat-label">System Name</td>
+        <td class="stat-value">BiWaze® {{ 'Cough' if r.modality == 'cough' else 'Clear' }}</td>
+        <td class="stat-label">Serial Number</td>
+        <td class="stat-value">{{ r.device.serial_number if r.device else '—' }}</td>
+      </tr>
+      <tr>
+        <td class="stat-label">Average Therapy Phases</td>
+        <td class="stat-value">{{ r.stats.avg_phases }}</td>
+        <td class="stat-label">Average {{ 'Insp' if r.modality == 'cough' else 'Osc' }} Pressure (cmH2o)</td>
+        <td class="stat-value">{{ '%.2f' % r.stats.avg_pressure }}</td>
+      </tr>
+      <tr>
+        <td class="stat-label">Average Therapy Sessions/Day (*SD)</td>
+        <td class="stat-value">{{ '%.4f' % r.stats.avg_per_day }}</td>
+        <td class="stat-label">*SD of {{ 'Insp' if r.modality == 'cough' else 'Osc' }} Pressure (cmH2o)</td>
+        <td class="stat-value">{{ '%.2f' % r.stats.sd_pressure }}</td>
+      </tr>
+      <tr>
+        <td class="stat-label">Total Therapy Sessions</td>
+        <td class="stat-value">{{ r.stats.total_sessions }}</td>
+        <td class="stat-label">Average {{ 'Exp' if r.modality == 'cough' else 'Pep' }} Pressure (cmH2o)</td>
+        <td class="stat-value">{{ '%.2f' % (r.stats.avg_pressure * 0.92) }}</td>
+      </tr>
+      <tr>
+        <td class="stat-label">Number of Days With No Therapy</td>
+        <td class="stat-value">{{ r.stats.days_no_therapy }}</td>
+        <td class="stat-label">*SD of {{ 'Exp' if r.modality == 'cough' else 'Pep' }} Pressure (cmH2o)</td>
+        <td class="stat-value">{{ '%.2f' % (r.stats.sd_pressure * 0.94) }}</td>
+      </tr>
+    </table>
+
+    <div class="sd-footnote">*SD stands for Standard Deviation, which represents the variation from the mean value.</div>
+
+    {# First session preview appears below the stats on the summary page,
+       matching the layout of the reference PDF. #}
+    {% if r.stats.sessions %}
+      {% set first = r.stats.sessions[0] %}
+      {% set first_date = first.started_at[:10] %}
+      {% set first_dt = first.started_at %}
+      <div class="chart-title">Therapy Details ({{ first_date | date_only }})</div>
+      <div class="chart-box">
+        <div class="chart-legend">
+          <span><span class="sw sw-pep"></span>{{ 'INSP' if r.modality == 'cough' else 'PEP' }}</span>
+          <span><span class="sw sw-osc"></span>{{ 'EXP' if r.modality == 'cough' else 'OSC' }}</span>
+          <span><span class="sw sw-neb"></span>{{ 'PAUSE' if r.modality == 'cough' else 'NEB' }}</span>
+          <span class="line-pep">— Avg {{ 'Insp' if r.modality == 'cough' else 'PEP' }} Pressure</span>
+          <span class="line-osc">— Avg {{ 'Exp' if r.modality == 'cough' else 'OSC' }} Pressure</span>
+        </div>
+        {{ render_session_chart(first, r.modality, r.stats.avg_pressure) }}
+      </div>
+    {% endif %}
+
+    <div class="page-footer">
+      <span>Confidential Report Generated on {{ gen_stamp }}</span>
+      <span>{{ page_counter.n }} of {{ total_pages }}</span>
+    </div>
+  </div>
+
+  {# ── Remaining sessions: one per page after the summary ── #}
+  {% for sess in r.stats.sessions[1:] %}
+    {% set page_counter.n = page_counter.n + 1 %}
+    <div class="page">
+      <div class="page-header">
+        <div>
+          <h1>Therapy Compliance Report</h1>
+          <div class="range">{{ range_label }}</div>
+        </div>
+        <div class="brand-mark">
+          <img src="{{ url_for('static', filename='img/arc-connect-logo.png') }}" alt="Arc Connect">
+        </div>
+      </div>
+
+      <div class="chart-title">Therapy Details ({{ sess.started_at[:10] | date_only }})</div>
+      <div class="chart-box">
+        <div class="chart-legend">
+          <span><span class="sw sw-pep"></span>{{ 'INSP' if r.modality == 'cough' else 'PEP' }}</span>
+          <span><span class="sw sw-osc"></span>{{ 'EXP' if r.modality == 'cough' else 'OSC' }}</span>
+          <span><span class="sw sw-neb"></span>{{ 'PAUSE' if r.modality == 'cough' else 'NEB' }}</span>
+          <span class="line-pep">— Avg {{ 'Insp' if r.modality == 'cough' else 'PEP' }} Pressure</span>
+          <span class="line-osc">— Avg {{ 'Exp' if r.modality == 'cough' else 'OSC' }} Pressure</span>
+        </div>
+        {{ render_session_chart(sess, r.modality, r.stats.avg_pressure) }}
+      </div>
+
+      <div class="page-footer">
+        <span>Confidential Report Generated on {{ gen_stamp }}</span>
+        <span>{{ page_counter.n }} of {{ total_pages }}</span>
+      </div>
+    </div>
+  {% endfor %}
+
+  {% if not r.stats.sessions %}
+    <div class="page">
+      <div class="page-header">
+        <div>
+          <h1>Therapy Compliance Report</h1>
+          <div class="range">{{ range_label }}</div>
+        </div>
+        <div class="brand-mark">
+          <img src="{{ url_for('static', filename='img/arc-connect-logo.png') }}" alt="Arc Connect">
+        </div>
+      </div>
+      <table class="stats-table">
+        <tr>
+          <td class="stat-label">System Name</td>
+          <td class="stat-value">BiWaze® {{ 'Cough' if r.modality == 'cough' else 'Clear' }}</td>
+          <td class="stat-label">Serial Number</td>
+          <td class="stat-value">{{ r.device.serial_number if r.device else '—' }}</td>
+        </tr>
+      </table>
+      <div style="text-align: center; padding: 60px 0; color: var(--pdf-muted);">
+        No therapy sessions recorded in this date range.
+      </div>
+      <div class="page-footer">
+        <span>Confidential Report Generated on {{ gen_stamp }}</span>
+        <span>{{ page_counter.n }} of {{ total_pages }}</span>
+      </div>
+    </div>
+  {% endif %}
+{% endfor %}
+
+<script>
+// Auto-focus the print button but don't auto-print on load (user may want
+// to pick a date range first). They click "Print / Save as PDF" to trigger.
+</script>
+</body>
+</html>

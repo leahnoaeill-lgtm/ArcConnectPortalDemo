@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}My profile · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>My profile</h1>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Contact</h2></div>
+    <div class="card-body">
+      <div class="form-group">
+        <label>Name</label>
+        <div>{{ user.first_name }} {{ user.last_name }}</div>
+      </div>
+      <div class="form-group mt-2">
+        <label>Email</label>
+        <div class="mono">{{ user.email }}</div>
+        <div class="help">Login + email notifications. Contact an admin to change this.</div>
+      </div>
+      <div class="form-group mt-2">
+        <label>Role</label>
+        <div><span class="badge role-{{ user.role }}">{{ user.role | replace('_',' ') | title }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <form method="POST">
+    <div class="card">
+      <div class="card-header"><h2>Notifications</h2></div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-group span-2">
+            <label>Phone</label>
+            <input type="tel" name="phone" value="{{ user.phone or '' }}">
+          </div>
+          <div class="form-group span-2">
+            <label>Preferred notification channel</label>
+            <div class="check-group">
+              {% for key, label in [('email','✉ Email only'),('sms','📱 Text only'),('both','✉ Email + 📱 Text'),('none','🔕 None (in-app only)')] %}
+                <label>
+                  <input type="radio" name="notify_channel" value="{{ key }}" {% if user.notify_channel == key %}checked{% endif %}>
+                  {{ label }}
+                </label>
+              {% endfor %}
+            </div>
+            <div class="help">Used when a task is assigned to you or reassigned.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save preferences</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

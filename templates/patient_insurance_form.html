@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Insurance · {{ patient.first_name }} {{ patient.last_name }}{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="btn btn-sm">← Back to patient</a>
+      <h1 class="mt-2">{{ 'Update' if insurance else 'Add' }} insurance — {{ patient.first_name }} {{ patient.last_name }}</h1>
+      <div class="subtitle">Patient ID {{ patient.mrn }}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="POST" class="card-body">
+      <div class="form-grid">
+        <div class="form-group required span-2">
+          <label>Payer name</label>
+          <input type="text" name="payer_name" required
+                 value="{{ insurance.payer_name if insurance else '' }}"
+                 placeholder="e.g. Medicare, UnitedHealthcare, Anthem Blue Cross">
+        </div>
+        <div class="form-group">
+          <label>Plan type</label>
+          <select name="plan_type">
+            {% for pt in ['Medicare Part B','Medicare Part A','Medicare Advantage','Medicaid','Commercial PPO','Commercial HMO','Tricare','Military','Other'] %}
+              <option value="{{ pt }}" {% if insurance and insurance.plan_type == pt %}selected{% endif %}>{{ pt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Coverage type</label>
+          <select name="coverage_type">
+            <option value="primary"   {% if insurance and insurance.coverage_type == 'primary' %}selected{% endif %}>Primary</option>
+            <option value="secondary" {% if insurance and insurance.coverage_type == 'secondary' %}selected{% endif %}>Secondary</option>
+            <option value="tertiary"  {% if insurance and insurance.coverage_type == 'tertiary' %}selected{% endif %}>Tertiary</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Member ID / policy number</label>
+          <input type="text" name="member_id" value="{{ insurance.member_id if insurance else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Group number</label>
+          <input type="text" name="group_number" value="{{ insurance.group_number if insurance else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Effective date</label>
+          <input type="date" name="effective_date" value="{{ insurance.effective_date if insurance else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Next review / re-auth date</label>
+          <input type="date" name="next_review_date" value="{{ insurance.next_review_date if insurance else '' }}">
+        </div>
+
+        {# ── Per-device approvals — payers approve each BiWaze device separately ── #}
+        {% if 'cough' in rx_modalities or (insurance and insurance.cough_approval_date) %}
+          <div class="form-group span-2" style="background: #FEF1E7; padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--biwaze-cough);">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--biwaze-cough-dark);">
+              BiWaze Cough approval
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Cough approval date</label>
+            <input type="date" name="cough_approval_date" value="{{ insurance.cough_approval_date if insurance else '' }}">
+          </div>
+          <div class="form-group">
+            <label>Cough auth / reference #</label>
+            <input type="text" name="cough_auth_number" value="{{ insurance.cough_auth_number if insurance else '' }}">
+          </div>
+        {% endif %}
+
+        {% if 'clear' in rx_modalities or (insurance and insurance.clear_approval_date) %}
+          <div class="form-group span-2" style="background: var(--ac-cyan-light); padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--ac-cyan);">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ac-cyan-dark);">
+              BiWaze Clear approval
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Clear approval date</label>
+            <input type="date" name="clear_approval_date" value="{{ insurance.clear_approval_date if insurance else '' }}">
+          </div>
+          <div class="form-group">
+            <label>Clear auth / reference #</label>
+            <input type="text" name="clear_auth_number" value="{{ insurance.clear_auth_number if insurance else '' }}">
+          </div>
+        {% endif %}
+        <div class="form-group span-2">
+          <label>Notes</label>
+          <textarea name="notes" rows="2">{{ insurance.notes if insurance else '' }}</textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">Save insurance</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

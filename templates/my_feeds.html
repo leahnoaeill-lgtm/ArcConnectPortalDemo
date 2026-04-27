@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}My feeds · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>My feed subscriptions</h1>
+      <div class="subtitle">
+        Pick the feeds you want shown in the floating news widget.
+        Choices are personal — they don't affect other staff. {{ total_enabled }} feed{{ 's' if total_enabled != 1 }} currently enabled.
+      </div>
+    </div>
+  </div>
+
+  <form method="POST">
+    {% set cat_icons = {'Work': '🩺', 'News': '📰', 'Weather': '🌤', 'Sports': '⚽',
+                        'Lifestyle': '🍳', 'Tech': '💻'} %}
+    {% set cat_descriptions = {
+      'Work': 'Regulatory, clinical, and HME industry sources. Recommended to keep on.',
+      'News': 'General news headlines.',
+      'Weather': 'Regional alerts from NOAA.',
+      'Sports': 'Headlines from ESPN.',
+      'Lifestyle': 'Food, hobbies, breaks.'} %}
+
+    {% for category, feeds in feeds_by_cat.items() %}
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2>{{ cat_icons.get(category, '') }} {{ category }}</h2>
+            {% if cat_descriptions.get(category) %}
+              <div class="small muted">{{ cat_descriptions[category] }}</div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="card-body">
+          {% for f in feeds %}
+            <label class="feed-row">
+              <input type="checkbox" name="feeds" value="{{ f.key }}"
+                     {% if f.enabled %}checked{% endif %}>
+              <div class="feed-row-body">
+                <div class="feed-row-name">
+                  {{ f.icon }} <strong>{{ f.name }}</strong>
+                  {% if f.default_on %}<span class="badge status-active" style="margin-left:6px;">Default</span>{% endif %}
+                </div>
+                <div class="feed-row-url mono muted small">{{ f.url }}</div>
+              </div>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save preferences</button>
+    </div>
+  </form>
+</div>
+
+<style>
+.feed-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ac-border);
+  cursor: pointer;
+}
+.feed-row:last-child { border-bottom: none; }
+.feed-row input[type="checkbox"] {
+  margin-top: 4px;
+  accent-color: var(--ac-cyan);
+  width: 18px; height: 18px;
+}
+.feed-row-body { flex: 1; }
+.feed-row-name { font-size: 14px; }
+.feed-row-url { margin-top: 2px; word-break: break-all; }
+.feed-row:hover { background: var(--ac-bg); }
+</style>
+{% endblock %}

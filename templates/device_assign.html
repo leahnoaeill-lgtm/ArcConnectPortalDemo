@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Reassign' if current_assignment else 'Assign' }} device · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('device_detail', device_id=device.id) }}" class="btn btn-sm">← Back</a>
+      <h1 class="mt-2">{{ 'Reassign' if current_assignment else 'Assign' }} device <span class="mono">{{ device.serial_number }}</span></h1>
+      <div class="subtitle">{{ device.model | model_label }} · Firmware {{ device.firmware_version or '—' }}</div>
+    </div>
+  </div>
+
+  {% if current_assignment %}
+  <div class="card" style="border-left: 4px solid var(--ac-yellow); background: var(--ac-yellow-light);">
+    <div class="card-body" style="padding: 14px 20px;">
+      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #B28600; margin-bottom: 4px;">
+        Currently assigned
+      </div>
+      <div>
+        <strong><a href="{{ url_for('patient_detail', patient_id=current_assignment.patient_id) }}">{{ current_assignment.first_name }} {{ current_assignment.last_name }}</a></strong>
+        <span class="mono muted small">({{ current_assignment.mrn }})</span>
+        · assigned {{ current_assignment.assigned_date | date_only }}
+      </div>
+      <div class="small muted mt-1">
+        Completing this form will return the device from this patient (set today as return date) and assign it to the new patient below. The existing consent form remains on file with the old assignment.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <form method="POST" enctype="multipart/form-data" class="card-body">
+      <div class="form-grid">
+        <div class="form-group required span-2">
+          <label>Patient</label>
+          <select name="patient_id" required>
+            <option value="">— select a patient —</option>
+            {% for p in patients %}
+              <option value="{{ p.id }}">
+                {{ p.last_name }}, {{ p.first_name }}
+                {% if p.mrn %}({{ p.mrn }}){% endif %}
+              </option>
+            {% endfor %}
+          </select>
+          <div class="help">
+            Not seeing the patient? <a href="{{ url_for('patient_new') }}">Add them first</a>.
+          </div>
+        </div>
+
+        <div class="form-group required span-2" style="background: var(--ac-cyan-light); padding: 16px; border-radius: var(--radius); border: 1px solid var(--ac-cyan);">
+          <label>📄 Signed consent form (required)</label>
+          <input type="file" name="consent_form" accept=".pdf,.png,.jpg,.jpeg" required>
+          <div class="help">
+            Upload the signed consent form (PDF preferred, images also accepted).
+            The assignment cannot be completed without this document.
+          </div>
+        </div>
+
+        <div class="form-group required">
+          <label>Assignment date</label>
+          <input type="date" name="assigned_date" value="{{ today }}" required>
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+          <!-- spacer -->
+        </div>
+        <div class="form-group span-2">
+          <label>Notes (optional)</label>
+          <textarea name="notes" rows="2" placeholder="Setup visit notes, device accessories included, training completed, etc."></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('device_detail', device_id=device.id) }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">{{ 'Reassign device' if current_assignment else 'Assign device' }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

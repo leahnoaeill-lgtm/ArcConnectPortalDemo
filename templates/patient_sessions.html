@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Therapy history · {{ patient.first_name }} {{ patient.last_name }}{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="btn btn-sm">← Back to patient</a>
+      <h1 class="mt-2">Therapy history — {{ patient.first_name }} {{ patient.last_name }}</h1>
+      <div class="subtitle">
+        {{ sessions | length }} session{{ 's' if sessions | length != 1 }} on file
+        {% if modality != 'all' %} · {{ 'BiWaze Cough' if modality == 'cough' else 'BiWaze Clear' }}{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <form method="GET" class="filter-bar">
+    <select name="modality" class="filter-select" onchange="this.form.submit()">
+      <option value="all"   {% if modality == 'all' %}selected{% endif %}>All devices</option>
+      <option value="cough" {% if modality == 'cough' %}selected{% endif %}>BiWaze Cough</option>
+      <option value="clear" {% if modality == 'clear' %}selected{% endif %}>BiWaze Clear</option>
+    </select>
+    <label class="small muted">From</label>
+    <input type="date" name="start" value="{{ start or '' }}" class="filter-select" onchange="this.form.submit()">
+    <label class="small muted">To</label>
+    <input type="date" name="end" value="{{ end or '' }}" class="filter-select" onchange="this.form.submit()">
+    {% if modality != 'all' or start or end %}
+      <a href="{{ url_for('patient_sessions', patient_id=patient.id) }}" class="filter-clear" style="display:inline-block;">Clear</a>
+    {% endif %}
+  </form>
+
+  {% if sessions %}
+  <form method="POST" action="{{ url_for('patient_sessions_print', patient_id=patient.id) }}" target="_blank" id="sessionsForm">
+    {% if has_cough or has_clear or has_spo2 or has_hr %}
+    <div class="metric-picker">
+      <div class="metric-picker-hd">Metrics to trend on the report or view with the waveform <span class="small muted">(optional)</span></div>
+      <div class="metric-picker-body">
+        {% if has_cough %}
+        <div class="metric-group" data-metric-group="cough">
+          <div class="metric-group-label" style="color: var(--biwaze-cough-dark);">BiWaze Cough <span class="small muted" style="text-transform:none; letter-spacing:0; font-weight: 400;">(select one)</span></div>
+          <label><input type="checkbox" name="metrics" value="peak_cough_flow"> Peak Cough Flow</label>
+          <label><input type="checkbox" name="metrics" value="volume"> Volume</label>
+          <label><input type="checkbox" name="metrics" value="peak_insp_pressure"> Peak Insp Pressure</label>
+        </div>
+        {% endif %}
+        {% if has_clear %}
+        <div class="metric-group" data-metric-group="clear">
+          <div class="metric-group-label" style="color: var(--ac-cyan-dark);">BiWaze Clear <span class="small muted" style="text-transform:none; letter-spacing:0; font-weight: 400;">(select one)</span></div>
+          <label><input type="checkbox" name="metrics" value="peak_pressure"> Peak Pressure</label>
+        </div>
+        {% endif %}
+        {% if has_spo2 or has_hr %}
+        <div class="metric-group" data-metric-group="vitals">
+          <div class="metric-group-label" style="color: #334155;">Vitals <span class="small muted" style="text-transform:none; letter-spacing:0; font-weight: 400;">(select one)</span></div>
+          {% if has_spo2 %}<label><input type="checkbox" name="metrics" value="spo2"> SpO₂</label>{% endif %}
+          {% if has_hr %}<label><input type="checkbox" name="metrics" value="heart_rate"> Heart Rate</label>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    <div class="bulk-bar" id="sessionsBulkBar">
+      <label class="bulk-select-all">
+        <input type="checkbox" id="sessionsSelectAll">
+        Select all
+      </label>
+      <span class="bulk-count" id="sessionsBulkCount">0 selected</span>
+      <div class="bulk-actions">
+        <button type="submit" class="btn btn-sm btn-primary" disabled>Print selected</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body no-pad">
+        <table class="table sortable" data-default-sort="date" data-default-dir="desc">
+          <thead>
+            <tr>
+              <th style="width: 32px;"></th>
+              <th data-sort-key="date">Date</th>
+              <th data-sort-key="time">Time</th>
+              <th data-sort-key="modality">Device</th>
+              <th data-sort-key="duration">Duration</th>
+              <th data-sort-key="mode">Mode</th>
+              <th data-sort-key="pressure" class="num-col">Peak pressure</th>
+              <th data-sort-key="flow" class="num-col">Peak flow</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in sessions %}
+              {% set detail_href = url_for('session_detail', patient_id=patient.id, session_id=s.id) %}
+              <tr class="clickable session-row"
+                  data-sort-date="{{ s.started_at }}"
+                  data-sort-time="{{ s.started_at }}"
+                  data-sort-modality="{{ s.session_type }}"
+                  data-sort-duration="{{ s.duration_seconds or 0 }}"
+                  data-sort-mode="{{ s.mode or '' }}"
+                  data-sort-pressure="{{ s.peak_pressure_cmh2o or 0 }}"
+                  data-sort-flow="{{ s.peak_flow_lpm or 0 }}"
+                  onclick="window.location='{{ detail_href }}'">
+                <td onclick="event.stopPropagation();">
+                  <input type="checkbox" name="ids" value="{{ s.id }}" class="session-select">
+                </td>
+                <td>{{ s.started_at | date_only }}</td>
+                <td class="muted">{{ s.started_at | time_only }}</td>
+                <td>{{ ('BiWaze Cough' if s.session_type == 'cough' else 'BiWaze Clear') }}</td>
+                <td>{{ (s.duration_seconds // 60) }}m {{ (s.duration_seconds % 60) }}s</td>
+                <td>{{ s.mode or '—' }}</td>
+                <td class="num-col">{% if s.peak_pressure_cmh2o %}{{ "%.1f" % s.peak_pressure_cmh2o }} <span class="muted">cmH₂O</span>{% else %}—{% endif %}</td>
+                <td class="num-col">{% if s.peak_flow_lpm %}{{ "%.0f" % s.peak_flow_lpm }} <span class="muted">L/min</span>{% else %}—{% endif %}</td>
+                <td><a href="{{ detail_href }}" class="btn btn-sm" onclick="event.stopPropagation();">Waveform ▸</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </form>
+  <script>
+  (function() {
+    const form = document.getElementById('sessionsForm');
+    if (!form) return;
+    const all = document.getElementById('sessionsSelectAll');
+    const boxes = form.querySelectorAll('input.session-select');
+    const count = document.getElementById('sessionsBulkCount');
+    const bar = document.getElementById('sessionsBulkBar');
+    const btn = form.querySelector('.bulk-actions button');
+    function update() {
+      const n = form.querySelectorAll('input.session-select:checked').length;
+      count.textContent = n + ' selected';
+      btn.disabled = (n === 0);
+      bar.classList.toggle('is-active', n > 0);
+    }
+    all.addEventListener('change', () => { boxes.forEach(b => b.checked = all.checked); update(); });
+    boxes.forEach(b => b.addEventListener('change', update));
+    update();
+
+    // Enforce "select one" per metric group — checking one box in a group
+    // unchecks the rest in that same group.
+    form.querySelectorAll('.metric-group').forEach(group => {
+      const groupBoxes = group.querySelectorAll('input[type="checkbox"][name="metrics"]');
+      groupBoxes.forEach(b => {
+        b.addEventListener('change', () => {
+          if (b.checked) {
+            groupBoxes.forEach(o => { if (o !== b) o.checked = false; });
+          }
+        });
+      });
+    });
+  })();
+  </script>
+  {% else %}
+    <div class="card">
+      <div class="empty-state">
+        <p>No therapy sessions match the current filter.</p>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

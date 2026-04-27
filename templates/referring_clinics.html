@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Referring clinics · Arc Connect Portal{% endblock %}
+{% block body %}
+
+{# Location chip palette — matches the other rollup screens. #}
+{% set loc_palette = ['#E3F5FC','#FDEFE2','#EFE7F7','#E6F4EA','#FEF6DB','#E8ECEF'] %}
+{% set loc_fg_palette = ['#2E8BAD','#C46212','#6D4CA6','#2E7D32','#8B6E00','#4A5058'] %}
+{% macro loc_chip(loc_id, loc_name) %}
+  {% set i = loc_id % (loc_palette | length) %}
+  <span class="loc-chip" style="background: {{ loc_palette[i] }}; color: {{ loc_fg_palette[i] }};">{{ loc_name }}</span>
+{% endmacro %}
+
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Referring clinics</h1>
+    </div>
+    <div class="actions">
+      <a href="{{ url_for('referring_clinic_new') }}" class="btn btn-primary">+ Add clinic</a>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="{{ url_for('referring_clinics') }}" class="active">Clinics</a>
+    <a href="{{ url_for('referring_providers') }}">Providers</a>
+  </div>
+
+  <div class="filter-bar">
+    <label class="small muted">Status</label>
+    <select class="filter-select" onchange="location = updateQuery({status: this.value})">
+      <option value="all"      {% if status_filter == 'all' %}selected{% endif %}>All</option>
+      <option value="active"   {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+      <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+    </select>
+    {% if rollup %}
+      <label class="small muted">Location</label>
+      <select class="filter-select" onchange="location = updateQuery({location: this.value})">
+        <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
+        {% for l in locations %}
+          <option value="{{ l.id }}" {% if filter_location == l.id %}selected{% endif %}>{{ l.name }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+    {% if status_filter != 'all' or filter_location %}
+      <a href="{{ url_for('referring_clinics') }}" class="filter-clear">Reset</a>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-body no-pad">
+      {% if clinics %}
+      <table class="table sortable" data-default-sort="name" data-default-dir="asc">
+        <thead>
+          <tr>
+            <th data-sort-key="name">Clinic</th>
+            <th data-sort-key="npi">NPI</th>
+            <th>Contact</th>
+            <th data-sort-key="city">City</th>
+            {% if rollup %}<th data-sort-key="location">Location</th>{% endif %}
+            <th class="num-col" data-sort-key="providers">Providers</th>
+            <th class="num-col" data-sort-key="patients">Patients</th>
+            <th data-sort-key="status">Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in clinics %}
+            {% set _href = url_for('referring_clinic_detail', clinic_id=c.id) %}
+            <tr class="clickable"
+                data-sort-name="{{ (c.name or '') | lower }}"
+                data-sort-npi="{{ c.npi or '' }}"
+                data-sort-city="{{ (c.city or '') | lower }}"
+                data-sort-location="{{ (c.loc_name or '') | lower }}"
+                data-sort-providers="{{ c.provider_count }}"
+                data-sort-patients="{{ c.patient_count }}"
+                data-sort-status="{{ 'active' if c.is_active else 'inactive' }}"
+                onclick="window.location='{{ _href }}'">
+              <td>
+                <div style="font-weight: 600;">{{ c.name }}</div>
+                {% if c.website_url %}<a href="{{ c.website_url }}" target="_blank" class="small muted" onclick="event.stopPropagation();">{{ c.website_url }}</a>{% endif %}
+              </td>
+              <td class="mono small">{{ c.npi or '—' }}</td>
+              <td class="small">
+                {% if c.phone %}<div><a href="tel:{{ c.phone }}" onclick="event.stopPropagation();">📞 {{ c.phone }}</a></div>{% endif %}
+                {% if c.email %}<div class="muted"><a href="mailto:{{ c.email }}" onclick="event.stopPropagation();">✉ {{ c.email }}</a></div>{% endif %}
+              </td>
+              <td class="small">
+                {% if c.city %}
+                  {% set _q = (c.name ~ ' ' ~ c.city ~ (', ' ~ c.state if c.state else '')) | trim %}
+                  <a href="https://www.google.com/maps/search/?api=1&query={{ _q | urlencode }}" target="_blank" rel="noopener" onclick="event.stopPropagation();">{{ c.city }}{% if c.state %}, {{ c.state }}{% endif %}</a>
+                {% else %}—{% endif %}
+              </td>
+              {% if rollup %}<td>{{ loc_chip(c.loc_id, c.loc_name) }}</td>{% endif %}
+              <td class="num-col num">{{ c.provider_count }}</td>
+              <td class="num-col num">{{ c.patient_count }}</td>
+              <td>
+                {% if c.is_active %}
+                  <span class="badge status-active">Active</span>
+                {% else %}
+                  <span class="badge status-inactive">Inactive</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ _href }}" class="btn btn-sm" onclick="event.stopPropagation();">Open ▸</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="empty-state">
+          <p>No referring clinics match the current filter.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+function updateQuery(overrides) {
+  const u = new URL(window.location.href);
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === null || v === '' || v === '0' || v === 'all') u.searchParams.delete(k);
+    else u.searchParams.set(k, v);
+  }
+  return u.pathname + (u.search || '');
+}
+</script>
+{% endblock %}

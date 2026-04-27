@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}All alerts · {{ parent_org.name }}{% endblock %}
+{% block body %}
+
+{# Stable location chip color — same palette used on other rollup screens. #}
+{% set loc_palette = ['#E3F5FC','#FDEFE2','#EFE7F7','#E6F4EA','#FEF6DB','#E8ECEF'] %}
+{% set loc_fg_palette = ['#2E8BAD','#C46212','#6D4CA6','#2E7D32','#8B6E00','#4A5058'] %}
+{% macro loc_chip(loc_id, loc_name) %}
+  {% set i = loc_id % (loc_palette | length) %}
+  <span class="loc-chip" style="background: {{ loc_palette[i] }}; color: {{ loc_fg_palette[i] }};">{{ loc_name }}</span>
+{% endmacro %}
+
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>All alerts</h1>
+      <div class="subtitle">
+        {{ counts.active or 0 }} active · {{ counts.critical or 0 }} critical · {{ counts.warning or 0 }} warning
+        {% if filter_location %}
+          {% for l in locations %}{% if l.id == filter_location %} · {{ l.name }}{% endif %}{% endfor %}
+        {% else %} · across {{ locations|length }} locations{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <label class="small muted">Show</label>
+    <select class="filter-select" onchange="location = updateQuery({show: this.value})">
+      <option value="active" {% if show == 'active' %}selected{% endif %}>Active only</option>
+      <option value="all"    {% if show == 'all'    %}selected{% endif %}>All (incl. resolved)</option>
+    </select>
+    <label class="small muted">Severity</label>
+    <select class="filter-select" onchange="location = updateQuery({severity: this.value})">
+      <option value="all"      {% if filter_sev == 'all'      %}selected{% endif %}>All severities</option>
+      <option value="critical" {% if filter_sev == 'critical' %}selected{% endif %}>Critical</option>
+      <option value="warning"  {% if filter_sev == 'warning'  %}selected{% endif %}>Warning</option>
+      <option value="info"     {% if filter_sev == 'info'     %}selected{% endif %}>Info</option>
+    </select>
+    <label class="small muted">Location</label>
+    <select class="filter-select" onchange="location = updateQuery({location: this.value})">
+      <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
+      {% for l in locations %}
+        <option value="{{ l.id }}" {% if filter_location == l.id %}selected{% endif %}>{{ l.name }}</option>
+      {% endfor %}
+    </select>
+    {% if show != 'active' or filter_sev != 'all' or filter_location %}
+      <a href="{{ url_for('parent_alerts') }}" class="filter-clear">Reset</a>
+    {% endif %}
+  </div>
+
+  {% if alerts %}
+    <div class="card">
+      <div class="card-body no-pad">
+        {% set _sev_rank = {'critical': 1, 'warning': 2, 'info': 3} %}
+        <table class="table sortable" data-default-sort="severity" data-default-dir="asc">
+          <thead>
+            <tr>
+              <th data-sort-key="severity">Severity</th>
+              <th data-sort-key="triggered">Triggered</th>
+              <th data-sort-key="patient">Patient</th>
+              <th data-sort-key="location">Location</th>
+              <th data-sort-key="message">Message</th>
+              <th data-sort-key="status">Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in alerts %}
+              {% set patient_href = url_for('switch_location', org_id=a.loc_id, next='/patients/' + (a.patient_id | string)) %}
+              <tr class="clickable {% if a.acknowledged_at %}row-muted{% endif %}"
+                  data-sort-severity="{{ _sev_rank.get(a.severity, 9) }}"
+                  data-sort-triggered="{{ a.triggered_at or '' }}"
+                  data-sort-patient="{{ ((a.last_name or '') ~ ' ' ~ (a.first_name or '')) | trim | lower }}"
+                  data-sort-location="{{ a.loc_name | lower }}"
+                  data-sort-message="{{ (a.message or '') | lower }}"
+                  data-sort-status="{{ 'resolved' if a.resolved_at else ('acknowledged' if a.acknowledged_at else 'open') }}"
+                  onclick="window.location='{{ patient_href }}'">
+                <td><span class="badge severity-{{ a.severity }}">{{ a.severity | upper }}</span></td>
+                <td class="small">{{ a.triggered_at | dt }}</td>
+                <td>
+                  <div style="font-weight: 600;">{{ a.first_name }} {{ a.last_name }}</div>
+                  {% if a.mrn %}<div class="mono muted small">ID: {{ a.mrn | replace('MRN-', '') }}</div>{% endif %}
+                </td>
+                <td>{{ loc_chip(a.loc_id, a.loc_name) }}</td>
+                <td class="small" style="max-width: 420px;">
+                  <div>{{ a.message }}</div>
+                  {% if a.detail %}<div class="small muted">{{ a.detail }}</div>{% endif %}
+                  {% if a.rule_name %}<div class="small muted">Rule: {{ a.rule_name }}</div>{% endif %}
+                </td>
+                <td class="small">
+                  {% if a.resolved_at %}
+                    <span class="status-green">✓ Resolved</span>
+                  {% elif a.acknowledged_at %}
+                    <span class="muted">✓ Acked</span>
+                  {% else %}
+                    <span class="badge severity-{{ a.severity }}">Open</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <a href="{{ patient_href }}" class="btn btn-sm" onclick="event.stopPropagation();">Open patient ▸</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="card"><div class="empty-state"><p>No alerts match the current filter. ✓</p></div></div>
+  {% endif %}
+</div>
+
+<script>
+function updateQuery(overrides) {
+  const u = new URL(window.location.href);
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === null || v === '' || v === '0') u.searchParams.delete(k);
+    else u.searchParams.set(k, v);
+  }
+  return u.pathname + (u.search || '');
+}
+</script>
+{% endblock %}

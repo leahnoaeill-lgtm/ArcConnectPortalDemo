@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}All devices · {{ parent_org.name }}{% endblock %}
+{% block body %}
+
+{# Stable location chip color: pick from a small brand-aligned palette by id. #}
+{% set loc_palette = ['#E3F5FC','#FDEFE2','#EFE7F7','#E6F4EA','#FEF6DB','#E8ECEF'] %}
+{% set loc_fg_palette = ['#2E8BAD','#C46212','#6D4CA6','#2E7D32','#8B6E00','#4A5058'] %}
+{% macro loc_chip(loc_id, loc_name) %}
+  {% set i = loc_id % (loc_palette | length) %}
+  <span class="loc-chip" style="background: {{ loc_palette[i] }}; color: {{ loc_fg_palette[i] }};">{{ loc_name }}</span>
+{% endmacro %}
+
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>All devices</h1>
+      <div class="subtitle">
+        {{ devices|length }} device{% if devices|length != 1 %}s{% endif %} shown
+        {% if filter_location %}
+          {% for l in locations %}{% if l.id == filter_location %} · {{ l.name }}{% endif %}{% endfor %}
+        {% else %} across {{ locations|length }} locations{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="label">Total</div><div class="value">{{ kpis.total }}</div></div>
+    <div class="kpi kpi-green"><div class="label">In use</div><div class="value">{{ kpis.in_use }}</div></div>
+    <div class="kpi"><div class="label">In stock</div><div class="value">{{ kpis.in_stock }}</div></div>
+    <div class="kpi kpi-yellow"><div class="label">Maintenance</div><div class="value">{{ kpis.maintenance }}</div></div>
+  </div>
+
+  <div class="filter-bar">
+    <label class="small muted">Status</label>
+    <select class="filter-select" onchange="location = updateQuery({status: this.value})">
+      <option value="all"        {% if status_filter == 'all' %}selected{% endif %}>All</option>
+      <option value="assigned"   {% if status_filter == 'assigned' %}selected{% endif %}>Assigned</option>
+      <option value="unassigned" {% if status_filter == 'unassigned' %}selected{% endif %}>Unassigned</option>
+    </select>
+    <label class="small muted">Location</label>
+    <select class="filter-select" onchange="location = updateQuery({location: this.value})">
+      <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
+      {% for l in locations %}
+        <option value="{{ l.id }}" {% if filter_location == l.id %}selected{% endif %}>{{ l.name }}</option>
+      {% endfor %}
+    </select>
+    {% if status_filter != 'all' or filter_location %}
+      <a href="{{ url_for('parent_devices') }}" class="filter-clear">Reset</a>
+    {% endif %}
+  </div>
+
+  {% if devices %}
+    <div class="card">
+      <div class="card-body no-pad">
+        <table class="table sortable" data-default-sort="serial" data-default-dir="asc">
+          <thead>
+            <tr>
+              <th data-sort-key="serial">Serial</th>
+              <th data-sort-key="model">Model</th>
+              <th data-sort-key="firmware">Firmware</th>
+              <th data-sort-key="location">Location</th>
+              <th data-sort-key="patient">Assigned to</th>
+              <th data-sort-key="lastComm">Last communication</th>
+              <th data-sort-key="status">Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in devices %}
+              {% set next_path = '/devices/' + (d.id | string) %}
+              {% set row_href = url_for('switch_location', org_id=d.loc_id, next=next_path) %}
+              <tr class="clickable"
+                  data-sort-serial="{{ d.serial_number }}"
+                  data-sort-model="{{ d.model or '' }}"
+                  data-sort-firmware="{{ d.firmware_version or '' }}"
+                  data-sort-location="{{ d.loc_name | lower }}"
+                  data-sort-patient="{{ ((d.last_name or '') ~ ' ' ~ (d.first_name or '')) | trim | lower }}"
+                  data-sort-last-comm="{{ d.last_communication or '' }}"
+                  data-sort-status="{{ d.status }}"
+                  onclick="window.location='{{ row_href }}'">
+                <td class="mono" style="font-weight: 600;">{{ d.serial_number }}</td>
+                <td>{{ d.model | model_label }}</td>
+                <td class="mono small">{{ d.firmware_version or '—' }}</td>
+                <td>{{ loc_chip(d.loc_id, d.loc_name) }}</td>
+                <td>
+                  {% if d.first_name %}
+                    {% set patient_href = url_for('switch_location', org_id=d.loc_id, next='/patients/' + (d.patient_id | string)) %}
+                    <a href="{{ patient_href }}"
+                       onclick="event.stopPropagation();"
+                       class="patient-link">{{ d.first_name }} {{ d.last_name }}</a>
+                    {% if d.mrn %}<div class="mono muted small">ID: {{ d.mrn | replace('MRN-', '') }}</div>{% endif %}
+                  {% else %}
+                    <span class="muted">— unassigned —</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if d.last_communication %}{{ d.last_communication | dt }}{% else %}<span class="muted">Never</span>{% endif %}
+                </td>
+                <td><span class="badge status-{{ d.status }}">{{ d.status | replace('_',' ') | title }}</span></td>
+                <td>
+                  {% set assign_href = url_for('switch_location', org_id=d.loc_id, next='/devices/' + (d.id | string) + '/assign') %}
+                  {% if d.first_name %}
+                    <a href="{{ assign_href }}" class="btn btn-sm" onclick="event.stopPropagation();">Reassign</a>
+                  {% else %}
+                    <a href="{{ assign_href }}" class="btn btn-sm btn-primary" onclick="event.stopPropagation();">Assign</a>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="card"><div class="empty-state"><p>No devices match the current filter.</p></div></div>
+  {% endif %}
+</div>
+
+<script>
+function updateQuery(overrides) {
+  const u = new URL(window.location.href);
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === null || v === '' || v === '0' || v === 'all') u.searchParams.delete(k);
+    else u.searchParams.set(k, v);
+  }
+  return u.pathname + (u.search || '');
+}
+</script>
+{% endblock %}

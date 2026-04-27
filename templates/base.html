@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Arc Connect Portal{% endblock %}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/arc.css') }}">
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+
+{% if current_user %}
+<nav class="topbar">
+  <a class="topbar-brand" href="{{ url_for('home') }}">
+    <img src="{{ url_for('static', filename='img/arc-connect-logo.png') }}" alt="Arc Connect" class="logo-img">
+    <div class="wordmark">
+      Arc Connect
+      <small>Portal</small>
+    </div>
+  </a>
+
+  <div class="topbar-nav">
+    <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' else '' }}">Dashboard</a>
+    <a href="{{ url_for('patients') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('patient') else '' }}">Patients</a>
+    <a href="{{ url_for('devices') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('device') else '' }}">Devices</a>
+    <a href="{{ url_for('alerts') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('alert') and request.endpoint != 'alert_rules' and not request.endpoint.startswith('alert_rule') else '' }}">Alerts</a>
+    <a href="{{ url_for('tasks') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('task') else '' }}">Tasks</a>
+    {% if messaging_enabled %}
+      <a href="{{ url_for('inbox') }}" class="nav-with-badge {{ 'active' if request.endpoint and request.endpoint.startswith('inbox') else '' }}">
+        Inbox
+        {% if inbox_unread %}<span class="nav-badge">{{ inbox_unread }}</span>{% endif %}
+      </a>
+    {% endif %}
+    <a href="{{ url_for('referring_clinics') }}" class="{{ 'active' if request.endpoint and (request.endpoint.startswith('referring_') or request.endpoint == 'referring_clinic_detail') else '' }}">Referring</a>
+    {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint and (request.endpoint == 'settings' or request.endpoint.startswith('user') or request.endpoint.startswith('alert_rule')) else '' }}">Settings</a>
+    {% endif %}
+  </div>
+
+  {# Flexible spacer keeps the doodle off the nav items regardless of viewport. #}
+  <div class="topbar-spacer" aria-hidden="true"></div>
+
+  {# ── Finn: the whale mascot ── #}
+  <div class="topbar-doodle doodle-whale" id="doodleWhale" title="Finn the whale">
+    <svg viewBox="0 0 90 48" class="doodle-svg" aria-hidden="true">
+      <g class="whale-spout">
+        <circle class="spout-puff spout-puff-1" cx="32" cy="14" r="3" fill="#43C1ED" opacity="0.8"/>
+        <circle class="spout-puff spout-puff-2" cx="35" cy="8"  r="2.2" fill="#43C1ED" opacity="0.65"/>
+        <circle class="spout-puff spout-puff-3" cx="29" cy="6"  r="1.8" fill="#43C1ED" opacity="0.5"/>
+      </g>
+      <path class="whale-body"
+            d="M20 32 Q18 22 32 20 Q52 18 62 24 Q72 26 78 22 L76 32 Q74 36 66 38 Q48 42 32 40 Q22 38 20 32 Z"
+            fill="#43C1ED" stroke="#2E8BAD" stroke-width="1.3" stroke-linejoin="round"/>
+      <path class="whale-tail" d="M78 22 L86 16 L84 28 L78 32 Z"
+            fill="#2E8BAD" stroke="#2E8BAD" stroke-width="1"/>
+      <path d="M30 36 Q44 42 62 37 Q56 40 42 40 Q34 40 30 36 Z"
+            fill="#E3F5FC" opacity="0.85"/>
+      <circle class="doodle-eye" cx="34" cy="28" r="1.5" fill="#21272B"/>
+      <circle cx="34.5" cy="27.5" r="0.5" fill="white"/>
+      <path d="M38 32 Q42 34 46 32" stroke="#21272B" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+      <ellipse cx="32" cy="20" rx="1.6" ry="0.8" fill="#2E8BAD"/>
+    </svg>
+    <div class="doodle-speech" id="doodleSpeechWhale"></div>
+  </div>
+
+  <div class="topbar-right">
+    {# Stacked label.
+       • Parent admin at rollup → top: parent org name, bottom: "All locations"
+       • Parent admin acting into a child → top: parent org name, bottom: child name
+       • Child-location user → top: their child location name, bottom: parent org
+       • Standalone single-org user → top: org name, no secondary line. #}
+    {% set at_rollup = is_parent_admin and not session.get('acting_org_id') %}
+    {% if at_rollup %}
+      {% set primary_label = parent_org.name %}
+      {% set secondary_label = 'All locations' %}
+    {% elif is_parent_admin %}
+      {# Parent admin acting into a specific child location #}
+      {% set primary_label = parent_org.name %}
+      {% set secondary_label = current_org.name %}
+    {% elif parent_org %}
+      {# Child-location user — they primarily think in terms of their own location #}
+      {% set primary_label = current_org.name %}
+      {% set secondary_label = parent_org.name %}
+    {% else %}
+      {% set primary_label = current_org.name %}
+      {% set secondary_label = None %}
+    {% endif %}
+
+    {% if is_parent_admin %}
+      <details class="topbar-switcher topbar-loc-switcher">
+        <summary>
+          <span class="topbar-loc-stack">
+            <span class="topbar-loc-primary">{{ primary_label }}</span>
+            {% if secondary_label %}<span class="topbar-loc-secondary">{{ secondary_label }}</span>{% endif %}
+          </span>
+        </summary>
+        <div class="dropdown">
+          <div class="label">Switch location</div>
+          <a href="{{ url_for('switch_location', org_id=parent_org.id) }}">
+            {% if at_rollup %}✓ {% endif %}All locations
+          </a>
+          <div class="divider"></div>
+          {% for loc in sibling_locations %}
+            <a href="{{ url_for('switch_location', org_id=loc.id) }}">
+              {% if not at_rollup and loc.id == current_org.id %}✓ {% endif %}{{ loc.name }}
+            </a>
+          {% endfor %}
+        </div>
+      </details>
+    {% else %}
+      <div class="topbar-loc-static">
+        <span class="topbar-loc-stack">
+          <span class="topbar-loc-primary">{{ primary_label }}</span>
+          {% if secondary_label %}<span class="topbar-loc-secondary">{{ secondary_label }}</span>{% endif %}
+        </span>
+      </div>
+    {% endif %}
+
+    <details class="topbar-switcher">
+      <summary>
+        <span class="topbar-user-avatar">{{ current_user.first_name[0] if current_user.first_name else '?' }}{{ current_user.last_name[0] if current_user.last_name else '' }}</span>
+        <span class="topbar-user-name">{{ current_user.first_name }} {{ current_user.last_name }}</span>
+        <span class="topbar-user-role">{{ current_user.role | replace('_',' ') | title }}</span>
+      </summary>
+      <div class="dropdown">
+        <div class="label">{{ current_user.email }}</div>
+        <div class="divider"></div>
+        <a href="{{ url_for('my_profile') }}">👤 My profile</a>
+        <a href="{{ url_for('my_feeds') }}">📡 My feeds</a>
+        <a href="{{ url_for('logout') }}">Log out</a>
+      </div>
+    </details>
+  </div>
+</nav>
+{% endif %}
+
+{% if is_super_admin and super_acting_org_id %}
+  <div class="super-admin-banner">
+    <span>
+      🔒 You are viewing <strong>{{ current_org.name }}</strong> as ABMRC support — read-only access under signed BAA.
+    </span>
+    <form method="POST" action="{{ url_for('super_clear_acting_org') }}" style="display: inline;">
+      <button type="submit" class="btn btn-sm">Exit support view ▸</button>
+    </form>
+  </div>
+{% endif %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-container">
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+{% block body %}{% endblock %}
+
+{# ── Floating RSS feed widget (bottom-right) ── #}
+{% if current_user and user_rss_keys %}
+<div class="rss-widget" id="rssWidget">
+  <!-- Collapsed state -->
+  <button class="rss-collapsed" id="rssCollapsedBtn" onclick="toggleRss()" title="News & feeds">
+    <span class="rss-icon">📡</span>
+    <span class="rss-badge" id="rssBadge" style="display:none;">•</span>
+  </button>
+  <!-- Expanded state -->
+  <div class="rss-panel" id="rssPanel" style="display:none;">
+    <div class="rss-panel-header">
+      <strong>Your feeds</strong>
+      <div class="rss-header-actions">
+        <a href="{{ url_for('my_feeds') }}" class="rss-header-btn" title="Configure feeds">⚙</a>
+        <button class="rss-header-btn" onclick="refreshRss()" title="Refresh">↻</button>
+        <button class="rss-header-btn" onclick="toggleRss()" title="Collapse">×</button>
+      </div>
+    </div>
+    <div class="rss-panel-body" id="rssPanelBody">
+      <div class="rss-loading">Loading feeds…</div>
+    </div>
+    <div class="rss-panel-footer" id="rssPanelFooter">
+      <span id="rssStatusMsg" class="muted small">—</span>
+    </div>
+  </div>
+</div>
+
+<script>
+let rssLoaded = false;
+function toggleRss() {
+  const panel = document.getElementById('rssPanel');
+  const btn = document.getElementById('rssCollapsedBtn');
+  const isOpen = panel.style.display !== 'none';
+  if (isOpen) {
+    panel.style.display = 'none';
+    btn.style.display = '';
+  } else {
+    panel.style.display = 'flex';
+    btn.style.display = 'none';
+    if (!rssLoaded) loadRss();
+  }
+}
+function refreshRss() { rssLoaded = false; loadRss(); }
+function loadRss() {
+  const body = document.getElementById('rssPanelBody');
+  const footer = document.getElementById('rssStatusMsg');
+  body.innerHTML = '<div class="rss-loading">Loading feeds…</div>';
+  footer.textContent = 'Fetching…';
+  fetch('/api/rss')
+    .then(r => r.json())
+    .then(data => {
+      rssLoaded = true;
+      renderRss(data.feeds || []);
+    })
+    .catch(() => {
+      body.innerHTML = '<div class="rss-error">Could not load feeds.</div>';
+      footer.textContent = 'Error';
+    });
+}
+function renderRss(feeds) {
+  const body = document.getElementById('rssPanelBody');
+  const footer = document.getElementById('rssStatusMsg');
+  const badge = document.getElementById('rssBadge');
+  if (feeds.length === 0) {
+    body.innerHTML = '<div class="rss-empty">No feeds configured. ' +
+      '<a href="{{ url_for("my_feeds") }}">Pick some →</a></div>';
+    badge.style.display = 'none';
+    return;
+  }
+  // Group by category
+  const byCat = {};
+  feeds.forEach(f => { (byCat[f.category] = byCat[f.category] || []).push(f); });
+  let html = '';
+  let anyLive = false, anyDemo = false, totalItems = 0;
+  const catOrder = ['Work','News','Weather','Sports','Lifestyle','Tech'];
+  const cats = Object.keys(byCat).sort((a,b) => catOrder.indexOf(a) - catOrder.indexOf(b));
+  cats.forEach(cat => {
+    html += `<div class="rss-cat">${cat}</div>`;
+    byCat[cat].forEach(f => {
+      if (f.live) anyLive = true; else anyDemo = true;
+      html += `<div class="rss-feed">
+        <div class="rss-feed-head">
+          <span class="rss-feed-icon">${f.icon}</span>
+          <span class="rss-feed-name">${escHtml(f.name)}</span>
+          ${!f.live ? '<span class="rss-demo-pill">demo</span>' : ''}
+        </div>`;
+      if (f.items.length === 0) {
+        html += '<div class="rss-item rss-empty-item muted small">No recent items.</div>';
+      } else {
+        f.items.forEach(it => {
+          totalItems += 1;
+          const safeLink = (it.link && it.link !== '#') ? it.link : null;
+          const titleHtml = escHtml(it.title || '(no title)');
+          html += `<div class="rss-item">
+            ${safeLink
+              ? `<a href="${escAttr(safeLink)}" target="_blank" rel="noopener">${titleHtml}</a>`
+              : `<span>${titleHtml}</span>`}
+            ${it.date ? `<div class="rss-item-date muted small">${escHtml(shortDate(it.date))}</div>` : ''}
+          </div>`;
+        });
+      }
+      html += '</div>';
+    });
+  });
+  body.innerHTML = html;
+  badge.style.display = totalItems > 0 ? '' : 'none';
+  const now = new Date();
+  const hh = now.getHours().toString().padStart(2,'0');
+  const mm = now.getMinutes().toString().padStart(2,'0');
+  const liveTag = anyLive && !anyDemo ? '· all live' : (anyLive && anyDemo ? '· partial' : '· demo content');
+  footer.textContent = `Refreshed ${hh}:${mm} ${liveTag}`;
+}
+function escHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escAttr(s) { return escHtml(s); }
+function shortDate(raw) {
+  // Try common RSS formats: "Tue, 23 Apr 2026 09:32:00 GMT" or ISO "2026-04-23..."
+  const d = new Date(raw);
+  if (!isNaN(d.getTime())) {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${String(d.getDate()).padStart(2,'0')}-${months[d.getMonth()]}-${String(d.getFullYear()).slice(2)}`;
+  }
+  return raw.slice(0, 16);
+}
+</script>
+{% endif %}
+
+{# ── Chip popover (adherence detail + alerts + patient journey) ── #}
+<div id="chipPopover" class="chip-popover" style="display:none;" onclick="event.stopPropagation();">
+  <button class="chip-popover-close" onclick="closeChipPopover();" aria-label="Close">×</button>
+  <div id="chipPopoverBody"></div>
+</div>
+<div id="chipPopoverOverlay" class="chip-popover-overlay" style="display:none;" onclick="closeChipPopover();"></div>
+
+<script>
+// Close details dropdowns when clicking outside
+document.addEventListener('click', function(e) {
+  document.querySelectorAll('details[open]').forEach(function(d) {
+    if (!d.contains(e.target)) d.removeAttribute('open');
+  });
+});
+
+// Card-linked navigation. Cards with class .card-linked carry a
+// data-href — clicking anywhere outside a nested interactive element
+// navigates. Interactive clicks (links, buttons, form controls) pass
+// through unchanged.
+document.querySelectorAll('.card-linked[data-href]').forEach(function(card) {
+  card.addEventListener('click', function(e) {
+    if (e.target.closest('a, button, input, select, textarea, label')) return;
+    window.location = card.dataset.href;
+  });
+});
+
+// ── Shared client-side sort for any <table class="sortable"> ─────
+// Headers declare `data-sort-key="<key>"`, rows carry `data-sort-<key>` values.
+// Numeric rows are sorted numerically; empty values always sink to the bottom.
+(function() {
+  function applySort(table, key, dir) {
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const attr = 'sort' + key.charAt(0).toUpperCase() + key.slice(1);
+    rows.sort((a, b) => {
+      const av = a.dataset[attr];
+      const bv = b.dataset[attr];
+      const aEmpty = av === undefined || av === '';
+      const bEmpty = bv === undefined || bv === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;   // empty always at bottom
+      if (bEmpty) return -1;
+      const an = parseFloat(av), bn = parseFloat(bv);
+      const numericA = !isNaN(an) && /^-?[\d.]/.test(av.trim());
+      const numericB = !isNaN(bn) && /^-?[\d.]/.test(bv.trim());
+      const cmp = (numericA && numericB)
+        ? an - bn
+        : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' });
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    rows.forEach(r => tbody.appendChild(r));
+    table.querySelectorAll('th[data-sort-key]').forEach(th => {
+      const isActive = th.dataset.sortKey === key;
+      th.classList.toggle('sort-active', isActive);
+      const arrow = th.querySelector('.sort-arrow');
+      if (!arrow) return;
+      arrow.textContent = isActive ? (dir === 'asc' ? '▲' : '▼') : '⇅';
+      arrow.classList.toggle('sort-arrow-asc',  isActive && dir === 'asc');
+      arrow.classList.toggle('sort-arrow-desc', isActive && dir === 'desc');
+      arrow.classList.toggle('sort-arrow-both', !isActive);
+    });
+    table.dataset.sortKey = key;
+    table.dataset.sortDir = dir;
+  }
+
+  function initTable(table) {
+    const headers = table.querySelectorAll('th[data-sort-key]');
+    headers.forEach(th => {
+      if (!th.querySelector('.sort-arrow')) {
+        const span = document.createElement('span');
+        span.className = 'sort-arrow sort-arrow-both';
+        span.textContent = '⇅';
+        th.appendChild(span);
+      }
+      th.classList.add('sortable-th');
+      th.addEventListener('click', () => {
+        const key = th.dataset.sortKey;
+        const curKey = table.dataset.sortKey;
+        const curDir = table.dataset.sortDir;
+        const dir = (curKey === key && curDir === 'asc') ? 'desc' : 'asc';
+        applySort(table, key, dir);
+      });
+    });
+    const initKey = table.dataset.defaultSort;
+    const initDir = table.dataset.defaultDir || 'asc';
+    if (initKey) applySort(table, initKey, initDir);
+  }
+
+  document.querySelectorAll('table.sortable').forEach(initTable);
+})();
+
+// ── Chip popover logic ─────────────────────────────────────────────
+function openChipPopover(e, patientId, modality) {
+  e.preventDefault();
+  e.stopPropagation();
+  const pop = document.getElementById('chipPopover');
+  const overlay = document.getElementById('chipPopoverOverlay');
+  const body = document.getElementById('chipPopoverBody');
+  body.innerHTML = '<div class="chip-popover-loading">Loading…</div>';
+
+  // Anchor popover near the clicked chip
+  const rect = e.currentTarget.getBoundingClientRect();
+  const scrollY = window.scrollY || window.pageYOffset;
+  const scrollX = window.scrollX || window.pageXOffset;
+  pop.style.top  = (rect.bottom + scrollY + 10) + 'px';
+  // Clamp horizontal position to stay on screen
+  const desiredLeft = rect.left + scrollX + (rect.width / 2) - 240;
+  const maxLeft = (window.innerWidth + scrollX) - 500;
+  pop.style.left = Math.max(10, Math.min(desiredLeft, maxLeft)) + 'px';
+  pop.style.display = 'block';
+  overlay.style.display = 'block';
+
+  fetch(`/api/patients/${patientId}/chip/${modality}`)
+    .then(r => r.json())
+    .then(data => { body.innerHTML = renderChipPopover(data); })
+    .catch(err => { body.innerHTML = '<div class="flash error">Failed to load detail.</div>'; });
+}
+
+function closeChipPopover() {
+  document.getElementById('chipPopover').style.display = 'none';
+  document.getElementById('chipPopoverOverlay').style.display = 'none';
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeChipPopover();
+});
+
+// ── Mascot doodle: cycle fortune-cookie fortunes on click ──────────
+(function() {
+  const messages = [
+    "🥠 A calm breath today seeds good news tomorrow.",
+    "🥠 The patient who trusts you will remember your kindness.",
+    "🥠 Small acts of care ripple further than you think.",
+    "🥠 An opportunity is drifting toward you — look up.",
+    "🥠 Your steady hand will steady another's day.",
+    "🥠 Good fortune follows those who follow up.",
+    "🥠 A surprising ally will offer help this week.",
+    "🥠 The work you do in quiet moments matters most.",
+    "🥠 Patience practiced today pays dividends tomorrow.",
+    "🥠 A missed call will turn into a meaningful conversation.",
+    "🥠 Your attention to detail will prevent an unseen problem.",
+    "🥠 Before the day ends, you will make someone smile.",
+    "🥠 Trust the breath — and the data — you already have.",
+    "🥠 A lucky number for today: the count of tasks you close.",
+    "🥠 Kindness compounds like interest. Keep depositing.",
+  ];
+  function wireDoodle(elId, speechId) {
+    const el = document.getElementById(elId);
+    const speech = document.getElementById(speechId);
+    if (!el || !speech) return;
+    let idx = Math.floor(Math.random() * messages.length);
+    let timer = null;
+    function show(msg, persist) {
+      speech.textContent = msg;
+      speech.classList.add('visible');
+      if (timer) clearTimeout(timer);
+      if (!persist) {
+        timer = setTimeout(() => speech.classList.remove('visible'), 3500);
+      }
+    }
+    el.addEventListener('click', () => {
+      idx = (idx + 1) % messages.length;
+      show(messages[idx], false);
+      el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse');
+    });
+    el.addEventListener('mouseenter', () => show(messages[idx], true));
+    el.addEventListener('mouseleave', () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => speech.classList.remove('visible'), 400);
+    });
+  }
+  wireDoodle('doodleWhale', 'doodleSpeechWhale');
+})();
+
+function adhClass(pct) {
+  if (pct === null || pct === undefined) return 'status-gray';
+  if (pct >= 80) return 'status-green';
+  if (pct >= 50) return 'status-yellow';
+  return 'status-red';
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function formatJourneyDate(iso) {
+  if (!iso) return 'ongoing';
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const parts = iso.split('-');
+  if (parts.length !== 3) return iso;
+  const [y, m, d] = parts;
+  const mIdx = parseInt(m, 10) - 1;
+  if (mIdx < 0 || mIdx > 11) return iso;
+  return `${d}-${months[mIdx]}-${y.slice(2)}`;
+}
+
+function renderChipPopover(d) {
+  const pctClass = adhClass(d.adherence_pct);
+  let html = `
+    <div class="chip-popover-header">
+      <div class="cp-modality ${d.modality}">${esc(d.modality_label)}</div>
+      <div class="cp-patient">${esc(d.patient_name)}</div>
+    </div>
+
+    <div class="chip-popover-section">
+      <div class="cp-headline">
+        <span class="cp-big-pct ${pctClass}">${d.adherence_pct}%</span>
+        <div class="cp-headline-sub">
+          <div><strong>${d.completed_30d}</strong> of <strong>${d.goal_30d}</strong> prescribed sessions in last 30 days</div>
+          <div class="muted small">Trend (last 7 days): <strong>${esc(d.trend)}</strong></div>
+        </div>
+      </div>
+      <p class="cp-narrative">${esc(d.narrative)}</p>
+    </div>
+  `;
+
+  // Alerts
+  html += `<div class="chip-popover-section">
+    <h4 class="cp-section-title">Active alerts (${d.alerts.length})</h4>`;
+  if (d.alerts.length === 0) {
+    html += `<div class="muted small">No active alerts for this patient. ✓</div>`;
+  } else {
+    html += `<div class="cp-alert-list">`;
+    d.alerts.forEach(a => {
+      html += `
+        <div class="cp-alert sev-${esc(a.severity)}">
+          <div class="cp-alert-hd">
+            <span class="badge severity-${esc(a.severity)}">${esc(a.severity.toUpperCase())}</span>
+            <span class="cp-alert-rule">${esc(a.rule_name)}</span>
+          </div>
+          <div class="cp-alert-msg">${esc(a.message)}</div>
+          ${a.detail ? `<div class="cp-alert-detail">${esc(a.detail)}</div>` : ''}
+        </div>`;
+    });
+    html += `</div>`;
+    html += `<div class="cp-alert-explainer small muted">Alerts are generated from configurable rules (e.g. <em>no therapy in 48h</em>, <em>device offline</em>, <em>adherence drop</em>) and resolve when the condition clears or a clinician acknowledges.</div>`;
+  }
+  html += `</div>`;
+
+  // Patient journey — compact horizontal icon strip (hover for detail)
+  html += `<div class="chip-popover-section">
+    <h4 class="cp-section-title">Patient journey</h4>`;
+  if (d.journey.length === 0) {
+    html += `<div class="muted small">No milestones recorded yet.</div>`;
+  } else {
+    html += `<div class="cp-journey-strip">`;
+    d.journey.forEach((e, i) => {
+      const dateTxt = formatJourneyDate(e.date);
+      html += `
+        <div class="cp-strip-step stage-${esc(e.stage)}">
+          <div class="cp-strip-icon">${esc(e.icon || '●')}</div>
+          <div class="cp-strip-date">${esc(dateTxt)}</div>
+        </div>`;
+      if (i < d.journey.length - 1) {
+        html += `<div class="cp-strip-connector"></div>`;
+      }
+    });
+    html += `</div>`;
+    html += `<div class="cp-strip-hint muted small">See full timeline on the patient profile.</div>`;
+  }
+  html += `</div>`;
+
+  // Footer — link to full patient view
+  html += `<div class="chip-popover-footer">
+    <a href="/patients/${d.patient_id}" class="btn btn-sm btn-primary">Open full patient profile →</a>
+  </div>`;
+  return html;
+}
+</script>
+</body>
+</html>

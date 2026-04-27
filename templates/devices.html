@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Devices · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Device fleet</h1>
+    </div>
+    <div class="actions">
+      <a href="{{ url_for('device_new') }}" class="btn btn-primary">+ Add device</a>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="label">Total</div><div class="value">{{ kpis.total }}</div></div>
+    <div class="kpi kpi-green"><div class="label">In use</div><div class="value">{{ kpis.in_use }}</div></div>
+    <div class="kpi"><div class="label">In stock</div><div class="value">{{ kpis.in_stock }}</div></div>
+    <div class="kpi kpi-yellow"><div class="label">Maintenance</div><div class="value">{{ kpis.maintenance }}</div></div>
+  </div>
+
+  <div class="tabs">
+    <a href="?tab=all" class="{{ 'active' if tab == 'all' else '' }}">All <span class="tab-count">{{ kpis.total }}</span></a>
+    <a href="?tab=assigned" class="{{ 'active' if tab == 'assigned' else '' }}">Assigned <span class="tab-count">{{ kpis.in_use }}</span></a>
+    <a href="?tab=unassigned" class="{{ 'active' if tab == 'unassigned' else '' }}">Unassigned <span class="tab-count">{{ kpis.total - kpis.in_use }}</span></a>
+  </div>
+
+  {% if devices %}
+  {% set model_options = devices | map(attribute='model') | reject('none') | unique | list | sort %}
+  <div class="filter-bar" id="deviceFilterBar">
+    <div class="filter-search">
+      <input type="search" id="deviceSearch" placeholder="Search serial, patient, PT ID…" autocomplete="off" autofocus>
+    </div>
+    <select class="filter-select" id="deviceModelFilter">
+      <option value="">All models</option>
+      {% for m in model_options %}
+        <option value="{{ m }}">{{ m | model_label }}</option>
+      {% endfor %}
+    </select>
+    <select class="filter-select" id="deviceStatusFilter">
+      <option value="">All statuses</option>
+      <option value="in_use">In use</option>
+      <option value="in_stock">In stock</option>
+      <option value="maintenance">Maintenance</option>
+      <option value="retired">Retired</option>
+    </select>
+    <button type="button" class="filter-clear" id="deviceFilterClear" style="display:none;">Clear</button>
+    <span class="filter-count" id="deviceFilterCount"></span>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-body no-pad">
+      {% if devices %}
+      <table class="table sortable" data-default-sort="serial" data-default-dir="asc">
+        <thead>
+          <tr>
+            <th data-sort-key="serial">Serial</th>
+            <th data-sort-key="model">Model</th>
+            <th data-sort-key="firmware">Firmware</th>
+            <th data-sort-key="upload">Upload date</th>
+            <th data-sort-key="patient">Assigned to</th>
+            <th data-sort-key="assigned">Assignment date</th>
+            <th data-sort-key="lastComm">Last communication</th>
+            <th data-sort-key="status">Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in devices %}
+            <tr class="clickable device-row"
+                data-search="{{ (d.serial_number ~ ' ' ~ (d.model or '') ~ ' ' ~ (d.firmware_version or '') ~ ' ' ~ (d.first_name or '') ~ ' ' ~ (d.last_name or '') ~ ' ' ~ (d.mrn or '')) | lower }}"
+                data-model="{{ d.model or '' }}"
+                data-status="{{ d.status }}"
+                data-sort-serial="{{ d.serial_number }}"
+                data-sort-model="{{ d.model or '' }}"
+                data-sort-firmware="{{ d.firmware_version or '' }}"
+                data-sort-upload="{{ d.upload_date or '' }}"
+                data-sort-patient="{{ ((d.last_name or '') ~ ' ' ~ (d.first_name or '')) | trim | lower }}"
+                data-sort-assigned="{{ d.assigned_date or '' }}"
+                data-sort-last-comm="{{ d.last_communication or '' }}"
+                data-sort-status="{{ d.status }}"
+                onclick="window.location='{{ url_for('device_detail', device_id=d.id) }}'">
+              <td class="mono" style="font-weight: 600;">{{ d.serial_number }}</td>
+              <td>{{ d.model | model_label }}</td>
+              <td class="mono small">{{ d.firmware_version or '—' }}</td>
+              <td class="small">{{ d.upload_date | date_only }}</td>
+              <td>
+                {% if d.first_name %}
+                  <a href="{{ url_for('patient_detail', patient_id=d.patient_id) }}"
+                     onclick="event.stopPropagation();"
+                     class="patient-link">
+                    {{ d.first_name }} {{ d.last_name }}
+                  </a>
+                  {% if d.mrn %}<div class="mono muted small">ID: {{ d.mrn | replace('MRN-', '') }}</div>{% endif %}
+                {% else %}
+                  <span class="muted">— unassigned —</span>
+                {% endif %}
+              </td>
+              <td class="small">{{ d.assigned_date | date_only if d.assigned_date else '—' }}</td>
+              <td>
+                {% if d.last_communication %}
+                  {{ d.last_communication | dt }}
+                {% else %}
+                  <span class="muted">Never</span>
+                {% endif %}
+              </td>
+              <td><span class="badge status-{{ d.status }}">{{ d.status | replace('_',' ') | title }}</span></td>
+              <td>
+                {% if d.first_name %}
+                  <a href="{{ url_for('device_assign', device_id=d.id) }}"
+                     class="btn btn-sm"
+                     onclick="event.stopPropagation();">Reassign</a>
+                {% else %}
+                  <a href="{{ url_for('device_assign', device_id=d.id) }}"
+                     class="btn btn-sm btn-primary"
+                     onclick="event.stopPropagation();">Assign</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="empty-state">
+          <p>No devices {% if tab != 'all' %}in this view{% else %}yet{% endif %}.
+            {% if tab != 'assigned' %}<a href="{{ url_for('device_new') }}">Add one →</a>{% endif %}
+          </p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const bar = document.getElementById('deviceFilterBar');
+  if (!bar) return;
+  const search   = document.getElementById('deviceSearch');
+  const model    = document.getElementById('deviceModelFilter');
+  const status   = document.getElementById('deviceStatusFilter');
+  const clearBtn = document.getElementById('deviceFilterClear');
+  const count    = document.getElementById('deviceFilterCount');
+  const rows     = document.querySelectorAll('tr.device-row');
+  const totalRows = rows.length;
+
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    const m = model.value;
+    const s = status.value;
+    let visible = 0;
+    rows.forEach(row => {
+      const matchSearch = !q || row.dataset.search.includes(q);
+      const matchModel  = !m || row.dataset.model === m;
+      const matchStatus = !s || row.dataset.status === s;
+      const show = matchSearch && matchModel && matchStatus;
+      row.classList.toggle('filter-hidden', !show);
+      if (show) visible += 1;
+    });
+    const active = q || m || s;
+    clearBtn.style.display = active ? '' : 'none';
+    count.textContent = active ? `${visible} of ${totalRows} devices` : '';
+  }
+  function reset() {
+    search.value = ''; model.value = ''; status.value = '';
+    apply();
+  }
+  search.addEventListener('input', apply);
+  model.addEventListener('change', apply);
+  status.addEventListener('change', apply);
+  clearBtn.addEventListener('click', reset);
+})();
+</script>
+{% endblock %}

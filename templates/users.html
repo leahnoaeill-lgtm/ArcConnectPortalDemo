@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Users · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Users</h1>
+      <div class="subtitle">{{ users | selectattr('is_active') | list | length }} active · {{ users | rejectattr('is_active') | list | length }} deactivated</div>
+    </div>
+    <div class="actions">
+      <a href="{{ url_for('user_new') }}" class="btn btn-primary">+ Add user</a>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="{{ url_for('settings') }}">Location info</a>
+    <a href="{{ url_for('users') }}" class="active">Users</a>
+    <a href="{{ url_for('alert_rules') }}">Alert rules</a>
+    <a href="{{ url_for('audit_log') }}">Audit log</a>
+  </div>
+
+  <div class="card">
+    <div class="card-body no-pad">
+      <table class="table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Phone</th>
+            <th>Last login</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+            <tr>
+              <td>
+                <div class="user-avatar" style="width: 32px; height: 32px; background: var(--ac-cyan); color: white; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px;">
+                  {{ u.first_name[0] if u.first_name else '?' }}{{ u.last_name[0] if u.last_name else '' }}
+                </div>
+              </td>
+              <td style="font-weight: 600;">{{ u.first_name }} {{ u.last_name }}</td>
+              <td class="mono">{{ u.email }}</td>
+              <td><span class="badge role-{{ u.role }}">{{ u.role | replace('_',' ') | title }}</span></td>
+              <td class="small">{{ u.phone or '—' }}</td>
+              <td class="small">{{ u.last_login_at | dt if u.last_login_at else '—' }}</td>
+              <td>
+                {% if u.is_active %}
+                  <span class="badge status-active">Active</span>
+                {% else %}
+                  <span class="badge status-inactive">Deactivated</span>
+                {% endif %}
+              </td>
+              <td>
+                <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                  <a href="{{ url_for('user_edit', user_id=u.id) }}" class="btn btn-sm">Edit</a>
+                  {% if u.is_active %}
+                    {% if u.id != current_user.id %}
+                      <form method="POST" action="{{ url_for('user_deactivate', user_id=u.id) }}" style="display: inline;" onsubmit="return confirm('Deactivate {{ u.email }}?');">
+                        <button type="submit" class="btn btn-sm">Deactivate</button>
+                      </form>
+                    {% else %}
+                      <span class="small muted">(you)</span>
+                    {% endif %}
+                  {% else %}
+                    <form method="POST" action="{{ url_for('user_activate', user_id=u.id) }}" style="display: inline;">
+                      <button type="submit" class="btn btn-sm btn-primary">Reactivate</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

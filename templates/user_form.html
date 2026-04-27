@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% set is_edit = user is not none %}
+{% block title %}{{ 'Edit user' if is_edit else 'Add user' }} · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('users') }}" class="btn btn-sm">← Back</a>
+      <h1 class="mt-2">{{ 'Edit user' if is_edit else 'Add user' }}</h1>
+      {% if not is_edit and target_location %}
+        <div class="subtitle">Will be added to <strong>{{ target_location.name }}</strong></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="POST" class="card-body" action="{{ url_for('user_edit', user_id=user.id) if is_edit else url_for('user_new') }}">
+      {% if not is_edit and target_location %}
+        <input type="hidden" name="location" value="{{ target_location.id }}">
+      {% endif %}
+      <div class="form-grid">
+        <div class="form-group required">
+          <label>First name</label>
+          <input type="text" name="first_name" value="{{ user.first_name if is_edit else '' }}" required>
+        </div>
+        <div class="form-group required">
+          <label>Last name</label>
+          <input type="text" name="last_name" value="{{ user.last_name if is_edit else '' }}" required>
+        </div>
+        <div class="form-group required span-2">
+          <label>Email</label>
+          <input type="email" name="email" value="{{ user.email if is_edit else '' }}" required>
+          <div class="help">Used for login. Must be unique across the system.</div>
+        </div>
+        <div class="form-group required">
+          <label>Role</label>
+          <select name="role" required>
+            <option value="">— select —</option>
+            <option value="admin"             {% if is_edit and user.role == 'admin' %}selected{% endif %}>Admin</option>
+            <option value="clinician"         {% if is_edit and user.role == 'clinician' %}selected{% endif %}>Clinician</option>
+            <option value="billing"           {% if is_edit and user.role == 'billing' %}selected{% endif %}>Billing</option>
+            <option value="customer_service"  {% if is_edit and user.role == 'customer_service' %}selected{% endif %}>Customer Service</option>
+            <option value="account_executive" {% if is_edit and user.role == 'account_executive' %}selected{% endif %}>Account Executive</option>
+            <option value="read_only"         {% if is_edit and user.role == 'read_only' %}selected{% endif %}>Read only</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="tel" name="phone" value="{{ user.phone or '' if is_edit else '' }}">
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('users') }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">{{ 'Save changes' if is_edit else 'Add user' }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

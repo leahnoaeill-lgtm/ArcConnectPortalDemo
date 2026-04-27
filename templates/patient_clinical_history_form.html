@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Clinical observation · {{ patient.first_name }} {{ patient.last_name }}{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('patient_clinical_history', patient_id=patient.id) }}" class="btn btn-sm">← Back</a>
+      <h1 class="mt-2">{{ 'Edit' if obs else 'Add' }} clinical observation</h1>
+      <div class="subtitle">{{ patient.first_name }} {{ patient.last_name }} · Patient ID {{ patient.mrn }}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="POST" class="card-body">
+      <div class="form-grid">
+        <div class="form-group required span-2">
+          <label>Observation date</label>
+          <input type="date" name="observation_date" required
+                 value="{{ obs.observation_date if obs else today }}">
+          <div class="help">When these clinical values were measured or recorded.</div>
+        </div>
+
+        <!-- ── Hospital admission ── -->
+        <div class="form-group span-2" style="background: var(--ac-light-slate); padding: 10px 14px; border-radius: var(--radius);">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ac-slate);">Hospital admission (if applicable)</div>
+        </div>
+        <div class="form-group">
+          <label>Admission date</label>
+          <input type="date" name="hospital_admission_date"
+                 value="{{ obs.hospital_admission_date if obs else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Discharge date</label>
+          <input type="date" name="hospital_discharge_date"
+                 value="{{ obs.hospital_discharge_date if obs else '' }}">
+        </div>
+        <div class="form-group span-2">
+          <label>Reason / summary</label>
+          <input type="text" name="admission_reason" maxlength="200"
+                 value="{{ obs.admission_reason if obs else '' }}"
+                 placeholder="e.g., Aspiration pneumonia, COPD exacerbation">
+        </div>
+
+        <!-- ── Vitals / PFTs ── -->
+        <div class="form-group span-2" style="background: var(--ac-light-cyan); padding: 10px 14px; border-radius: var(--radius);">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ac-cyan-dark);">Vitals / pulmonary function</div>
+        </div>
+        <div class="form-group">
+          <label>SpO₂ (%)</label>
+          <input type="number" name="spo2_pct" min="0" max="100" step="1"
+                 value="{{ obs.spo2_pct if obs else '' }}">
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+        </div>
+        <div class="form-group">
+          <label>FEV1 (liters)</label>
+          <input type="number" name="fev1_liters" min="0" max="10" step="0.01"
+                 value="{{ obs.fev1_liters if obs else '' }}">
+          <div class="help">Forced Expiratory Volume in 1 second.</div>
+        </div>
+        <div class="form-group">
+          <label>FEV1 (% predicted)</label>
+          <input type="number" name="fev1_pct_predicted" min="0" max="150" step="1"
+                 value="{{ obs.fev1_pct_predicted if obs else '' }}">
+        </div>
+        <div class="form-group">
+          <label>FVC (liters)</label>
+          <input type="number" name="fvc_liters" min="0" max="10" step="0.01"
+                 value="{{ obs.fvc_liters if obs else '' }}">
+          <div class="help">Forced Vital Capacity.</div>
+        </div>
+        <div class="form-group">
+          <label>FVC (% predicted)</label>
+          <input type="number" name="fvc_pct_predicted" min="0" max="150" step="1"
+                 value="{{ obs.fvc_pct_predicted if obs else '' }}">
+        </div>
+
+        <!-- ── Oxygen therapy ── -->
+        <div class="form-group span-2" style="background: var(--ac-light-orange, #FEF1E7); padding: 10px 14px; border-radius: var(--radius);">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #B28600;">Oxygen therapy status</div>
+        </div>
+        <div class="form-group span-2">
+          <label>
+            <input type="checkbox" name="on_oxygen_therapy"
+              {% if obs and obs.on_oxygen_therapy %}checked{% endif %}>
+            Patient is on supplemental oxygen therapy
+          </label>
+        </div>
+        <div class="form-group">
+          <label>Flow rate (L/min)</label>
+          <input type="number" name="oxygen_flow_lpm" min="0" max="15" step="0.5"
+                 value="{{ obs.oxygen_flow_lpm if obs else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Oxygen usage pattern</label>
+          <select name="oxygen_type">
+            <option value="">— select —</option>
+            {% for t, label in [('continuous','Continuous (24/7)'),
+                                 ('nocturnal','Nocturnal (sleep only)'),
+                                 ('exertion','During exertion'),
+                                 ('prn','PRN / as needed')] %}
+              <option value="{{ t }}" {% if obs and obs.oxygen_type == t %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group span-2">
+          <label>Notes</label>
+          <textarea name="notes" rows="3">{{ obs.notes if obs else '' }}</textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('patient_clinical_history', patient_id=patient.id) }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">{{ 'Save changes' if obs else 'Add observation' }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

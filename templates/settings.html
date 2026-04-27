@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Settings · {{ org.name }}{% endblock %}
+{% block body %}
+{% set is_parent_org = org.type == 'parent' %}
+{% set scope_label = 'Main organization' if is_parent_org else 'Satellite location' %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Settings</h1>
+      <div class="subtitle">{{ scope_label }} · manage details, branding, and alert rules</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="{{ url_for('settings') }}" class="active">{{ 'Organization info' if is_parent_org else 'Location info' }}</a>
+    <a href="{{ url_for('users') }}">Users</a>
+    <a href="{{ url_for('alert_rules') }}">Alert rules</a>
+    <a href="{{ url_for('audit_log') }}">Audit log</a>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>{{ scope_label }} information</h2>
+      {% if org.logo_path %}
+        <img src="{{ url_for('static', filename=org.logo_path) }}" class="location-logo" alt="Logo">
+      {% endif %}
+    </div>
+    <form method="POST" enctype="multipart/form-data" class="card-body">
+      <div class="form-grid">
+        <div class="form-group required span-2">
+          <label>Organization name</label>
+          <input type="text" name="name" value="{{ org.name }}" required>
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="tel" name="phone" value="{{ org.phone or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" name="email" value="{{ org.email or '' }}">
+        </div>
+        <div class="form-group span-2">
+          <label>Address line 1</label>
+          <input type="text" name="address_line1" value="{{ org.address_line1 or '' }}">
+        </div>
+        <div class="form-group span-2">
+          <label>Address line 2</label>
+          <input type="text" name="address_line2" value="{{ org.address_line2 or '' }}">
+        </div>
+        <div class="form-group">
+          <label>City</label>
+          <input type="text" name="city" value="{{ org.city or '' }}">
+        </div>
+        <div class="form-group">
+          <label>State</label>
+          <input type="text" name="state" value="{{ org.state or '' }}" maxlength="2">
+        </div>
+        <div class="form-group">
+          <label>ZIP</label>
+          <input type="text" name="zip" value="{{ org.zip or '' }}" maxlength="10">
+        </div>
+        <div class="form-group">
+          <label>Timezone</label>
+          <select name="timezone">
+            {% for tz in ['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Phoenix'] %}
+              <option value="{{ tz }}" {% if tz == org.timezone %}selected{% endif %}>{{ tz }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Default assignee for inbound engagement</label>
+          <select name="default_assignee_user_id">
+            <option value="">— unassigned —</option>
+            {% for u in users %}
+              <option value="{{ u.id }}" {% if u.id == org.default_assignee_user_id %}selected{% endif %}>
+                {{ u.last_name }}, {{ u.first_name }} ({{ u.role | replace('_',' ') | title }})
+              </option>
+            {% endfor %}
+          </select>
+          <div class="help">Patient messages and mood-note tasks are assigned to this user by default. Reassignable per item.</div>
+        </div>
+        <div class="form-group span-2">
+          <label>Logo</label>
+          <input type="file" name="logo" accept="image/*">
+          <div class="help">PNG, JPG, GIF or SVG. Shown on the dashboard header.</div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save changes</button>
+      </div>
+    </form>
+  </div>
+
+  {% if org.type == 'parent' %}
+  {# ── Parent-only: manage child locations (placed above engagement). ── #}
+  <div class="card mt-3">
+    <div class="card-header">
+      <h2>Satellite locations</h2>
+      <a href="{{ url_for('parent_location_new') }}" class="btn btn-sm btn-primary">+ Add Satellite location</a>
+    </div>
+    <div class="card-body">
+      <div class="small muted">
+        Manage the satellite locations under your organization and add admins to each.
+        The full list (with stats + edit / add-admin actions) lives on your
+        <a href="{{ url_for('parent_overview') }}">rollup overview</a>.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Patient engagement feature toggles ─────────────────────── #}
+  <div class="card mt-3">
+    <div class="card-header">
+      <h2>Patient engagement features</h2>
+      {% if parent_override_on %}
+        <span class="badge status-inactive">Disabled by parent organization</span>
+      {% endif %}
+    </div>
+    <form method="POST" action="{{ url_for('settings_engagement') }}" class="card-body">
+      <div class="form-group">
+        <label class="check-row">
+          <input type="checkbox" name="messaging_enabled"
+                 {% if org.messaging_enabled %}checked{% endif %}
+                 {% if parent_override_on %}disabled{% endif %}>
+          <div>
+            <strong>Messaging (inbox)</strong>
+            <div class="help">
+              Let patients send messages from the Arc Connect mobile app. When off, the
+              mobile app hides the message composer and new patient messages stop appearing
+              in the portal inbox.
+            </div>
+          </div>
+        </label>
+      </div>
+      <div class="form-group mt-2">
+        <label class="check-row">
+          <input type="checkbox" name="mood_response_enabled"
+                 {% if org.mood_response_enabled %}checked{% endif %}
+                 {% if parent_override_on %}disabled{% endif %}>
+          <div>
+            <strong>Mood check-in free-text response</strong>
+            <div class="help">
+              Daily mood check-ins are always captured for trending. This toggle only
+              controls whether patients can include a written response when they log an
+              unfavorable mood. Turn off if your team can't respond to open-ended input.
+            </div>
+          </div>
+        </label>
+      </div>
+      {% if parent_override_on %}
+        <div class="flash info mt-2" style="margin-bottom:0;">
+          The parent organization has disabled this feature. Contact your group
+          administrator to turn it on before changing this location's setting.
+        </div>
+      {% endif %}
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary"
+                {% if parent_override_on %}disabled{% endif %}>Save engagement settings</button>
+      </div>
+    </form>
+  </div>
+
+  {% if org.type == 'parent' %}
+  {# ── Parent-only: alert-rule policy across child locations ──────────── #}
+  <div class="card mt-3">
+    <div class="card-header"><h2>Alert-rule policy</h2></div>
+    <form method="POST" action="{{ url_for('settings_alert_policy') }}" class="card-body">
+      <div class="form-group">
+        <label class="check-row" style="align-items: flex-start;">
+          <input type="radio" name="alert_rules_source" value="location"
+                 {% if org.alert_rules_source != 'parent' %}checked{% endif %}>
+          <div>
+            <strong>Each location manages its own alert rules</strong>
+            <div class="help">
+              Location admins can add, edit, and deactivate their own rules under
+              Settings → Alert rules at their location.
+            </div>
+          </div>
+        </label>
+      </div>
+      <div class="form-group mt-2">
+        <label class="check-row" style="align-items: flex-start;">
+          <input type="radio" name="alert_rules_source" value="parent"
+                 {% if org.alert_rules_source == 'parent' %}checked{% endif %}>
+          <div>
+            <strong>Parent organization manages alert rules for all locations</strong>
+            <div class="help">
+              Only the group admin can change alert rules. Location admins see
+              the parent's rules as read-only and cannot add or modify them.
+            </div>
+          </div>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save policy</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

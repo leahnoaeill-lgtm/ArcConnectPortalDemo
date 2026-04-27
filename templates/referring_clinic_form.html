@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if clinic else 'Add' }} clinic · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('referring_clinics') }}" class="btn btn-sm">← Back</a>
+      <h1 class="mt-2">{{ 'Edit clinic' if clinic else 'Add referring clinic' }}</h1>
+      <div class="subtitle">External physician practice</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="POST" class="card-body">
+      <div class="form-grid">
+        <div class="form-group required span-2">
+          <label>Clinic / facility name</label>
+          <input type="text" name="name" required value="{{ clinic.name if clinic else '' }}">
+        </div>
+        <div class="form-group">
+          <label>NPI number</label>
+          <input type="text" name="npi" value="{{ clinic.npi if clinic else '' }}" maxlength="10">
+          <div class="help">10-digit organizational NPI.</div>
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="tel" name="phone" value="{{ clinic.phone if clinic else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Main email</label>
+          <input type="email" name="email" value="{{ clinic.email if clinic else '' }}">
+        </div>
+        <div class="form-group">
+          <label>Website URL</label>
+          <input type="url" name="website_url" value="{{ clinic.website_url if clinic else '' }}" placeholder="https://">
+        </div>
+        <div class="form-group span-2">
+          <label>Address line 1</label>
+          <input type="text" name="address_line1" value="{{ clinic.address_line1 if clinic else '' }}">
+        </div>
+        <div class="form-group span-2">
+          <label>Address line 2</label>
+          <input type="text" name="address_line2" value="{{ clinic.address_line2 if clinic else '' }}">
+        </div>
+        <div class="form-group">
+          <label>City</label>
+          <input type="text" name="city" value="{{ clinic.city if clinic else '' }}">
+        </div>
+        <div class="form-group">
+          <label>State</label>
+          <input type="text" name="state" value="{{ clinic.state if clinic else '' }}" maxlength="2">
+        </div>
+        <div class="form-group">
+          <label>ZIP</label>
+          <input type="text" name="zip" value="{{ clinic.zip if clinic else '' }}" maxlength="10">
+        </div>
+        <div class="form-group span-2">
+          <label>Notes</label>
+          <textarea name="notes" rows="2">{{ clinic.notes if clinic else '' }}</textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="{{ url_for('referring_clinics') }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">{{ 'Save changes' if clinic else 'Add clinic' }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

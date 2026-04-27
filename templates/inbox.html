@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Inbox · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Inbox</h1>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="?status=open" class="{{ 'active' if status == 'open' and not mine else '' }}">Open <span class="tab-count">{{ counts.open or 0 }}</span></a>
+    <a href="?status=open&mine=1" class="{{ 'active' if mine else '' }}">My items <span class="tab-count">{{ counts.mine or 0 }}</span></a>
+    <a href="?status=completed" class="{{ 'active' if status == 'completed' else '' }}">Completed <span class="tab-count">{{ counts.completed or 0 }}</span></a>
+    <a href="?status=all" class="{{ 'active' if status == 'all' else '' }}">All</a>
+  </div>
+
+  <div class="filter-bar">
+    <label class="small muted" for="kindFilter">Type:</label>
+    <select id="kindFilter" class="filter-select" onchange="location = updateQuery({kind: this.value});">
+      {% for k, lbl in [('all','All types'),('message','Messages'),('survey','Surveys'),('mood','Mood notes')] %}
+        <option value="{{ k }}" {% if kind == k %}selected{% endif %}>{{ lbl }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  {% if items %}
+    <div class="inbox-list">
+      {% for item in items %}
+        {% set p_href = url_for('patient_detail', patient_id=item.patient_id) %}
+        <div class="inbox-item inbox-kind-{{ item.kind }} {% if item.status == 'todo' %}is-unread{% endif %}">
+          <div class="inbox-item-head">
+            <div class="inbox-kind-badge inbox-kind-{{ item.kind }}">{{ kind_labels[item.kind] }}</div>
+            <a href="{{ p_href }}" class="inbox-patient">{{ item.first_name }} {{ item.last_name }}</a>
+            {% if item.mrn %}<span class="mono muted small">ID: {{ item.mrn | replace('MRN-', '') }}</span>{% endif %}
+            <span class="muted small">· {{ item.created_at | dt }}</span>
+            {% if item.due_at %}<span class="muted small">· Due {{ item.due_at | dt }}</span>{% endif %}
+            <span class="badge task-status-{{ item.status }}" style="margin-left: auto;">{{ status_labels[item.status] }}</span>
+          </div>
+          <div class="inbox-item-body">
+            {% if item.kind == 'message' %}
+              <div class="inbox-thread">
+                {% for m in item.thread %}
+                  <div class="msg msg-{{ m.direction }}">
+                    <div class="msg-who">
+                      {% if m.direction == 'from_patient' %}
+                        {{ item.first_name }} {{ item.last_name }}
+                      {% else %}
+                        {{ m.author_first or 'Provider' }} {{ m.author_last or '' }}
+                      {% endif %}
+                      <span class="muted small">· {{ m.created_at | dt }}</span>
+                    </div>
+                    <div class="msg-body">{{ m.body }}</div>
+                  </div>
+                {% endfor %}
+              </div>
+              {% if item.status != 'resolved' %}
+                <form method="POST" action="{{ url_for('inbox_reply', item_id=item.id) }}" class="inbox-reply-form">
+                  <textarea name="body" rows="2" placeholder="Reply to {{ item.first_name }}…" required></textarea>
+                  <button type="submit" class="btn btn-sm btn-primary">Send reply</button>
+                </form>
+              {% endif %}
+            {% elif item.kind == 'survey' %}
+              <div class="inbox-survey">
+                {% set score = item.detail.get('score_0_100') %}
+                <div class="survey-score-row">
+                  <div class="survey-milestone">{{ item.detail.get('milestone') }}-day survey</div>
+                  {% if item.detail.get('opted_out') %}
+                    <div class="survey-score-pill" style="background: var(--ac-slate-light); color: var(--ac-slate-deep);">Opted out</div>
+                  {% elif score is not none %}
+                    <div class="survey-score-pill
+                         {% if score >= 80 %}status-green
+                         {% elif score >= 50 %}status-yellow
+                         {% else %}status-red{% endif %}">
+                      Score {{ score }}%
+                    </div>
+                  {% endif %}
+                </div>
+                {% if item.detail.get('q6_open_response') %}
+                  <div class="survey-open">
+                    <div class="small muted" style="text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;">"One thing that would make therapy easier"</div>
+                    <div>"{{ item.detail.q6_open_response }}"</div>
+                  </div>
+                {% endif %}
+              </div>
+            {% elif item.kind == 'mood' %}
+              <div class="inbox-mood">
+                <div class="mood-emoji mood-{{ item.detail.mood }}">{{ {'sad':'😞','meh':'😐','ok':'🙂','happy':'😄'}[item.detail.mood] }}</div>
+                <div>
+                  <div class="small muted" style="text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;">Mood check-in</div>
+                  {% if item.detail.response_text %}
+                    <div>"{{ item.detail.response_text }}"</div>
+                  {% else %}
+                    <div class="muted">No note</div>
+                  {% endif %}
+                </div>
+              </div>
+            {% endif %}
+          </div>
+          <div class="inbox-item-actions">
+            <form method="POST" action="{{ url_for('inbox_assign', item_id=item.id) }}" class="inbox-assign-form">
+              <label class="small muted">Assigned to:</label>
+              <select name="assigned_to_user_id" onchange="this.form.submit();">
+                <option value="">— unassigned —</option>
+                {% for u in users %}
+                  <option value="{{ u.id }}" {% if u.id == item.assigned_to_user_id %}selected{% endif %}>
+                    {{ u.last_name }}, {{ u.first_name }}
+                  </option>
+                {% endfor %}
+              </select>
+            </form>
+            <div class="inbox-status-actions">
+              {% if item.status == 'todo' %}
+                <form method="POST" action="{{ url_for('inbox_status', item_id=item.id) }}" style="display:inline;">
+                  <input type="hidden" name="status" value="in_progress">
+                  <button type="submit" class="btn btn-sm">Start</button>
+                </form>
+              {% endif %}
+              {% if item.status not in ('completed', 'cancelled') %}
+                <form method="POST" action="{{ url_for('inbox_status', item_id=item.id) }}" style="display:inline;">
+                  <input type="hidden" name="status" value="completed">
+                  <button type="submit" class="btn btn-sm btn-primary">Complete</button>
+                </form>
+              {% else %}
+                <form method="POST" action="{{ url_for('inbox_status', item_id=item.id) }}" style="display:inline;">
+                  <input type="hidden" name="status" value="todo">
+                  <button type="submit" class="btn btn-sm">Reopen</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="empty-state">
+        <p>No inbox items in this view. ✓</p>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+function updateQuery(overrides) {
+  const u = new URL(window.location.href);
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === null || v === '') u.searchParams.delete(k); else u.searchParams.set(k, v);
+  }
+  return u.pathname + (u.search || '');
+}
+</script>
+{% endblock %}

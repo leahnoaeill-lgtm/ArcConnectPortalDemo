@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Referring providers · Arc Connect Portal{% endblock %}
+{% block body %}
+{% set can_delete = current_user.role == 'admin' %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Referring providers</h1>
+    </div>
+    <div class="actions">
+      <a href="{{ url_for('referring_provider_new') }}" class="btn btn-primary">+ Add provider</a>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="{{ url_for('referring_clinics') }}">Clinics</a>
+    <a href="{{ url_for('referring_providers') }}" class="active">Providers</a>
+  </div>
+
+  {% if providers %}
+  {% set clinic_options = providers | map(attribute='clinic_name') | reject('none') | unique | list | sort %}
+  <div class="filter-bar" id="providerFilterBar">
+    <div class="filter-search">
+      <input type="search" id="providerSearch" placeholder="Search name, specialty, NPI, or clinic…" autocomplete="off" autofocus>
+    </div>
+    <select class="filter-select" id="providerClinicFilter">
+      <option value="">All clinics</option>
+      {% for name in clinic_options %}
+        <option value="{{ name }}">{{ name }}</option>
+      {% endfor %}
+    </select>
+    <select class="filter-select" id="providerStatusFilter">
+      <option value="">All statuses</option>
+      <option value="active">Active</option>
+      <option value="inactive">Inactive</option>
+    </select>
+    <button type="button" class="filter-clear" id="providerFilterClear" style="display:none;">Clear</button>
+    <span class="filter-count" id="providerFilterCount"></span>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-body no-pad">
+      {% if providers %}
+      <table class="table sortable" data-default-sort="name" data-default-dir="asc">
+        <thead>
+          <tr>
+            <th data-sort-key="name">Name</th>
+            <th data-sort-key="credentials">Credentials</th>
+            <th data-sort-key="specialty">Specialty</th>
+            <th data-sort-key="clinic">Clinic</th>
+            <th data-sort-key="npi">NPI</th>
+            <th>Contact</th>
+            <th class="num-col" data-sort-key="patients">Patients</th>
+            <th data-sort-key="status">Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in providers %}
+            <tr class="provider-row"
+                data-search="{{ ((p.first_name or '') ~ ' ' ~ (p.last_name or '') ~ ' ' ~ (p.credentials or '') ~ ' ' ~ (p.specialty or '') ~ ' ' ~ (p.npi or '') ~ ' ' ~ (p.clinic_name or '')) | lower }}"
+                data-clinic="{{ p.clinic_name or '' }}"
+                data-active="{{ 'active' if p.is_active else 'inactive' }}"
+                data-sort-name="{{ ((p.last_name or '') ~ ' ' ~ (p.first_name or '')) | trim | lower }}"
+                data-sort-credentials="{{ (p.credentials or '') | lower }}"
+                data-sort-specialty="{{ (p.specialty or '') | lower }}"
+                data-sort-clinic="{{ (p.clinic_name or '') | lower }}"
+                data-sort-npi="{{ p.npi or '' }}"
+                data-sort-patients="{{ p.patient_count }}"
+                data-sort-status="{{ 'active' if p.is_active else 'inactive' }}">
+              <td style="font-weight: 600;">{{ p.last_name }}, {{ p.first_name }}</td>
+              <td>{% if p.credentials %}<span class="badge" style="background: var(--ac-slate); color: white;">{{ p.credentials }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td class="small">{{ p.specialty or '—' }}</td>
+              <td class="small">
+                {% if p.clinic_id %}
+                  <a href="{{ url_for('referring_clinic_detail', clinic_id=p.clinic_id) }}">{{ p.clinic_name }}</a>
+                {% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              <td class="mono small">{{ p.npi or '—' }}</td>
+              <td class="small">
+                {% if p.phone %}<div><a href="tel:{{ p.phone }}">{{ p.phone }}</a></div>{% endif %}
+                {% if p.email %}<div class="muted"><a href="mailto:{{ p.email }}">{{ p.email }}</a></div>{% endif %}
+              </td>
+              <td class="num-col num">{{ p.patient_count }}</td>
+              <td>
+                {% if p.is_active %}
+                  <span class="badge status-active">Active</span>
+                {% else %}
+                  <span class="badge status-inactive">Inactive</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="flex gap-1">
+                  <a href="{{ url_for('referring_provider_edit', provider_id=p.id) }}" class="btn btn-sm">Edit</a>
+                  {% if p.is_active %}
+                    <form method="POST" action="{{ url_for('referring_provider_deactivate', provider_id=p.id) }}" style="display:inline;">
+                      <button type="submit" class="btn btn-sm">Deactivate</button>
+                    </form>
+                  {% else %}
+                    <form method="POST" action="{{ url_for('referring_provider_activate', provider_id=p.id) }}" style="display:inline;">
+                      <button type="submit" class="btn btn-sm btn-primary">Reactivate</button>
+                    </form>
+                  {% endif %}
+                  {% if can_delete %}
+                    <form method="POST" action="{{ url_for('referring_provider_delete', provider_id=p.id) }}" style="display:inline;"
+                          onsubmit="return confirm('Delete {{ p.first_name }} {{ p.last_name }}? Any patients linked to this provider will lose the referral reference. This cannot be undone.');">
+                      <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="empty-state">
+          <p>No referring providers yet. <a href="{{ url_for('referring_provider_new') }}">Add the first one →</a>
+          {% if clinic_options is not defined or not clinic_options %} ·
+            You'll need at least one referring clinic first — <a href="{{ url_for('referring_clinics') }}">manage clinics</a>.
+          {% endif %}</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const bar = document.getElementById('providerFilterBar');
+  if (!bar) return;
+  const search = document.getElementById('providerSearch');
+  const clinic = document.getElementById('providerClinicFilter');
+  const status = document.getElementById('providerStatusFilter');
+  const clearBtn = document.getElementById('providerFilterClear');
+  const count = document.getElementById('providerFilterCount');
+  const rows = document.querySelectorAll('tr.provider-row');
+  const total = rows.length;
+
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    const c = clinic.value;
+    const s = status.value;
+    let visible = 0;
+    rows.forEach(row => {
+      const matchSearch = !q || row.dataset.search.includes(q);
+      const matchClinic = !c || row.dataset.clinic === c;
+      const matchStatus = !s || row.dataset.active === s;
+      const show = matchSearch && matchClinic && matchStatus;
+      row.classList.toggle('filter-hidden', !show);
+      if (show) visible += 1;
+    });
+    const active = q || c || s;
+    clearBtn.style.display = active ? '' : 'none';
+    count.textContent = active ? `${visible} of ${total} providers` : '';
+  }
+  function reset() { search.value = ''; clinic.value = ''; status.value = ''; apply(); }
+  search.addEventListener('input', apply);
+  clinic.addEventListener('change', apply);
+  status.addEventListener('change', apply);
+  clearBtn.addEventListener('click', reset);
+})();
+</script>
+{% endblock %}

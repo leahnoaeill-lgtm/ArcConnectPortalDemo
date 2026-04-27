@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Audit log · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Audit log</h1>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="{{ url_for('settings') }}">Location info</a>
+    <a href="{{ url_for('users') }}">Users</a>
+    <a href="{{ url_for('alert_rules') }}">Alert rules</a>
+    <a href="{{ url_for('audit_log') }}" class="active">Audit log</a>
+  </div>
+
+  {% if is_parent %}
+    <div class="flash info mt-2" style="margin-bottom: 12px;">
+      You are viewing audit events from <strong>all child locations</strong> under your parent organization.
+    </div>
+  {% endif %}
+
+  {# Two top-level tabs: internal portal events vs ABMRC support access. #}
+  <div class="tabs" style="margin-bottom: 8px;">
+    <a href="{{ url_for('audit_log') }}" class="{{ '' if show_external else 'active' }}">
+      Portal events <span class="tab-count">{{ audit_counts.internal or 0 }}</span>
+    </a>
+    <a href="{{ url_for('audit_log', source='abmrc') }}" class="{{ 'active' if show_external else '' }}">
+      ABMRC access <span class="tab-count">{{ audit_counts.external or 0 }}</span>
+    </a>
+  </div>
+
+  {% if show_external %}
+    <div class="flash info" style="margin-bottom: 12px;">
+      Read-only access events from ABMRC support staff working under your signed BAA.
+    </div>
+  {% endif %}
+
+  <div class="filter-bar">
+    {% if is_parent and locations %}
+      <select class="filter-select" onchange="location = updateQuery({location: this.value, user: 0})">
+        <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
+        {% for l in locations %}
+          <option value="{{ l.id }}" {% if filter_location == l.id %}selected{% endif %}>{{ l.name }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+    <select class="filter-select" onchange="location = updateQuery({event: this.value})">
+      <option value="all" {% if filter_event == 'all' %}selected{% endif %}>All events</option>
+      {% for k, lbl in event_labels.items() %}
+        <option value="{{ k }}" {% if filter_event == k %}selected{% endif %}>{{ lbl }}</option>
+      {% endfor %}
+    </select>
+    <select class="filter-select" onchange="location = updateQuery({user: this.value})">
+      <option value="0" {% if not filter_user %}selected{% endif %}>All users</option>
+      {% for u in users %}
+        <option value="{{ u.id }}" {% if filter_user == u.id %}selected{% endif %}>{{ u.last_name }}, {{ u.first_name }}</option>
+      {% endfor %}
+    </select>
+    {% if filter_event != 'all' or filter_user or filter_patient or filter_location %}
+      <a href="{{ url_for('audit_log') }}" class="filter-clear" style="display:inline-block;">Clear</a>
+    {% endif %}
+    <span class="filter-count">{{ events | length }} event{{ 's' if events|length != 1 }}{% if events | length == 500 %} (showing most recent 500){% endif %}</span>
+  </div>
+
+  <div class="card">
+    <div class="card-body no-pad">
+      {% if events %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>User</th>
+            <th>Event</th>
+            <th>Patient</th>
+            {% if is_parent %}<th>Location</th>{% endif %}
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in events %}
+            <tr>
+              <td class="small muted">{{ e.occurred_at | dt }}</td>
+              <td class="small">
+                {% if e.user_first %}{{ e.user_first }} {{ e.user_last or '' }}{% else %}<span class="muted">System</span>{% endif %}
+              </td>
+              <td><span class="badge audit-event-{{ e.event }}">{{ event_labels.get(e.event, e.event) }}</span></td>
+              <td class="small">
+                {% if e.pt_last %}
+                  <a href="{{ url_for('patient_detail', patient_id=e.patient_id) }}">{{ e.pt_first }} {{ e.pt_last }}</a>
+                  {% if e.pt_mrn %}<div class="mono muted small">ID: {{ e.pt_mrn | replace('MRN-', '') }}</div>{% endif %}
+                {% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              {% if is_parent %}<td class="small muted">{{ e.org_name or '—' }}</td>{% endif %}
+              <td class="small muted">{{ e.detail or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="empty-state">
+          <p>No audit events match the current filter.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+function updateQuery(overrides) {
+  const u = new URL(window.location.href);
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === null || v === '' || v === '0' || v === 'all') u.searchParams.delete(k);
+    else u.searchParams.set(k, v);
+  }
+  return u.pathname + (u.search || '');
+}
+</script>
+{% endblock %}
