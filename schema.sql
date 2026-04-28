@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     zip TEXT,
     phone TEXT,
     email TEXT,
+    npi TEXT,
     timezone TEXT DEFAULT 'America/New_York',
     latitude REAL,
     longitude REAL,
@@ -35,6 +36,12 @@ CREATE TABLE IF NOT EXISTS organizations (
     -- Default assignee for inbound patient-engagement items (messages, mood
     -- notes). Configurable per location under Settings → Location info.
     default_assignee_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    -- Super-admin verification of the customer (NPI confirmed, contract on
+    -- file, etc.). Captured on the New Organization form; can be edited later.
+    verification_complete INTEGER DEFAULT 0,
+    verification_date TEXT,
+    verification_notes TEXT,
+    verified_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

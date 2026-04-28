@@ -119,9 +119,26 @@ def seed():
     c.execute("""INSERT INTO users (organization_id, email, first_name, last_name,
                  role, phone) VALUES (?, ?, ?, ?, 'super_admin', ?)""",
               (abmrc_id, 'support@abmrespiratory.com', 'Casey', 'Morgan', '317-555-0101'))
+    super_admin_id = c.lastrowid
+
+    # ── Verification on file for the two active customer orgs ──────────
+    today = date.today()
+    c.execute("""UPDATE organizations SET verification_complete = 1,
+                 verification_date = ?, verification_notes = ?,
+                 verified_by_user_id = ?, npi = ?
+                 WHERE id = ?""",
+              ((today - timedelta(days=180)).isoformat(),
+               'NPI verified via NPPES; multi-location BAA reviewed; CCO reference (Karen Hughes) confirmed by phone.',
+               super_admin_id, '1487629034', adap_id))
+    c.execute("""UPDATE organizations SET verification_complete = 1,
+                 verification_date = ?, verification_notes = ?,
+                 verified_by_user_id = ?, npi = ?
+                 WHERE id = ?""",
+              ((today - timedelta(days=92)).isoformat(),
+               'NPI verified via NPPES; AZ HME license on file; primary contact (Maria Torres) reached and validated.',
+               super_admin_id, '1730495812', sunwest_id))
 
     # ── Sample BAA on file for Adapt Respiratory (signed last year, valid 2y) ──
-    today = date.today()
     c.execute("""INSERT INTO organization_baas (organization_id, file_path, file_name,
                  signed_date, effective_from, expires_on,
                  signed_by_name, signed_by_title)
@@ -130,6 +147,16 @@ def seed():
               (adap_id, (today.replace(year=today.year - 1)).isoformat(),
                (today.replace(year=today.year - 1)).isoformat(),
                (today.replace(year=today.year + 1)).isoformat()))
+
+    # ── Sample BAA on file for Sunwest Medical (signed ~6 months ago, valid 2y) ──
+    sunwest_signed = (today - timedelta(days=180)).isoformat()
+    sunwest_expires = (today + timedelta(days=550)).isoformat()
+    c.execute("""INSERT INTO organization_baas (organization_id, file_path, file_name,
+                 signed_date, effective_from, expires_on,
+                 signed_by_name, signed_by_title)
+                 VALUES (?, 'uploads/baas/sample_sunwest_baa.pdf', 'Sunwest_BAA_2025.pdf',
+                         ?, ?, ?, 'Maria Torres', 'Owner / Director')""",
+              (sunwest_id, sunwest_signed, sunwest_signed, sunwest_expires))
 
     # Adapt HQ
     c.execute("""INSERT INTO users (organization_id, email, first_name, last_name,

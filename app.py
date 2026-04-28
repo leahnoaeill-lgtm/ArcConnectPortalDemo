@@ -13,7 +13,7 @@ from pathlib import Path
 from functools import wraps
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, g, send_from_directory, abort, jsonify)
+                   session, flash, g, send_from_directory, abort, jsonify, Response)
 from werkzeug.utils import secure_filename
 
 HERE = Path(__file__).parent
@@ -30,6 +30,25 @@ MAX_UPLOAD_MB = 10
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'arc-connect-portal-demo-key-2026')
 app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_MB * 1024 * 1024
+
+
+# ── Optional HTTP Basic Auth gate (set AUTH_USERNAME + AUTH_PASSWORD env vars to enable) ──
+
+_BASIC_AUTH_USER = os.environ.get('AUTH_USERNAME')
+_BASIC_AUTH_PASS = os.environ.get('AUTH_PASSWORD')
+
+
+@app.before_request
+def _require_basic_auth():
+    if not (_BASIC_AUTH_USER and _BASIC_AUTH_PASS):
+        return None
+    auth = request.authorization
+    if auth and auth.username == _BASIC_AUTH_USER and auth.password == _BASIC_AUTH_PASS:
+        return None
+    return Response(
+        'Authentication required.', 401,
+        {'WWW-Authenticate': 'Basic realm="Arc Connect Portal"'}
+    )
 
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
@@ -865,7 +884,21 @@ def super_dashboard():
         baa_state, days_left = _baa_status(baa)
         rows.append({**dict(o), 'baa': dict(baa) if baa else None,
                      'baa_state': baa_state, 'baa_days_left': days_left})
-    return render_template('super_dashboard.html', orgs=rows)
+    counts = q_one("""SELECT
+                        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+                        SUM(CASE WHEN status = 'pending_setup' THEN 1 ELSE 0 END) AS pending
+                      FROM organizations
+                      WHERE type IN ('parent','location')""")
+    totals = q_one("""SELECT
+                        (SELECT COUNT(*) FROM patients WHERE status = 'active') AS patients,
+                        (SELECT COUNT(*) FROM devices  WHERE status != 'retired') AS devices,
+                        (SELECT COUNT(*) FROM alerts   WHERE resolved_at IS NULL) AS alerts""")
+    return render_template('super_dashboard.html', orgs=rows,
+                           active_count=counts['active'] or 0,
+                           pending_count=counts['pending'] or 0,
+                           total_patients=totals['patients'] or 0,
+                           total_devices=totals['devices'] or 0,
+                           total_alerts=totals['alerts'] or 0)
 
 
 @app.route('/super/orgs/new', methods=['GET', 'POST'])
@@ -874,63 +907,71 @@ def super_org_new():
     bounce = _require_super_admin()
     if bounce: return bounce
     if request.method == 'POST':
-        # Validate BAA upload first — required to create an org.
-        baa_file = request.files.get('baa_document')
-        if not baa_file or not baa_file.filename:
-            flash('A signed BAA must be uploaded before the organization is created.', 'error')
-            return redirect(url_for('super_org_new'))
-        ext = baa_file.filename.rsplit('.', 1)[-1].lower() if '.' in baa_file.filename else ''
-        if ext not in ALLOWED_BAA_EXT:
-            flash('BAA upload must be a PDF.', 'error')
-            return redirect(url_for('super_org_new'))
-        # Validate BAA dates
-        signed_date = request.form.get('signed_date')
-        effective_from = request.form.get('effective_from')
-        expires_on = request.form.get('expires_on')
-        if not (signed_date and effective_from and expires_on):
-            flash('BAA signed/effective/expires dates are required.', 'error')
-            return redirect(url_for('super_org_new'))
-        # Validate parent-admin invite
-        invite_email = (request.form.get('invite_email') or '').strip().lower()
-        invite_first = (request.form.get('invite_first_name') or '').strip()
-        invite_last = (request.form.get('invite_last_name') or '').strip()
-        if not (invite_email and invite_first and invite_last):
-            flash('An initial parent admin invite (email + name) is required.', 'error')
-            return redirect(url_for('super_org_new'))
+        # Org name + parent admin invite are the only hard requirements.
         org_name = (request.form.get('name') or '').strip()
         if not org_name:
             flash('Organization name is required.', 'error')
             return redirect(url_for('super_org_new'))
+        invite_email = (request.form.get('invite_email') or '').strip().lower()
+        invite_first = (request.form.get('invite_first_name') or '').strip()
+        invite_last = (request.form.get('invite_last_name') or '').strip()
+        if not (invite_email and invite_first and invite_last):
+            flash('An initial group admin invite (email + name) is required.', 'error')
+            return redirect(url_for('super_org_new'))
 
-        # All validations passed — create the org in pending_setup, save BAA,
-        # generate the invite token.
+        # BAA is optional at creation. If a file is provided, validate it
+        # and the signed date; effective_from defaults to signed_date and
+        # expires_on is left NULL. The super_org_activate route refuses to
+        # flip the org to 'active' until a BAA exists.
+        baa_file = request.files.get('baa_document')
+        baa_provided = bool(baa_file and baa_file.filename)
+        signed_date = request.form.get('signed_date')
+        if baa_provided:
+            ext = baa_file.filename.rsplit('.', 1)[-1].lower() if '.' in baa_file.filename else ''
+            if ext not in ALLOWED_BAA_EXT:
+                flash('BAA upload must be a PDF.', 'error')
+                return redirect(url_for('super_org_new'))
+            if not signed_date:
+                flash('BAA signed date is required when a BAA is uploaded.', 'error')
+                return redirect(url_for('super_org_new'))
+
+        u = current_user()
+        verification_date = request.form.get('verification_date') or None
+        verification_complete = 1 if verification_date else 0
+
         q_exec("""INSERT INTO organizations (name, parent_id, type, status,
-                  address_line1, city, state, zip, phone, email, timezone)
-                  VALUES (?, NULL, 'parent', 'pending_setup', ?, ?, ?, ?, ?, ?, ?)""",
+                  address_line1, address_line2, city, state, zip, phone, npi,
+                  verification_complete, verification_date, verification_notes,
+                  verified_by_user_id)
+                  VALUES (?, NULL, 'parent', 'pending_setup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                (org_name,
                 request.form.get('address_line1') or None,
+                request.form.get('address_line2') or None,
                 request.form.get('city') or None,
                 request.form.get('state') or None,
                 request.form.get('zip') or None,
                 request.form.get('phone') or None,
-                request.form.get('email') or None,
-                request.form.get('timezone') or 'America/New_York'))
+                request.form.get('npi') or None,
+                verification_complete,
+                verification_date,
+                request.form.get('verification_notes') or None,
+                u['id']))
         new_org_id = q_one('SELECT last_insert_rowid() AS id')['id']
 
-        BAA_DIR.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime('%Y%m%d%H%M%S')
-        safe_name = secure_filename(f'org{new_org_id}_baa_{ts}.{ext}')
-        baa_file.save(BAA_DIR / safe_name)
-        u = current_user()
-        q_exec("""INSERT INTO organization_baas (organization_id, file_path, file_name,
-                  signed_date, effective_from, expires_on,
-                  signed_by_name, signed_by_title, uploaded_by_user_id)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-               (new_org_id, f'uploads/baas/{safe_name}',
-                secure_filename(baa_file.filename),
-                signed_date, effective_from, expires_on,
-                request.form.get('signed_by_name') or None,
-                request.form.get('signed_by_title') or None, u['id']))
+        if baa_provided:
+            BAA_DIR.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime('%Y%m%d%H%M%S')
+            safe_name = secure_filename(f'org{new_org_id}_baa_{ts}.{ext}')
+            baa_file.save(BAA_DIR / safe_name)
+            q_exec("""INSERT INTO organization_baas (organization_id, file_path, file_name,
+                      signed_date, effective_from, expires_on,
+                      signed_by_name, signed_by_title, uploaded_by_user_id)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (new_org_id, f'uploads/baas/{safe_name}',
+                    secure_filename(baa_file.filename),
+                    signed_date, signed_date, None,
+                    request.form.get('signed_by_name') or None,
+                    request.form.get('signed_by_title') or None, u['id']))
 
         # Parent-admin invite
         import secrets
@@ -944,9 +985,11 @@ def super_org_new():
                 u['id'], expires_at))
 
         _log_access('location_create', ref_type='organization', ref_id=new_org_id,
-                    detail=f'Super admin created customer org "{org_name}"; invited {invite_email}')
-        flash(f'Organization "{org_name}" created. Invite sent to {invite_email}.',
-              'success')
+                    detail=f'Super admin created customer org "{org_name}"; invited {invite_email}; BAA={"on file" if baa_provided else "missing"}')
+        if baa_provided:
+            flash(f'Organization "{org_name}" created. Invite sent to {invite_email}. Account is in pending setup until activated.', 'success')
+        else:
+            flash(f'Organization "{org_name}" created without a BAA. Invite sent to {invite_email}. Upload a signed BAA to enable activation.', 'success')
         return redirect(url_for('super_dashboard'))
     return render_template('super_org_form.html')
 
@@ -1009,11 +1052,164 @@ def super_org_suspend(org_id):
 def super_org_activate(org_id):
     bounce = _require_super_admin()
     if bounce: return bounce
+    has_baa = q_one(
+        'SELECT 1 AS x FROM organization_baas WHERE organization_id = ? LIMIT 1',
+        (org_id,))
+    if not has_baa:
+        flash('Cannot activate: a signed BAA must be on file before this organization can be active.', 'error')
+        return redirect(url_for('super_dashboard'))
+    org = q_one('SELECT verification_complete FROM organizations WHERE id = ?', (org_id,))
+    if not (org and org['verification_complete']):
+        flash('Cannot activate: account verification (verification date) must be recorded before this organization can be active.', 'error')
+        return redirect(url_for('super_dashboard'))
     q_exec("UPDATE organizations SET status = 'active' WHERE id = ?", (org_id,))
     _log_access('location_update', ref_type='organization', ref_id=org_id,
-                detail='Org reactivated by super admin')
-    flash('Organization reactivated.', 'success')
+                detail='Org activated by super admin')
+    flash('Organization activated.', 'success')
     return redirect(url_for('super_dashboard'))
+
+
+@app.route('/super/orgs/<int:org_id>/update', methods=['GET', 'POST'])
+@require_login
+def super_org_update(org_id):
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    org = q_one('SELECT * FROM organizations WHERE id = ?', (org_id,))
+    if not org:
+        abort(404)
+    current_baa = q_one(
+        """SELECT * FROM organization_baas
+           WHERE organization_id = ?
+           ORDER BY id DESC LIMIT 1""", (org_id,))
+
+    if request.method == 'POST':
+        org_name = (request.form.get('name') or '').strip()
+        if not org_name:
+            flash('Organization name is required.', 'error')
+            return redirect(url_for('super_org_update', org_id=org_id))
+
+        baa_file = request.files.get('baa_document')
+        baa_provided = bool(baa_file and baa_file.filename)
+        signed_date = request.form.get('signed_date')
+        if baa_provided:
+            ext = baa_file.filename.rsplit('.', 1)[-1].lower() if '.' in baa_file.filename else ''
+            if ext not in ALLOWED_BAA_EXT:
+                flash('BAA upload must be a PDF.', 'error')
+                return redirect(url_for('super_org_update', org_id=org_id))
+            if not signed_date:
+                flash('BAA signed date is required when a BAA is uploaded.', 'error')
+                return redirect(url_for('super_org_update', org_id=org_id))
+
+        u = current_user()
+        verification_date = request.form.get('verification_date') or None
+        verification_complete = 1 if verification_date else 0
+
+        q_exec("""UPDATE organizations SET
+                  name = ?, address_line1 = ?, address_line2 = ?,
+                  city = ?, state = ?, zip = ?, phone = ?, npi = ?,
+                  verification_complete = ?, verification_date = ?,
+                  verification_notes = ?, verified_by_user_id = ?
+                  WHERE id = ?""",
+               (org_name,
+                request.form.get('address_line1') or None,
+                request.form.get('address_line2') or None,
+                request.form.get('city') or None,
+                request.form.get('state') or None,
+                request.form.get('zip') or None,
+                request.form.get('phone') or None,
+                request.form.get('npi') or None,
+                verification_complete,
+                verification_date,
+                request.form.get('verification_notes') or None,
+                u['id'], org_id))
+
+        if baa_provided:
+            BAA_DIR.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime('%Y%m%d%H%M%S')
+            safe_name = secure_filename(f'org{org_id}_baa_{ts}.{ext}')
+            baa_file.save(BAA_DIR / safe_name)
+            q_exec("""INSERT INTO organization_baas (organization_id, file_path, file_name,
+                      signed_date, effective_from, expires_on,
+                      signed_by_name, signed_by_title, uploaded_by_user_id)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (org_id, f'uploads/baas/{safe_name}',
+                    secure_filename(baa_file.filename),
+                    signed_date, signed_date, None,
+                    request.form.get('signed_by_name') or None,
+                    request.form.get('signed_by_title') or None, u['id']))
+
+        _log_access('location_update', ref_type='organization', ref_id=org_id,
+                    detail=f'Super admin updated org "{org_name}"; BAA={"new upload" if baa_provided else "unchanged"}')
+        flash(f'"{org_name}" updated.', 'success')
+        return redirect(url_for('super_dashboard'))
+
+    verified_by_name = None
+    if org['verified_by_user_id']:
+        v = q_one('SELECT first_name, last_name FROM users WHERE id = ?',
+                  (org['verified_by_user_id'],))
+        if v:
+            verified_by_name = f"{v['first_name']} {v['last_name']}"
+
+    return render_template('super_org_update_form.html',
+                           org=org, current_baa=current_baa,
+                           verified_by_name=verified_by_name)
+
+
+# Two-letter US state code → FIPS numeric (matches us-atlas topojson state ids).
+_US_STATE_FIPS = {
+    'AL':'01','AK':'02','AZ':'04','AR':'05','CA':'06','CO':'08','CT':'09','DE':'10',
+    'DC':'11','FL':'12','GA':'13','HI':'15','ID':'16','IL':'17','IN':'18','IA':'19',
+    'KS':'20','KY':'21','LA':'22','ME':'23','MD':'24','MA':'25','MI':'26','MN':'27',
+    'MS':'28','MO':'29','MT':'30','NE':'31','NV':'32','NH':'33','NJ':'34','NM':'35',
+    'NY':'36','NC':'37','ND':'38','OH':'39','OK':'40','OR':'41','PA':'42','RI':'44',
+    'SC':'45','SD':'46','TN':'47','TX':'48','UT':'49','VT':'50','VA':'51','WA':'53',
+    'WV':'54','WI':'55','WY':'56','PR':'72'
+}
+
+
+@app.route('/super/map')
+@require_login
+def super_map():
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    metric = (request.args.get('metric') or 'patients').lower()
+    if metric not in ('patients', 'devices', 'alerts'):
+        metric = 'patients'
+
+    # Aggregate counts by the location's state. For each org_id, the patient/
+    # device/alert is attributed to that org's state.
+    if metric == 'patients':
+        rows = q_all("""SELECT o.state AS state, COUNT(*) AS n
+                        FROM patients p JOIN organizations o ON o.id = p.organization_id
+                        WHERE p.status = 'active' AND o.state IS NOT NULL
+                        GROUP BY o.state""")
+        label = 'Active patients'
+    elif metric == 'devices':
+        rows = q_all("""SELECT o.state AS state, COUNT(*) AS n
+                        FROM devices d JOIN organizations o ON o.id = d.organization_id
+                        WHERE d.status != 'retired' AND o.state IS NOT NULL
+                        GROUP BY o.state""")
+        label = 'Active devices'
+    else:
+        rows = q_all("""SELECT o.state AS state, COUNT(*) AS n
+                        FROM alerts a JOIN organizations o ON o.id = a.organization_id
+                        WHERE a.resolved_at IS NULL AND o.state IS NOT NULL
+                        GROUP BY o.state""")
+        label = 'Active alerts'
+
+    # Map state code → FIPS, build {fips: count} for the front-end.
+    by_fips = {}
+    by_state = {}
+    for r in rows:
+        code = (r['state'] or '').upper()
+        fips = _US_STATE_FIPS.get(code)
+        if fips:
+            by_fips[fips] = r['n']
+            by_state[code] = r['n']
+
+    total = sum(by_fips.values())
+    return render_template('super_map.html', metric=metric, metric_label=label,
+                           by_fips=by_fips, by_state=by_state, total=total)
 
 
 # ── Dashboard ────────────────────────────────────────────────────────────────

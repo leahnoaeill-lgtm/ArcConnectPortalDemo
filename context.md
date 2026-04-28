@@ -1,6 +1,6 @@
 # Arc Connect Portal — Context
 
-**Last updated:** 2026-04-22
+**Last updated:** 2026-04-28
 
 ## Purpose of this file
 Running memory for the Arc Connect Portal build. Read this first on any new session. Update before context runs out.
@@ -196,6 +196,11 @@ All 16 routes tested for Priya (Denver admin): 200 OK.
 Parent-admin routes tested for Karen: 200 OK including `/parent` rollup and `/switch-location/<id>`.
 Multi-tenant isolation verified: Maria (Sunwest) gets 404 on Adapt's patients/devices.
 No errors or tracebacks in the app log.
+
+### 2026-04-28 — Containerization + SuperAdmin backup
+- Added `portal/Dockerfile` (Python 3.11-slim, gunicorn on port 5005) and `portal/.dockerignore`. Build context is `./portal` so the local SQLite db and uploads stay out of the image; `seed.py` runs at build time to bake a fresh demo db inside the container.
+- Added root-level `docker-compose.yml` (in working dir, not in this repo) — one-command launch (`docker compose up -d` → `localhost:5005`), basic-auth gate `Arc` / `Connect` overridable via env vars.
+- Pushed backup branch **`SuperAdmin`** to `origin` on 2026-04-28 capturing the post-super-admin / view-only-hardening / group-admin-copy state plus the containerization work. To restore: `git checkout SuperAdmin`.
 
 ---
 

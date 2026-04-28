@@ -23,7 +23,8 @@
   <div class="topbar-nav">
     {% if is_super_admin and not super_acting_org_id %}
       {# ABMRC super admin at their own dashboard — no customer workflows. #}
-      <a href="{{ url_for('super_dashboard') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('super_') else '' }}">Organizations</a>
+      <a href="{{ url_for('super_dashboard') }}" class="{{ 'active' if request.endpoint and (request.endpoint == 'super_dashboard' or request.endpoint.startswith('super_org')) else '' }}">Organizations</a>
+      <a href="{{ url_for('super_map') }}" class="{{ 'active' if request.endpoint == 'super_map' else '' }}">Map</a>
     {% else %}
       <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' else '' }}">Dashboard</a>
       <a href="{{ url_for('patients') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('patient') else '' }}">Patients</a>

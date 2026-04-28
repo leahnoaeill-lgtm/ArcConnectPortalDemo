@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Map · ABMRC{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>USA Overview Map</h1>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="?metric=patients" class="{{ 'active' if metric == 'patients' else '' }}">Active patients</a>
+    <a href="?metric=devices"  class="{{ 'active' if metric == 'devices' else '' }}">Active devices</a>
+    <a href="?metric=alerts"   class="{{ 'active' if metric == 'alerts' else '' }}">Active alerts</a>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div id="usa-map" style="position: relative;">
+        <svg id="usa-map-svg" viewBox="0 0 975 610" style="width: 100%; height: auto; display: block;"></svg>
+        <div id="usa-map-tooltip" style="
+          position: absolute; pointer-events: none; opacity: 0;
+          background: #fff; border: 1px solid #d8d8d8; border-radius: 4px;
+          padding: 6px 10px; font-size: 13px; box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+          transition: opacity 120ms ease;"></div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 12px; color: #666;">
+        <span>0</span>
+        <div id="usa-map-legend" style="
+          width: 180px; height: 10px; border-radius: 2px;
+          background: linear-gradient(to right, #f0f6ff, #08306b);"></div>
+        <span id="usa-map-max">—</span>
+        <span style="margin-left: auto;">{{ metric_label }} by state · click a tab above to switch metric</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/d3.v7.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/topojson-client.min.js') }}"></script>
+<script>
+(function () {
+  const counts = {{ by_fips | tojson }};   // { "06": 42, "08": 7, ... }
+  const metricLabel = {{ metric_label | tojson }};
+
+  const svg = d3.select('#usa-map-svg');
+  const tooltip = d3.select('#usa-map-tooltip');
+
+  const max = Math.max(1, ...Object.values(counts));
+  document.getElementById('usa-map-max').textContent = max;
+
+  const color = d3.scaleSequential([0, max], d3.interpolateBlues);
+
+  d3.json("{{ url_for('static', filename='vendor/us-states-10m.json') }}")
+    .then(function (us) {
+      const states = topojson.feature(us, us.objects.states).features;
+      const path = d3.geoPath();   // us-atlas data is already projected to 975×610
+
+      svg.append('g')
+        .selectAll('path')
+        .data(states)
+        .join('path')
+          .attr('d', path)
+          .attr('fill', function (d) {
+            const fips = String(d.id).padStart(2, '0');
+            const n = counts[fips] || 0;
+            return n === 0 ? '#f6f6f6' : color(n);
+          })
+          .attr('stroke', '#fff')
+          .attr('stroke-width', 0.6)
+          .style('cursor', 'default')
+          .on('mousemove', function (event, d) {
+            const fips = String(d.id).padStart(2, '0');
+            const n = counts[fips] || 0;
+            const name = (d.properties && d.properties.name) || '';
+            tooltip
+              .html('<strong>' + name + '</strong><br>' + n + ' ' + metricLabel.toLowerCase())
+              .style('left', (event.offsetX + 14) + 'px')
+              .style('top',  (event.offsetY + 14) + 'px')
+              .style('opacity', 1);
+            d3.select(this).attr('stroke', '#1c64f2').attr('stroke-width', 1.2);
+          })
+          .on('mouseleave', function () {
+            tooltip.style('opacity', 0);
+            d3.select(this).attr('stroke', '#fff').attr('stroke-width', 0.6);
+          });
+
+      // State boundary mesh on top, for crisp lines.
+      svg.append('path')
+        .datum(topojson.mesh(us, us.objects.states, function (a, b) { return a !== b; }))
+        .attr('fill', 'none')
+        .attr('stroke', '#fff')
+        .attr('stroke-linejoin', 'round')
+        .attr('d', path);
+    })
+    .catch(function (err) {
+      console.error('Map load failed:', err);
+      d3.select('#usa-map').append('div')
+        .style('color', '#a00')
+        .style('padding', '12px')
+        .text('Could not load map data.');
+    });
+})();
+</script>
+{% endblock %}

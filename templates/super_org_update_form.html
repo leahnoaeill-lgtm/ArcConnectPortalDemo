@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Update {{ org.name }} · ABMRC{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Back</a>
+      <h1 class="mt-2">Update {{ org.name }}</h1>
+      <div class="subtitle">Complete the missing setup for this pending organization. A signed BAA is required before the account can be activated.</div>
+    </div>
+  </div>
+
+  <form method="POST" enctype="multipart/form-data">
+    <div class="card">
+      <div class="card-header"><h2>Organization details</h2></div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-group required span-2">
+            <label>Organization name</label>
+            <input type="text" name="name" value="{{ org.name or '' }}" required>
+          </div>
+          <div class="form-group span-2">
+            <label>Address line 1</label>
+            <input type="text" name="address_line1" value="{{ org.address_line1 or '' }}">
+          </div>
+          <div class="form-group span-2">
+            <label>Address line 2</label>
+            <input type="text" name="address_line2" value="{{ org.address_line2 or '' }}">
+          </div>
+          <div class="form-group">
+            <label>City</label>
+            <input type="text" name="city" value="{{ org.city or '' }}">
+          </div>
+          <div class="form-group">
+            <label>State</label>
+            <input type="text" name="state" value="{{ org.state or '' }}">
+          </div>
+          <div class="form-group">
+            <label>ZIP</label>
+            <input type="text" name="zip" value="{{ org.zip or '' }}">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" name="phone" value="{{ org.phone or '' }}">
+          </div>
+          <div class="form-group span-2">
+            <label>NPI</label>
+            <input type="text" name="npi" value="{{ org.npi or '' }}" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier">
+            <div class="help">10 digits, no dashes.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header">
+        <h2>Business Associate Agreement
+          {% if current_baa %}
+            <span class="small status-green">— on file</span>
+          {% else %}
+            <span class="small status-red">— required for activation</span>
+          {% endif %}
+        </h2>
+      </div>
+      <div class="card-body">
+        {% if current_baa %}
+          <div class="small mb-2">
+            <strong>Current BAA:</strong> {{ current_baa.file_name }}
+            · signed {{ current_baa.signed_date }}
+            · effective {{ current_baa.effective_from }} → {{ current_baa.expires_on }}
+            {% if current_baa.signed_by_name %}· signed by {{ current_baa.signed_by_name }}{% if current_baa.signed_by_title %}, {{ current_baa.signed_by_title }}{% endif %}{% endif %}
+          </div>
+          <div class="small muted mb-2">Upload a new BAA below to replace it (the existing record is preserved for audit).</div>
+        {% else %}
+          <div class="small muted mb-2">No BAA on file. Upload a signed BAA to enable activation.</div>
+        {% endif %}
+        <div class="form-grid">
+          <div class="form-group span-2">
+            <label>Signed BAA (PDF)</label>
+            <input type="file" name="baa_document" accept=".pdf,application/pdf">
+          </div>
+          <div class="form-group">
+            <label>Signed date</label>
+            <input type="date" name="signed_date">
+          </div>
+          <div class="form-group">
+            <label>Signed by — name</label>
+            <input type="text" name="signed_by_name" placeholder="e.g., Jane Doe">
+          </div>
+          <div class="form-group">
+            <label>Signed by — title</label>
+            <input type="text" name="signed_by_title" placeholder="e.g., CCO">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header">
+        <h2>Account verification
+          {% if org.verification_complete %}
+            <span class="small status-green">— on file</span>
+          {% else %}
+            <span class="small status-red">— required for activation</span>
+          {% endif %}
+        </h2>
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Verification date</label>
+            <input type="date" name="verification_date" value="{{ org.verification_date or '' }}">
+          </div>
+          <div class="form-group">
+            <label>Verified by</label>
+            <input type="text" value="{{ current_user.first_name }} {{ current_user.last_name }}" disabled>
+            <div class="help">Recorded automatically when you press Save.{% if verified_by_name and verified_by_name != (current_user.first_name + ' ' + current_user.last_name) %} Previously: {{ verified_by_name }}.{% endif %}</div>
+          </div>
+          <div class="form-group span-2">
+            <label>Notes</label>
+            <textarea name="verification_notes" rows="3" placeholder="What was verified, who confirmed it, any caveats…">{{ org.verification_notes or '' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <a href="{{ url_for('super_dashboard') }}" class="btn">Cancel</a>
+      <button type="submit" class="btn btn-primary">Save changes</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
