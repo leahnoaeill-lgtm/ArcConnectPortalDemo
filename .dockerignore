@@ -1,0 +1,12 @@
+arcconnect.db
+*.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.DS_Store
+static/uploads/logos/*
+static/uploads/consent/*
+static/uploads/prescriptions/*
+!static/uploads/.gitkeep

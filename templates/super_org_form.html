@@ -6,7 +6,7 @@
     <div>
       <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Back</a>
       <h1 class="mt-2">New customer organization</h1>
-      <div class="subtitle">All three sections are required: organization details, signed BAA, and an initial group admin invite.</div>
+      <div class="subtitle">Organization details and the group admin invite are required. The BAA can be uploaded now or later — the account stays in pending setup until a signed BAA is on file. Use the verification section to record super-admin sign-off.</div>
     </div>
   </div>
 
@@ -23,6 +23,10 @@
           <div class="form-group span-2">
             <label>Address line 1</label>
             <input type="text" name="address_line1">
+          </div>
+          <div class="form-group span-2">
+            <label>Address line 2</label>
+            <input type="text" name="address_line2">
           </div>
           <div class="form-group">
             <label>City</label>
@@ -41,53 +45,9 @@
             <input type="tel" name="phone">
           </div>
           <div class="form-group span-2">
-            <label>Email</label>
-            <input type="email" name="email">
-          </div>
-          <div class="form-group">
-            <label>Default timezone</label>
-            <select name="timezone">
-              {% for tz in ['America/New_York','America/Chicago','America/Denver','America/Phoenix','America/Los_Angeles','America/Anchorage','Pacific/Honolulu'] %}
-                <option value="{{ tz }}">{{ tz }}</option>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card mt-3">
-      <div class="card-header"><h2>Business Associate Agreement</h2></div>
-      <div class="card-body">
-        <div class="small muted mb-2">
-          A signed BAA is required before this organization can be created.
-          ABMRC's super-admin access to the customer's PHI is gated by this
-          document's effective period.
-        </div>
-        <div class="form-grid">
-          <div class="form-group required span-2">
-            <label>Signed BAA (PDF)</label>
-            <input type="file" name="baa_document" accept=".pdf,application/pdf" required>
-          </div>
-          <div class="form-group required">
-            <label>Signed date</label>
-            <input type="date" name="signed_date" required>
-          </div>
-          <div class="form-group required">
-            <label>Effective from</label>
-            <input type="date" name="effective_from" required>
-          </div>
-          <div class="form-group required">
-            <label>Expires on</label>
-            <input type="date" name="expires_on" required>
-          </div>
-          <div class="form-group">
-            <label>Signed by — name</label>
-            <input type="text" name="signed_by_name" placeholder="e.g., Jane Doe">
-          </div>
-          <div class="form-group">
-            <label>Signed by — title</label>
-            <input type="text" name="signed_by_title" placeholder="e.g., CCO">
+            <label>NPI</label>
+            <input type="text" name="npi" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier">
+            <div class="help">10 digits, no dashes.</div>
           </div>
         </div>
       </div>
@@ -118,9 +78,59 @@
       </div>
     </div>
 
+    <div class="card mt-3">
+      <div class="card-header"><h2>Business Associate Agreement <span class="small muted">— required for activation</span></h2></div>
+      <div class="card-body">
+        <div class="small muted mb-2">
+          A signed BAA can be uploaded later. ABMRC's super-admin access to
+          the customer's PHI is gated by this document's effective period,
+          and the account cannot be activated until a signed BAA is on file.
+        </div>
+        <div class="form-grid">
+          <div class="form-group span-2">
+            <label>Signed BAA (PDF)</label>
+            <input type="file" name="baa_document" accept=".pdf,application/pdf">
+          </div>
+          <div class="form-group">
+            <label>Signed date</label>
+            <input type="date" name="signed_date">
+          </div>
+          <div class="form-group">
+            <label>Signed by — name</label>
+            <input type="text" name="signed_by_name" placeholder="e.g., Jane Doe">
+          </div>
+          <div class="form-group">
+            <label>Signed by — title</label>
+            <input type="text" name="signed_by_title" placeholder="e.g., CCO">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header"><h2>Account verification <span class="small muted">— required for activation</span></h2></div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Verification date</label>
+            <input type="date" name="verification_date">
+          </div>
+          <div class="form-group">
+            <label>Verified by</label>
+            <input type="text" value="{{ current_user.first_name }} {{ current_user.last_name }}" disabled>
+            <div class="help">Recorded automatically when you press Save.</div>
+          </div>
+          <div class="form-group span-2">
+            <label>Notes</label>
+            <textarea name="verification_notes" rows="3" placeholder="What was verified, who confirmed it, any caveats…"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="form-actions">
       <a href="{{ url_for('super_dashboard') }}" class="btn">Cancel</a>
-      <button type="submit" class="btn btn-primary">Create organization & send invite</button>
+      <button type="submit" class="btn btn-primary">Save organization</button>
     </div>
   </form>
 </div>

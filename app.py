@@ -13,7 +13,7 @@ from pathlib import Path
 from functools import wraps
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, g, send_from_directory, abort, jsonify)
+                   session, flash, g, send_from_directory, abort, jsonify, Response)
 from werkzeug.utils import secure_filename
 
 HERE = Path(__file__).parent
@@ -30,6 +30,46 @@ MAX_UPLOAD_MB = 10
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'arc-connect-portal-demo-key-2026')
 app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_MB * 1024 * 1024
+
+
+def _ensure_heatmap_schema():
+    """Lightweight migration so an existing arcconnect.db gets the heatmap
+    tables without requiring a full re-seed. Idempotent."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS heatmap_settings (
+            organization_id INTEGER PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+            layers_json TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+        )""")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+_ensure_heatmap_schema()
+
+
+# ── Optional HTTP Basic Auth gate (set AUTH_USERNAME + AUTH_PASSWORD env vars to enable) ──
+
+_BASIC_AUTH_USER = os.environ.get('AUTH_USERNAME')
+_BASIC_AUTH_PASS = os.environ.get('AUTH_PASSWORD')
+
+
+@app.before_request
+def _require_basic_auth():
+    if not (_BASIC_AUTH_USER and _BASIC_AUTH_PASS):
+        return None
+    auth = request.authorization
+    if auth and auth.username == _BASIC_AUTH_USER and auth.password == _BASIC_AUTH_PASS:
+        return None
+    return Response(
+        'Authentication required.', 401,
+        {'WWW-Authenticate': 'Basic realm="Arc Connect Portal"'}
+    )
 
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
@@ -865,7 +905,21 @@ def super_dashboard():
         baa_state, days_left = _baa_status(baa)
         rows.append({**dict(o), 'baa': dict(baa) if baa else None,
                      'baa_state': baa_state, 'baa_days_left': days_left})
-    return render_template('super_dashboard.html', orgs=rows)
+    counts = q_one("""SELECT
+                        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+                        SUM(CASE WHEN status = 'pending_setup' THEN 1 ELSE 0 END) AS pending
+                      FROM organizations
+                      WHERE type IN ('parent','location')""")
+    totals = q_one("""SELECT
+                        (SELECT COUNT(*) FROM patients WHERE status = 'active') AS patients,
+                        (SELECT COUNT(*) FROM devices  WHERE status != 'retired') AS devices,
+                        (SELECT COUNT(*) FROM alerts   WHERE resolved_at IS NULL) AS alerts""")
+    return render_template('super_dashboard.html', orgs=rows,
+                           active_count=counts['active'] or 0,
+                           pending_count=counts['pending'] or 0,
+                           total_patients=totals['patients'] or 0,
+                           total_devices=totals['devices'] or 0,
+                           total_alerts=totals['alerts'] or 0)
 
 
 @app.route('/super/orgs/new', methods=['GET', 'POST'])
@@ -874,63 +928,71 @@ def super_org_new():
     bounce = _require_super_admin()
     if bounce: return bounce
     if request.method == 'POST':
-        # Validate BAA upload first — required to create an org.
-        baa_file = request.files.get('baa_document')
-        if not baa_file or not baa_file.filename:
-            flash('A signed BAA must be uploaded before the organization is created.', 'error')
-            return redirect(url_for('super_org_new'))
-        ext = baa_file.filename.rsplit('.', 1)[-1].lower() if '.' in baa_file.filename else ''
-        if ext not in ALLOWED_BAA_EXT:
-            flash('BAA upload must be a PDF.', 'error')
-            return redirect(url_for('super_org_new'))
-        # Validate BAA dates
-        signed_date = request.form.get('signed_date')
-        effective_from = request.form.get('effective_from')
-        expires_on = request.form.get('expires_on')
-        if not (signed_date and effective_from and expires_on):
-            flash('BAA signed/effective/expires dates are required.', 'error')
-            return redirect(url_for('super_org_new'))
-        # Validate parent-admin invite
-        invite_email = (request.form.get('invite_email') or '').strip().lower()
-        invite_first = (request.form.get('invite_first_name') or '').strip()
-        invite_last = (request.form.get('invite_last_name') or '').strip()
-        if not (invite_email and invite_first and invite_last):
-            flash('An initial parent admin invite (email + name) is required.', 'error')
-            return redirect(url_for('super_org_new'))
+        # Org name + parent admin invite are the only hard requirements.
         org_name = (request.form.get('name') or '').strip()
         if not org_name:
             flash('Organization name is required.', 'error')
             return redirect(url_for('super_org_new'))
+        invite_email = (request.form.get('invite_email') or '').strip().lower()
+        invite_first = (request.form.get('invite_first_name') or '').strip()
+        invite_last = (request.form.get('invite_last_name') or '').strip()
+        if not (invite_email and invite_first and invite_last):
+            flash('An initial group admin invite (email + name) is required.', 'error')
+            return redirect(url_for('super_org_new'))
 
-        # All validations passed — create the org in pending_setup, save BAA,
-        # generate the invite token.
+        # BAA is optional at creation. If a file is provided, validate it
+        # and the signed date; effective_from defaults to signed_date and
+        # expires_on is left NULL. The super_org_activate route refuses to
+        # flip the org to 'active' until a BAA exists.
+        baa_file = request.files.get('baa_document')
+        baa_provided = bool(baa_file and baa_file.filename)
+        signed_date = request.form.get('signed_date')
+        if baa_provided:
+            ext = baa_file.filename.rsplit('.', 1)[-1].lower() if '.' in baa_file.filename else ''
+            if ext not in ALLOWED_BAA_EXT:
+                flash('BAA upload must be a PDF.', 'error')
+                return redirect(url_for('super_org_new'))
+            if not signed_date:
+                flash('BAA signed date is required when a BAA is uploaded.', 'error')
+                return redirect(url_for('super_org_new'))
+
+        u = current_user()
+        verification_date = request.form.get('verification_date') or None
+        verification_complete = 1 if verification_date else 0
+
         q_exec("""INSERT INTO organizations (name, parent_id, type, status,
-                  address_line1, city, state, zip, phone, email, timezone)
-                  VALUES (?, NULL, 'parent', 'pending_setup', ?, ?, ?, ?, ?, ?, ?)""",
+                  address_line1, address_line2, city, state, zip, phone, npi,
+                  verification_complete, verification_date, verification_notes,
+                  verified_by_user_id)
+                  VALUES (?, NULL, 'parent', 'pending_setup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                (org_name,
                 request.form.get('address_line1') or None,
+                request.form.get('address_line2') or None,
                 request.form.get('city') or None,
                 request.form.get('state') or None,
                 request.form.get('zip') or None,
                 request.form.get('phone') or None,
-                request.form.get('email') or None,
-                request.form.get('timezone') or 'America/New_York'))
+                request.form.get('npi') or None,
+                verification_complete,
+                verification_date,
+                request.form.get('verification_notes') or None,
+                u['id']))
         new_org_id = q_one('SELECT last_insert_rowid() AS id')['id']
 
-        BAA_DIR.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime('%Y%m%d%H%M%S')
-        safe_name = secure_filename(f'org{new_org_id}_baa_{ts}.{ext}')
-        baa_file.save(BAA_DIR / safe_name)
-        u = current_user()
-        q_exec("""INSERT INTO organization_baas (organization_id, file_path, file_name,
-                  signed_date, effective_from, expires_on,
-                  signed_by_name, signed_by_title, uploaded_by_user_id)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-               (new_org_id, f'uploads/baas/{safe_name}',
-                secure_filename(baa_file.filename),
-                signed_date, effective_from, expires_on,
-                request.form.get('signed_by_name') or None,
-                request.form.get('signed_by_title') or None, u['id']))
+        if baa_provided:
+            BAA_DIR.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime('%Y%m%d%H%M%S')
+            safe_name = secure_filename(f'org{new_org_id}_baa_{ts}.{ext}')
+            baa_file.save(BAA_DIR / safe_name)
+            q_exec("""INSERT INTO organization_baas (organization_id, file_path, file_name,
+                      signed_date, effective_from, expires_on,
+                      signed_by_name, signed_by_title, uploaded_by_user_id)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (new_org_id, f'uploads/baas/{safe_name}',
+                    secure_filename(baa_file.filename),
+                    signed_date, signed_date, None,
+                    request.form.get('signed_by_name') or None,
+                    request.form.get('signed_by_title') or None, u['id']))
 
         # Parent-admin invite
         import secrets
@@ -944,9 +1006,11 @@ def super_org_new():
                 u['id'], expires_at))
 
         _log_access('location_create', ref_type='organization', ref_id=new_org_id,
-                    detail=f'Super admin created customer org "{org_name}"; invited {invite_email}')
-        flash(f'Organization "{org_name}" created. Invite sent to {invite_email}.',
-              'success')
+                    detail=f'Super admin created customer org "{org_name}"; invited {invite_email}; BAA={"on file" if baa_provided else "missing"}')
+        if baa_provided:
+            flash(f'Organization "{org_name}" created. Invite sent to {invite_email}. Account is in pending setup until activated.', 'success')
+        else:
+            flash(f'Organization "{org_name}" created without a BAA. Invite sent to {invite_email}. Upload a signed BAA to enable activation.', 'success')
         return redirect(url_for('super_dashboard'))
     return render_template('super_org_form.html')
 
@@ -1009,11 +1073,667 @@ def super_org_suspend(org_id):
 def super_org_activate(org_id):
     bounce = _require_super_admin()
     if bounce: return bounce
+    has_baa = q_one(
+        'SELECT 1 AS x FROM organization_baas WHERE organization_id = ? LIMIT 1',
+        (org_id,))
+    if not has_baa:
+        flash('Cannot activate: a signed BAA must be on file before this organization can be active.', 'error')
+        return redirect(url_for('super_dashboard'))
+    org = q_one('SELECT verification_complete FROM organizations WHERE id = ?', (org_id,))
+    if not (org and org['verification_complete']):
+        flash('Cannot activate: account verification (verification date) must be recorded before this organization can be active.', 'error')
+        return redirect(url_for('super_dashboard'))
     q_exec("UPDATE organizations SET status = 'active' WHERE id = ?", (org_id,))
     _log_access('location_update', ref_type='organization', ref_id=org_id,
-                detail='Org reactivated by super admin')
-    flash('Organization reactivated.', 'success')
+                detail='Org activated by super admin')
+    flash('Organization activated.', 'success')
     return redirect(url_for('super_dashboard'))
+
+
+@app.route('/super/orgs/<int:org_id>/update', methods=['GET', 'POST'])
+@require_login
+def super_org_update(org_id):
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    org = q_one('SELECT * FROM organizations WHERE id = ?', (org_id,))
+    if not org:
+        abort(404)
+    current_baa = q_one(
+        """SELECT * FROM organization_baas
+           WHERE organization_id = ?
+           ORDER BY id DESC LIMIT 1""", (org_id,))
+
+    if request.method == 'POST':
+        org_name = (request.form.get('name') or '').strip()
+        if not org_name:
+            flash('Organization name is required.', 'error')
+            return redirect(url_for('super_org_update', org_id=org_id))
+
+        baa_file = request.files.get('baa_document')
+        baa_provided = bool(baa_file and baa_file.filename)
+        signed_date = request.form.get('signed_date')
+        if baa_provided:
+            ext = baa_file.filename.rsplit('.', 1)[-1].lower() if '.' in baa_file.filename else ''
+            if ext not in ALLOWED_BAA_EXT:
+                flash('BAA upload must be a PDF.', 'error')
+                return redirect(url_for('super_org_update', org_id=org_id))
+            if not signed_date:
+                flash('BAA signed date is required when a BAA is uploaded.', 'error')
+                return redirect(url_for('super_org_update', org_id=org_id))
+
+        u = current_user()
+        verification_date = request.form.get('verification_date') or None
+        verification_complete = 1 if verification_date else 0
+
+        q_exec("""UPDATE organizations SET
+                  name = ?, address_line1 = ?, address_line2 = ?,
+                  city = ?, state = ?, zip = ?, phone = ?, npi = ?,
+                  verification_complete = ?, verification_date = ?,
+                  verification_notes = ?, verified_by_user_id = ?
+                  WHERE id = ?""",
+               (org_name,
+                request.form.get('address_line1') or None,
+                request.form.get('address_line2') or None,
+                request.form.get('city') or None,
+                request.form.get('state') or None,
+                request.form.get('zip') or None,
+                request.form.get('phone') or None,
+                request.form.get('npi') or None,
+                verification_complete,
+                verification_date,
+                request.form.get('verification_notes') or None,
+                u['id'], org_id))
+
+        if baa_provided:
+            BAA_DIR.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime('%Y%m%d%H%M%S')
+            safe_name = secure_filename(f'org{org_id}_baa_{ts}.{ext}')
+            baa_file.save(BAA_DIR / safe_name)
+            q_exec("""INSERT INTO organization_baas (organization_id, file_path, file_name,
+                      signed_date, effective_from, expires_on,
+                      signed_by_name, signed_by_title, uploaded_by_user_id)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (org_id, f'uploads/baas/{safe_name}',
+                    secure_filename(baa_file.filename),
+                    signed_date, signed_date, None,
+                    request.form.get('signed_by_name') or None,
+                    request.form.get('signed_by_title') or None, u['id']))
+
+        _log_access('location_update', ref_type='organization', ref_id=org_id,
+                    detail=f'Super admin updated org "{org_name}"; BAA={"new upload" if baa_provided else "unchanged"}')
+        flash(f'"{org_name}" updated.', 'success')
+        return redirect(url_for('super_dashboard'))
+
+    verified_by_name = None
+    if org['verified_by_user_id']:
+        v = q_one('SELECT first_name, last_name FROM users WHERE id = ?',
+                  (org['verified_by_user_id'],))
+        if v:
+            verified_by_name = f"{v['first_name']} {v['last_name']}"
+
+    return render_template('super_org_update_form.html',
+                           org=org, current_baa=current_baa,
+                           verified_by_name=verified_by_name)
+
+
+# Two-letter US state code → FIPS numeric (matches us-atlas topojson state ids).
+_US_STATE_FIPS = {
+    'AL':'01','AK':'02','AZ':'04','AR':'05','CA':'06','CO':'08','CT':'09','DE':'10',
+    'DC':'11','FL':'12','GA':'13','HI':'15','ID':'16','IL':'17','IN':'18','IA':'19',
+    'KS':'20','KY':'21','LA':'22','ME':'23','MD':'24','MA':'25','MI':'26','MN':'27',
+    'MS':'28','MO':'29','MT':'30','NE':'31','NV':'32','NH':'33','NJ':'34','NM':'35',
+    'NY':'36','NC':'37','ND':'38','OH':'39','OK':'40','OR':'41','PA':'42','RI':'44',
+    'SC':'45','SD':'46','TN':'47','TX':'48','UT':'49','VT':'50','VA':'51','WA':'53',
+    'WV':'54','WI':'55','WY':'56','PR':'72'
+}
+
+
+@app.route('/super/map')
+@require_login
+def super_map():
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    metric = (request.args.get('metric') or 'patients').lower()
+    if metric not in ('patients', 'devices', 'alerts'):
+        metric = 'patients'
+
+    # Aggregate counts by the location's state. For each org_id, the patient/
+    # device/alert is attributed to that org's state.
+    if metric == 'patients':
+        rows = q_all("""SELECT o.state AS state, COUNT(*) AS n
+                        FROM patients p JOIN organizations o ON o.id = p.organization_id
+                        WHERE p.status = 'active' AND o.state IS NOT NULL
+                        GROUP BY o.state""")
+        label = 'Active patients'
+    elif metric == 'devices':
+        rows = q_all("""SELECT o.state AS state, COUNT(*) AS n
+                        FROM devices d JOIN organizations o ON o.id = d.organization_id
+                        WHERE d.status != 'retired' AND o.state IS NOT NULL
+                        GROUP BY o.state""")
+        label = 'Active devices'
+    else:
+        rows = q_all("""SELECT o.state AS state, COUNT(*) AS n
+                        FROM alerts a JOIN organizations o ON o.id = a.organization_id
+                        WHERE a.resolved_at IS NULL AND o.state IS NOT NULL
+                        GROUP BY o.state""")
+        label = 'Active alerts'
+
+    # Map state code → FIPS, build {fips: count} for the front-end.
+    by_fips = {}
+    by_state = {}
+    for r in rows:
+        code = (r['state'] or '').upper()
+        fips = _US_STATE_FIPS.get(code)
+        if fips:
+            by_fips[fips] = r['n']
+            by_state[code] = r['n']
+
+    total = sum(by_fips.values())
+    return render_template('super_map.html', metric=metric, metric_label=label,
+                           by_fips=by_fips, by_state=by_state, total=total)
+
+
+# ── Population health heat map (group + satellite admins) ───────────────────
+#
+# A ZIP-3 proportional-symbol map with a 12-month timelapse. Per-org admins
+# pick which layers (metrics) to expose under Settings → Heat map layers.
+# Tenant scoping reuses scope_org_ids() so:
+#   • Group admin at rollup → all satellite locations
+#   • Satellite admin       → only their satellite
+#   • ABMRC drilled into a customer → that customer's tree, de-identified
+# ZIP-3 cells with patient_count below the user-selected suppression floor
+# are dropped from the response (HIPAA Safe Harbor pattern; floor defaults
+# to 1 in the demo so synthetic data is visible, with a UI toggle to apply
+# the standard ≥11 threshold).
+
+HEATMAP_LAYERS = [
+    {'key': 'active_patients',   'label': 'Active patients',
+     'unit': 'patients',  'lower_is_better': False,
+     'desc': 'Active patients in each region. Volume map.'},
+    {'key': 'adherence',         'label': 'Avg 30-day adherence',
+     'unit': '%',         'lower_is_better': False,
+     'desc': 'Average therapy adherence across active patients in the region.'},
+    {'key': 'alerts',            'label': 'Active alerts',
+     'unit': 'alerts',    'lower_is_better': True,
+     'desc': 'Open (unresolved) alerts across all severities.'},
+    {'key': 'critical_alerts',   'label': 'Critical alerts',
+     'unit': 'alerts',    'lower_is_better': True,
+     'desc': 'Open alerts with severity = critical.'},
+    {'key': 'referrals',         'label': 'New referrals this month',
+     'unit': 'patients',  'lower_is_better': False,
+     'desc': 'Patients newly assigned to a referring clinic during the selected month.'},
+    {'key': 'referring_clinics', 'label': 'Active referring clinics',
+     'unit': 'clinics',   'lower_is_better': False,
+     'desc': 'Distinct referring clinics that sent at least one patient during the selected month.'},
+    {'key': 'capped_rental_late','label': 'Capped-rental month 10–13',
+     'unit': 'patients',  'lower_is_better': False,
+     'desc': 'Patients in late capped-rental window (Medicare DME conversion zone).'},
+    {'key': 'high_risk',         'label': 'High-risk composite',
+     'unit': 'patients',  'lower_is_better': True,
+     'desc': 'Patients with adherence <60% AND an open alert during the selected month.'},
+    {'key': 'pro_score',         'label': 'Patient survey score (avg)',
+     'unit': '0–100',     'lower_is_better': False,
+     'desc': 'Average score from completed 30/60/90-day patient surveys (higher = better outcomes).'},
+    {'key': 'discontinuation',   'label': 'Discontinuations this month',
+     'unit': 'patients',  'lower_is_better': True,
+     'desc': 'Patients who became inactive during the selected month.'},
+    {'key': 'mobile_adoption',   'label': 'Mobile-app adoption',
+     'unit': '%',         'lower_is_better': False,
+     'desc': 'Share of active patients with the Arc Connect mobile app paired.'},
+]
+DEFAULT_HEATMAP_LAYER_KEYS = [l['key'] for l in HEATMAP_LAYERS]
+HEATMAP_LAYER_BY_KEY = {l['key']: l for l in HEATMAP_LAYERS}
+
+
+def _load_zip3_centroids():
+    """Cached load of static/vendor/zip3-centroids.json. Falls back to empty
+    dict if the file is missing — heat map then relies entirely on org lat/lon."""
+    if not hasattr(_load_zip3_centroids, '_cache'):
+        try:
+            path = HERE / 'static' / 'vendor' / 'zip3-centroids.json'
+            data = json.loads(path.read_text())
+            data.pop('_comment', None)
+            _load_zip3_centroids._cache = data
+        except Exception as e:
+            app.logger.warning(f'zip3 centroids load failed: {e}')
+            _load_zip3_centroids._cache = {}
+    return _load_zip3_centroids._cache
+
+
+def _enabled_heatmap_layers(oid):
+    """Layer keys the org has enabled. Absent row = all defaults."""
+    row = q_one('SELECT layers_json FROM heatmap_settings WHERE organization_id = ?',
+                (oid,))
+    if not row:
+        return list(DEFAULT_HEATMAP_LAYER_KEYS)
+    try:
+        keys = json.loads(row['layers_json'])
+        return [k for k in keys if k in HEATMAP_LAYER_BY_KEY]
+    except Exception:
+        return list(DEFAULT_HEATMAP_LAYER_KEYS)
+
+
+def _heatmap_settings_org_id():
+    """Which org's heatmap_settings row applies to the current viewer.
+    Group admin at rollup → parent org; satellite admin → satellite org;
+    super admin drilled into a customer parent → that parent. Falls back
+    to current_org_id() for anyone else."""
+    if is_parent_admin() and not session.get('acting_org_id'):
+        u = current_user()
+        return u['organization_id'] if u else None
+    if is_super_admin() and session.get('super_acting_org_id'):
+        return session['super_acting_org_id']
+    return current_org_id()
+
+
+def _heatmap_time_bins(months_back=12):
+    """Return the list of monthly bins (oldest first) up to current month.
+    Each bin: {'key': 'YYYY-MM', 'label': 'Mon YYYY', 'start': iso, 'end': iso_exclusive}.
+    """
+    from datetime import date as _date, timedelta as _td
+    today = _date.today()
+    # Anchor on first-of-current-month
+    cur = _date(today.year, today.month, 1)
+    bins = []
+    for i in range(months_back - 1, -1, -1):
+        # i months back from cur
+        m = cur.month - i
+        y = cur.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        start = _date(y, m, 1)
+        # End = start of next month (exclusive)
+        em = m + 1
+        ey = y
+        if em > 12:
+            em = 1
+            ey += 1
+        end = _date(ey, em, 1)
+        labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+        bins.append({
+            'key':   f'{y:04d}-{m:02d}',
+            'label': f'{labels[m-1]} {y}',
+            'start': start.isoformat(),
+            'end':   end.isoformat(),
+        })
+    return bins
+
+
+@app.route('/heatmap')
+@require_login
+def heatmap():
+    """Population-health heat map — visible to admin + clinician roles.
+    Tenant scope follows scope_org_ids(); ABMRC users not drilled into a
+    customer get bounced to /super/map (they have a state-level view there)."""
+    u = current_user()
+    if not u:
+        return redirect(url_for('login'))
+    if u['role'] not in ('admin', 'clinician', 'super_admin'):
+        flash('Heat map requires an admin or clinician account.', 'error')
+        return redirect(url_for('dashboard'))
+    if is_super_admin() and not session.get('super_acting_org_id'):
+        # Super admin at their own dashboard — direct them to the state map.
+        return redirect(url_for('super_map'))
+
+    settings_oid = _heatmap_settings_org_id()
+    enabled_keys = _enabled_heatmap_layers(settings_oid) if settings_oid else list(DEFAULT_HEATMAP_LAYER_KEYS)
+    enabled_layers = [HEATMAP_LAYER_BY_KEY[k] for k in enabled_keys
+                      if k in HEATMAP_LAYER_BY_KEY]
+    if not enabled_layers:
+        # Defensive: never render an empty layer picker.
+        enabled_layers = [HEATMAP_LAYER_BY_KEY[DEFAULT_HEATMAP_LAYER_KEYS[0]]]
+
+    # Scope label for the page header
+    if is_parent_admin() and not session.get('acting_org_id'):
+        scope_label = 'Network rollup — all satellite locations'
+    elif is_super_admin() and session.get('super_acting_org_id'):
+        scope_label = 'ABMRC support view — de-identified'
+    else:
+        org = current_org()
+        scope_label = f'{org["name"]}' if org else ''
+
+    return render_template('heatmap.html',
+                           layers=enabled_layers,
+                           default_layer=enabled_layers[0]['key'],
+                           scope_label=scope_label)
+
+
+@app.route('/api/heatmap-data')
+@require_login
+def api_heatmap_data():
+    """JSON payload for the heat map. Query params:
+        metric=<layer key>     which layer to compute (defaults to active_patients)
+        floor=<int>            small-cell suppression threshold (default 1; 11 for HIPAA)
+    Returns 12 monthly bins; each bin maps ZIP-3 → {value, n}.
+    """
+    u = current_user()
+    if not u:
+        return jsonify({'error': 'unauthenticated'}), 401
+    if u['role'] not in ('admin', 'clinician', 'super_admin'):
+        return jsonify({'error': 'forbidden'}), 403
+
+    metric = (request.args.get('metric') or 'active_patients').strip()
+    if metric not in HEATMAP_LAYER_BY_KEY:
+        metric = 'active_patients'
+    layer = HEATMAP_LAYER_BY_KEY[metric]
+
+    try:
+        floor = max(1, int(request.args.get('floor', 1)))
+    except (TypeError, ValueError):
+        floor = 1
+
+    org_ids = scope_org_ids()
+    if not org_ids:
+        return jsonify({'metric': metric, 'metric_label': layer['label'],
+                        'unit': layer['unit'], 'lower_is_better': layer['lower_is_better'],
+                        'floor': floor, 'bins': []})
+    ph_org = ','.join('?' * len(org_ids))
+
+    centroids = _load_zip3_centroids()
+    bins = _heatmap_time_bins(12)
+
+    # Pull org centroid fallbacks (so patients with unknown ZIP-3 still pin somewhere).
+    org_loc_rows = q_all(
+        f"""SELECT id, latitude, longitude, name, zip
+            FROM organizations WHERE id IN ({ph_org})""", tuple(org_ids))
+    org_locs = {r['id']: dict(r) for r in org_loc_rows}
+
+    # Helper: produce the ZIP-3 key for a patient's address. Falls back to
+    # the org's ZIP-3 if patient ZIP is missing.
+    def zip3_for(patient_zip, org_id):
+        z = (patient_zip or '').strip()
+        if len(z) >= 3 and z[:3].isdigit():
+            return z[:3]
+        ozip = (org_locs.get(org_id, {}).get('zip') or '').strip()
+        if len(ozip) >= 3 and ozip[:3].isdigit():
+            return ozip[:3]
+        return None
+
+    # Pre-fetch all patients (id, org_id, zip, status, adherence, capped_rental_*,
+    # mobile_app_enabled, created_at). Used by every metric.
+    patient_rows = q_all(
+        f"""SELECT id, organization_id, zip, status, adherence_pct_30d,
+                   capped_rental_start, capped_rental_end, mobile_app_enabled,
+                   created_at
+            FROM patients WHERE organization_id IN ({ph_org})""", tuple(org_ids))
+    # Index by id for fast joins.
+    pat_by_id = {r['id']: dict(r) for r in patient_rows}
+    pat_zip3 = {pid: zip3_for(p['zip'], p['organization_id']) for pid, p in pat_by_id.items()}
+
+    # Per ZIP-3 patient denominator (active patients) for suppression floor.
+    # Computed once (uses current state); applied to every bin.
+    z3_active_n = {}
+    for pid, p in pat_by_id.items():
+        if p['status'] != 'active': continue
+        z = pat_zip3.get(pid)
+        if not z: continue
+        z3_active_n[z] = z3_active_n.get(z, 0) + 1
+
+    bin_payloads = []
+
+    # Per-metric aggregation. Each branch produces a {zip3 → raw value} dict for
+    # each bin. We then attach n (active patient count) for suppression.
+
+    if metric == 'active_patients':
+        # Snapshot at end of bin: count patients created on/before bin end and
+        # not yet inactive at that time. Status transitions aren't logged, so
+        # for the demo we approximate "active at end" with current status.
+        for b in bins:
+            z3_value = {}
+            for pid, p in pat_by_id.items():
+                if (p['created_at'] or '')[:10] >= b['end']:
+                    continue
+                if p['status'] != 'active':
+                    continue
+                z = pat_zip3.get(pid)
+                if not z: continue
+                z3_value[z] = z3_value.get(z, 0) + 1
+            bin_payloads.append((b, z3_value))
+
+    elif metric == 'adherence':
+        # Snapshot avg adherence (current value, replicated across bins for
+        # demo purposes — adherence history isn't time-stamped in v1).
+        z3_sum = {}
+        z3_n = {}
+        for pid, p in pat_by_id.items():
+            if p['status'] != 'active' or p['adherence_pct_30d'] is None:
+                continue
+            z = pat_zip3.get(pid)
+            if not z: continue
+            z3_sum[z] = z3_sum.get(z, 0) + p['adherence_pct_30d']
+            z3_n[z]   = z3_n.get(z, 0) + 1
+        z3_value = {z: round(z3_sum[z] / z3_n[z]) for z in z3_sum if z3_n[z]}
+        for b in bins:
+            bin_payloads.append((b, z3_value))
+
+    elif metric in ('alerts', 'critical_alerts'):
+        sev_clause = " AND a.severity = 'critical'" if metric == 'critical_alerts' else ""
+        rows = q_all(
+            f"""SELECT a.patient_id, a.triggered_at, a.resolved_at
+                FROM alerts a
+                WHERE a.organization_id IN ({ph_org}){sev_clause}""", tuple(org_ids))
+        for b in bins:
+            z3_value = {}
+            for r in rows:
+                trig = (r['triggered_at'] or '')[:10]
+                resv = (r['resolved_at'] or '')[:10] or None
+                # Open during the bin if triggered before bin_end and unresolved by bin_start.
+                if trig >= b['end']:
+                    continue
+                if resv and resv < b['start']:
+                    continue
+                p = pat_by_id.get(r['patient_id'])
+                if not p: continue
+                z = pat_zip3.get(r['patient_id'])
+                if not z: continue
+                z3_value[z] = z3_value.get(z, 0) + 1
+            bin_payloads.append((b, z3_value))
+
+    elif metric == 'referrals':
+        rows = q_all(
+            f"""SELECT patient_id, assigned_at FROM patient_referral_history
+                WHERE organization_id IN ({ph_org})""", tuple(org_ids))
+        for b in bins:
+            z3_value = {}
+            for r in rows:
+                d = (r['assigned_at'] or '')[:10]
+                if not (b['start'] <= d < b['end']):
+                    continue
+                z = pat_zip3.get(r['patient_id'])
+                if not z: continue
+                z3_value[z] = z3_value.get(z, 0) + 1
+            bin_payloads.append((b, z3_value))
+
+    elif metric == 'referring_clinics':
+        rows = q_all(
+            f"""SELECT patient_id, clinic_id, assigned_at
+                FROM patient_referral_history
+                WHERE organization_id IN ({ph_org}) AND clinic_id IS NOT NULL""",
+            tuple(org_ids))
+        for b in bins:
+            z3_clinics = {}  # zip3 → set of clinic_ids
+            for r in rows:
+                d = (r['assigned_at'] or '')[:10]
+                if not (b['start'] <= d < b['end']):
+                    continue
+                z = pat_zip3.get(r['patient_id'])
+                if not z: continue
+                z3_clinics.setdefault(z, set()).add(r['clinic_id'])
+            z3_value = {z: len(s) for z, s in z3_clinics.items()}
+            bin_payloads.append((b, z3_value))
+
+    elif metric == 'capped_rental_late':
+        # Snapshot: patients whose capped_rental_end is within ~90 days of now
+        # (months 10-13 of a 13-month rental). Replicated across bins for now.
+        from datetime import date as _date
+        today = _date.today()
+        z3_value = {}
+        for pid, p in pat_by_id.items():
+            if not p['capped_rental_end']:
+                continue
+            try:
+                end_d = _date.fromisoformat(p['capped_rental_end'])
+            except Exception:
+                continue
+            days_left = (end_d - today).days
+            if not (-30 <= days_left <= 120):
+                continue
+            z = pat_zip3.get(pid)
+            if not z: continue
+            z3_value[z] = z3_value.get(z, 0) + 1
+        for b in bins:
+            bin_payloads.append((b, z3_value))
+
+    elif metric == 'high_risk':
+        # adherence < 60 AND has an open alert in the bin
+        alert_rows = q_all(
+            f"""SELECT patient_id, triggered_at, resolved_at FROM alerts
+                WHERE organization_id IN ({ph_org})""", tuple(org_ids))
+        for b in bins:
+            patients_with_alert = set()
+            for r in alert_rows:
+                trig = (r['triggered_at'] or '')[:10]
+                resv = (r['resolved_at'] or '')[:10] or None
+                if trig >= b['end']: continue
+                if resv and resv < b['start']: continue
+                patients_with_alert.add(r['patient_id'])
+            z3_value = {}
+            for pid in patients_with_alert:
+                p = pat_by_id.get(pid)
+                if not p: continue
+                if p['adherence_pct_30d'] is None or p['adherence_pct_30d'] >= 60:
+                    continue
+                z = pat_zip3.get(pid)
+                if not z: continue
+                z3_value[z] = z3_value.get(z, 0) + 1
+            bin_payloads.append((b, z3_value))
+
+    elif metric == 'pro_score':
+        rows = q_all(
+            f"""SELECT patient_id, score_0_100, completed_at
+                FROM patient_surveys
+                WHERE organization_id IN ({ph_org})
+                  AND completed_at IS NOT NULL AND score_0_100 IS NOT NULL""",
+            tuple(org_ids))
+        for b in bins:
+            z3_sum = {}
+            z3_n = {}
+            for r in rows:
+                d = (r['completed_at'] or '')[:10]
+                if not (b['start'] <= d < b['end']):
+                    continue
+                z = pat_zip3.get(r['patient_id'])
+                if not z: continue
+                z3_sum[z] = z3_sum.get(z, 0) + r['score_0_100']
+                z3_n[z]   = z3_n.get(z, 0) + 1
+            z3_value = {z: round(z3_sum[z] / z3_n[z]) for z in z3_sum if z3_n[z]}
+            bin_payloads.append((b, z3_value))
+
+    elif metric == 'discontinuation':
+        # We don't have a discontinuation timestamp; approximate "discontinued
+        # in this bin" as inactive patients whose last_session_at falls in the
+        # bin (proxy for time of drop-off). Heuristic, demo-quality.
+        rows = q_all(
+            f"""SELECT id, organization_id, zip, last_session_at, status
+                FROM patients
+                WHERE organization_id IN ({ph_org}) AND status = 'inactive'""",
+            tuple(org_ids))
+        for b in bins:
+            z3_value = {}
+            for r in rows:
+                d = (r['last_session_at'] or '')[:10]
+                if not d or not (b['start'] <= d < b['end']):
+                    continue
+                z = zip3_for(r['zip'], r['organization_id'])
+                if not z: continue
+                z3_value[z] = z3_value.get(z, 0) + 1
+            bin_payloads.append((b, z3_value))
+
+    elif metric == 'mobile_adoption':
+        # Snapshot: % of active patients with mobile_app_enabled = 1.
+        z3_n = {}
+        z3_on = {}
+        for pid, p in pat_by_id.items():
+            if p['status'] != 'active': continue
+            z = pat_zip3.get(pid)
+            if not z: continue
+            z3_n[z] = z3_n.get(z, 0) + 1
+            if p['mobile_app_enabled']:
+                z3_on[z] = z3_on.get(z, 0) + 1
+        z3_value = {z: round(100 * z3_on.get(z, 0) / z3_n[z]) for z in z3_n if z3_n[z]}
+        for b in bins:
+            bin_payloads.append((b, z3_value))
+
+    else:
+        # Unknown layer — empty payload.
+        for b in bins:
+            bin_payloads.append((b, {}))
+
+    # Build the response, applying suppression and attaching centroids.
+    out_bins = []
+    for b, z3_value in bin_payloads:
+        zip3_out = {}
+        suppressed = 0
+        for z, v in z3_value.items():
+            n = z3_active_n.get(z, 0)
+            if n < floor:
+                suppressed += 1
+                continue
+            cen = centroids.get(z)
+            if not cen:
+                # No centroid known — skip (would be invisible anyway).
+                suppressed += 1
+                continue
+            zip3_out[z] = {'value': v, 'n': n,
+                           'lat': cen['lat'], 'lon': cen['lon'],
+                           'label': cen.get('label', z)}
+        out_bins.append({
+            'key': b['key'], 'label': b['label'],
+            'start': b['start'], 'end': b['end'],
+            'zip3': zip3_out,
+            'suppressed_count': suppressed,
+        })
+
+    return jsonify({
+        'metric': metric,
+        'metric_label': layer['label'],
+        'unit': layer['unit'],
+        'lower_is_better': layer['lower_is_better'],
+        'description': layer['desc'],
+        'floor': floor,
+        'bins': out_bins,
+    })
+
+
+@app.route('/settings/heatmap-layers', methods=['POST'])
+@require_login
+@require_admin
+def settings_heatmap_layers():
+    """Save the per-org enabled heat-map layers. Group admin's row applies
+    to the network rollup; satellite admin's row applies to that satellite."""
+    u = current_user()
+    settings_oid = _heatmap_settings_org_id()
+    if not settings_oid:
+        flash('Could not determine organization scope.', 'error')
+        return redirect(url_for('settings'))
+    submitted = request.form.getlist('layer')
+    valid = [k for k in submitted if k in HEATMAP_LAYER_BY_KEY]
+    if not valid:
+        # Refuse to save an empty selection — heat map would be unusable.
+        flash('Pick at least one heat-map layer.', 'error')
+        return redirect(url_for('settings'))
+    payload = json.dumps(valid)
+    q_exec("""INSERT INTO heatmap_settings
+              (organization_id, layers_json, updated_at, updated_by_user_id)
+              VALUES (?, ?, CURRENT_TIMESTAMP, ?)
+              ON CONFLICT(organization_id) DO UPDATE SET
+                layers_json = excluded.layers_json,
+                updated_at  = CURRENT_TIMESTAMP,
+                updated_by_user_id = excluded.updated_by_user_id""",
+           (settings_oid, payload, u['id']))
+    flash('Heat-map layers saved.', 'success')
+    return redirect(url_for('settings'))
 
 
 # ── Dashboard ────────────────────────────────────────────────────────────────
@@ -2813,8 +3533,15 @@ def settings():
     users_list = q_all("""SELECT id, first_name, last_name, role FROM users
                           WHERE organization_id = ? AND is_active = 1
                           ORDER BY last_name, first_name""", (oid,))
+    # Heat-map layer selection: applied at the parent-org level for group
+    # admins (so the network rollup view is consistent), or the satellite
+    # for satellite admins.
+    hm_settings_oid = _heatmap_settings_org_id() or oid
+    hm_enabled_keys = _enabled_heatmap_layers(hm_settings_oid)
     return render_template('settings.html', org=org, users=users_list,
-                           parent_override_on=parent_override_on)
+                           parent_override_on=parent_override_on,
+                           heatmap_layers=HEATMAP_LAYERS,
+                           heatmap_enabled_keys=set(hm_enabled_keys))
 
 
 @app.route('/settings/alert-policy', methods=['POST'])

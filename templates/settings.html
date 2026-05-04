@@ -160,6 +160,39 @@
     </form>
   </div>
 
+  {# ── Heat-map layer customization ────────────────────────────────── #}
+  <div class="card mt-3" id="heatmap-layers">
+    <div class="card-header">
+      <h2>Heat map layers</h2>
+      <a href="{{ url_for('heatmap') }}" class="btn btn-sm">Open heat map ▸</a>
+    </div>
+    <form method="POST" action="{{ url_for('settings_heatmap_layers') }}" class="card-body">
+      <div class="small muted" style="margin-bottom:10px;">
+        Pick which population-health layers show up in the heat map's layer dropdown.
+        {% if is_parent_admin %}
+          As {{ org.name }}'s group admin, your selection applies to the network rollup view.
+        {% else %}
+          Your selection applies to this satellite location's heat map.
+        {% endif %}
+      </div>
+      <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 10px 24px;">
+        {% for layer in heatmap_layers %}
+          <label class="check-row" style="align-items: flex-start;">
+            <input type="checkbox" name="layer" value="{{ layer.key }}"
+                   {% if layer.key in heatmap_enabled_keys %}checked{% endif %}>
+            <div>
+              <strong>{{ layer.label }}</strong>
+              <div class="help">{{ layer.desc }}</div>
+            </div>
+          </label>
+        {% endfor %}
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save heat-map layers</button>
+      </div>
+    </form>
+  </div>
+
   {% if org.type == 'parent' %}
   {# ── Parent-only: alert-rule policy across child locations ──────────── #}
   <div class="card mt-3">

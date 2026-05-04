@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     zip TEXT,
     phone TEXT,
     email TEXT,
+    npi TEXT,
     timezone TEXT DEFAULT 'America/New_York',
     latitude REAL,
     longitude REAL,
@@ -35,6 +36,12 @@ CREATE TABLE IF NOT EXISTS organizations (
     -- Default assignee for inbound patient-engagement items (messages, mood
     -- notes). Configurable per location under Settings → Location info.
     default_assignee_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    -- Super-admin verification of the customer (NPI confirmed, contract on
+    -- file, etc.). Captured on the New Organization form; can be edited later.
+    verification_complete INTEGER DEFAULT 0,
+    verification_date TEXT,
+    verification_notes TEXT,
+    verified_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -605,3 +612,19 @@ CREATE TABLE IF NOT EXISTS access_log (
 CREATE INDEX IF NOT EXISTS idx_access_org_time ON access_log(organization_id, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_access_patient ON access_log(patient_id, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_access_user ON access_log(user_id, occurred_at DESC);
+
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Population-health heat map: per-org layer selections
+-- ═══════════════════════════════════════════════════════════════════
+-- Admins toggle which heat-map layers their org cares about (some
+-- customers don't track payer mix or all alert types). One row per org;
+-- absent row = all default layers enabled. layers_json is a JSON array
+-- of layer keys (see HEATMAP_LAYERS in app.py).
+
+CREATE TABLE IF NOT EXISTS heatmap_settings (
+    organization_id INTEGER PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+    layers_json TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
