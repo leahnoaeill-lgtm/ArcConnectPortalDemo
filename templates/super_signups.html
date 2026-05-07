@@ -1,23 +1,150 @@
 {% extends "base.html" %}
-{% block title %}Pending signups · ABMRC · Arc Connect{% endblock %}
+{% block title %}Pending Requests · ABMRC · Arc Connect{% endblock %}
+{% block head_extra %}
+<style>
+  .pr-page { max-width: 1200px; margin: 0 auto; padding: 0 24px 32px; }
+
+  .pr-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 24px; margin-bottom: 24px; flex-wrap: wrap;
+  }
+  .pr-header h1 {
+    margin: 0 0 6px 0; color: #142c4a; font-size: 26px; font-weight: 600;
+  }
+  .pr-header .lede { color: #556677; font-size: 14px; line-height: 1.55; max-width: 720px; }
+  .pr-back {
+    color: #2E8BAD; text-decoration: none; font-size: 13px; display: inline-block;
+    margin-bottom: 8px;
+  }
+  .pr-back:hover { text-decoration: underline; }
+
+  /* Status counts strip */
+  .pr-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px; margin-bottom: 24px;
+  }
+  .pr-stat {
+    background: #fff; border: 1px solid #e5ebf2; border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .pr-stat-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #7a8694;
+  }
+  .pr-stat-value {
+    font-size: 28px; font-weight: 700; color: #142c4a; margin-top: 4px;
+    line-height: 1.1;
+  }
+  .pr-stat.is-pending  { border-left: 3px solid #FCBE03; }
+  .pr-stat.is-info     { border-left: 3px solid #43C1ED; }
+  .pr-stat.is-approved { border-left: 3px solid #00B050; }
+  .pr-stat.is-rejected { border-left: 3px solid #C00000; }
+
+  /* Card / sections */
+  .pr-card {
+    background: #fff; border: 1px solid #e5ebf2; border-radius: 10px;
+    margin-bottom: 24px; overflow: hidden;
+  }
+  .pr-card-header {
+    padding: 16px 20px; border-bottom: 1px solid #f0f3f7;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px;
+  }
+  .pr-card-header h2 {
+    margin: 0; font-size: 16px; font-weight: 600; color: #142c4a;
+  }
+  .pr-card-header .count {
+    color: #7a8694; font-weight: 400; font-size: 14px; margin-left: 6px;
+  }
+
+  /* Request rows */
+  .pr-list { list-style: none; padding: 0; margin: 0; }
+  .pr-list li {
+    display: grid;
+    grid-template-columns: 110px 1fr 130px 220px 130px auto;
+    gap: 18px; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid #f0f3f7;
+  }
+  .pr-list li:last-child { border-bottom: none; }
+  .pr-list li:hover { background: #fafbfd; }
+
+  .pr-col-time { color: #556677; font-size: 12px; line-height: 1.3; }
+  .pr-col-time strong { display: block; color: #142c4a; font-size: 13px; font-weight: 600; }
+  .pr-col-org { font-weight: 600; color: #142c4a; font-size: 14px; }
+  .pr-col-org .city { display: block; color: #7a8694; font-weight: 400; font-size: 12px; margin-top: 2px; }
+  .pr-col-npi { font-family: 'Roboto Mono', monospace; font-size: 13px; color: #2c3e50; }
+  .pr-col-submitter { font-size: 13px; color: #2c3e50; line-height: 1.35; }
+  .pr-col-submitter .email {
+    display: block; color: #7a8694; font-size: 12px; margin-top: 2px;
+    word-break: break-word;
+  }
+
+  .pr-status {
+    display: inline-block; padding: 4px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .pr-status.is-pending  { background: #fff5d6; color: #7a5d00; }
+  .pr-status.is-info     { background: #e3f5fc; color: #2E8BAD; }
+  .pr-status.is-approved { background: #e0f2e4; color: #1e6c34; }
+  .pr-status.is-rejected { background: #fbe1e1; color: #832222; }
+
+  .pr-action {
+    background: #43C1ED; color: #fff; border: 1px solid #43C1ED;
+    padding: 7px 14px; border-radius: 6px; font-weight: 600; font-size: 13px;
+    text-decoration: none; display: inline-block; transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .pr-action:hover { background: #2E8BAD; border-color: #2E8BAD; color: #fff; }
+  .pr-action-link { color: #2E8BAD; font-size: 13px; text-decoration: none; white-space: nowrap; }
+  .pr-action-link:hover { text-decoration: underline; }
+
+  /* Empty state */
+  .pr-empty {
+    padding: 40px 24px; text-align: center; color: #7a8694; font-size: 14px;
+  }
+  .pr-empty-icon { font-size: 32px; opacity: 0.4; display: block; margin-bottom: 8px; }
+
+  /* Flash */
+  .pr-flash { margin-bottom: 20px; }
+  .pr-flash .flash {
+    padding: 10px 14px; border-radius: 6px; font-size: 14px; margin-bottom: 8px;
+  }
+  .pr-flash .flash-success { background: #e0f2e4; border: 1px solid #b9d9bf; color: #1e6c34; }
+  .pr-flash .flash-error   { background: #fbe1e1; border: 1px solid #f4c2c2; color: #832222; }
+
+  /* Tighter layout for closed table */
+  .pr-list.is-closed li { grid-template-columns: 110px 1fr 130px 200px 150px auto; }
+
+  @media (max-width: 900px) {
+    .pr-stats { grid-template-columns: repeat(2, 1fr); }
+    .pr-list li,
+    .pr-list.is-closed li {
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+  }
+</style>
+{% endblock %}
 {% block body %}
-<div class="page">
-  <div class="page-header">
+<div class="pr-page">
+  <a href="{{ url_for('super_dashboard') }}" class="pr-back">← ABMRC dashboard</a>
+
+  <div class="pr-header">
     <div>
-      <h1>Pending signup requests</h1>
-      <div class="page-sub">
-        Self-service signups submitted via the public Arc Connect website (REQ-3.8).
-        Approve to auto-create a customer organization with prefilled fields.
+      <h1>Pending Requests</h1>
+      <div class="lede">
+        Self-service signup requests submitted via the public Arc Connect website.
+        Approve to auto-create the customer organization with the submitted fields prefilled,
+        reject with a reason category, or request more info from the submitter.
       </div>
-    </div>
-    <div class="page-header-actions">
-      <a href="{{ url_for('super_dashboard') }}" class="btn btn-link">← ABMRC dashboard</a>
     </div>
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-      <div class="flash-messages">
+      <div class="pr-flash">
         {% for category, msg in messages %}
           <div class="flash flash-{{ category }}">{{ msg }}</div>
         {% endfor %}
@@ -25,87 +152,111 @@
     {% endif %}
   {% endwith %}
 
-  <div class="card">
-    <div class="card-header">
-      <h2>Open ({{ pending|length }})</h2>
+  {# Counts across all statuses for the stats strip #}
+  {% set n_pending  = pending  | selectattr('status', 'equalto', 'pending_review')  | list | length %}
+  {% set n_info     = pending  | selectattr('status', 'equalto', 'info_requested')  | list | length %}
+  {% set n_approved = closed   | selectattr('status', 'equalto', 'approved')        | list | length %}
+  {% set n_rejected = closed   | selectattr('status', 'equalto', 'rejected')        | list | length %}
+
+  <div class="pr-stats">
+    <div class="pr-stat is-pending">
+      <div class="pr-stat-label">Pending review</div>
+      <div class="pr-stat-value">{{ n_pending }}</div>
     </div>
+    <div class="pr-stat is-info">
+      <div class="pr-stat-label">Info requested</div>
+      <div class="pr-stat-value">{{ n_info }}</div>
+    </div>
+    <div class="pr-stat is-approved">
+      <div class="pr-stat-label">Approved (recent)</div>
+      <div class="pr-stat-value">{{ n_approved }}</div>
+    </div>
+    <div class="pr-stat is-rejected">
+      <div class="pr-stat-label">Rejected (recent)</div>
+      <div class="pr-stat-value">{{ n_rejected }}</div>
+    </div>
+  </div>
+
+  <!-- ───────── Open requests ───────── -->
+  <div class="pr-card">
+    <div class="pr-card-header">
+      <h2>Open <span class="count">— {{ pending|length }} {% if pending|length == 1 %}request{% else %}requests{% endif %} awaiting your review</span></h2>
+    </div>
+
     {% if pending %}
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Submitted</th>
-            <th>Organization</th>
-            <th>NPI</th>
-            <th>Submitter</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for sr in pending %}
-            <tr>
-              <td>{{ sr.submitted_at }}</td>
-              <td><strong>{{ sr.org_name }}</strong></td>
-              <td>{{ sr.npi }}</td>
-              <td>{{ sr.submitter_name }}<br><span class="muted">{{ sr.submitter_email }}</span></td>
-              <td>
-                {% if sr.status == 'pending_review' %}
-                  <span class="badge badge-warning">Pending review</span>
-                {% elif sr.status == 'info_requested' %}
-                  <span class="badge badge-info">Info requested</span>
-                {% endif %}
-              </td>
-              <td>
-                <a href="{{ url_for('super_signup_detail', signup_id=sr.id) }}" class="btn btn-sm">Review</a>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <ul class="pr-list">
+        {% for sr in pending %}
+          <li>
+            <div class="pr-col-time">
+              <strong>{{ sr.submitted_at[:10] }}</strong>
+              {{ sr.submitted_at[11:16] }}
+            </div>
+            <div class="pr-col-org">
+              {{ sr.org_name }}
+              <span class="city">{{ sr.address_city }}{% if sr.address_state %}, {{ sr.address_state }}{% endif %}</span>
+            </div>
+            <div class="pr-col-npi">{{ sr.npi }}</div>
+            <div class="pr-col-submitter">
+              {{ sr.submitter_name }}
+              <span class="email">{{ sr.submitter_email }}</span>
+            </div>
+            <div>
+              {% if sr.status == 'pending_review' %}
+                <span class="pr-status is-pending">Pending review</span>
+              {% elif sr.status == 'info_requested' %}
+                <span class="pr-status is-info">Info requested</span>
+              {% endif %}
+            </div>
+            <div>
+              <a href="{{ url_for('super_signup_detail', signup_id=sr.id) }}" class="pr-action">Review →</a>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
     {% else %}
-      <div class="empty-state">No open signup requests.</div>
+      <div class="pr-empty">
+        <span class="pr-empty-icon">📭</span>
+        No open signup requests. New submissions from the public signup form will appear here.
+      </div>
     {% endif %}
   </div>
 
+  <!-- ───────── Recently closed ───────── -->
   {% if closed %}
-  <div class="card" style="margin-top: 24px;">
-    <div class="card-header">
-      <h2>Recently closed (last 25)</h2>
-    </div>
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Submitted</th>
-          <th>Organization</th>
-          <th>NPI</th>
-          <th>Submitter</th>
-          <th>Outcome</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
+    <div class="pr-card">
+      <div class="pr-card-header">
+        <h2>Recently closed <span class="count">— last 25</span></h2>
+      </div>
+      <ul class="pr-list is-closed">
         {% for sr in closed %}
-          <tr>
-            <td>{{ sr.submitted_at }}</td>
-            <td>{{ sr.org_name }}</td>
-            <td>{{ sr.npi }}</td>
-            <td>{{ sr.submitter_email }}</td>
-            <td>
+          <li>
+            <div class="pr-col-time">
+              <strong>{{ sr.submitted_at[:10] }}</strong>
+              {{ sr.submitted_at[11:16] }}
+            </div>
+            <div class="pr-col-org">
+              {{ sr.org_name }}
+              <span class="city">{{ sr.address_city }}{% if sr.address_state %}, {{ sr.address_state }}{% endif %}</span>
+            </div>
+            <div class="pr-col-npi">{{ sr.npi }}</div>
+            <div class="pr-col-submitter">{{ sr.submitter_email }}</div>
+            <div>
               {% if sr.status == 'approved' %}
-                <span class="badge badge-success">Approved</span>
+                <span class="pr-status is-approved">Approved</span>
               {% elif sr.status == 'rejected' %}
-                <span class="badge badge-error">Rejected</span>
-                {% if sr.rejection_reason %}<br><span class="muted">{{ sr.rejection_reason | replace('_', ' ') }}</span>{% endif %}
+                <span class="pr-status is-rejected">Rejected</span>
               {% endif %}
-            </td>
-            <td>
-              <a href="{{ url_for('super_signup_detail', signup_id=sr.id) }}" class="btn btn-sm btn-link">View</a>
-            </td>
-          </tr>
+              {% if sr.rejection_reason %}
+                <div class="city" style="font-size: 11px; color: #7a8694; margin-top: 4px;">{{ sr.rejection_reason | replace('_', ' ') }}</div>
+              {% endif %}
+            </div>
+            <div>
+              <a href="{{ url_for('super_signup_detail', signup_id=sr.id) }}" class="pr-action-link">View →</a>
+            </div>
+          </li>
         {% endfor %}
-      </tbody>
-    </table>
-  </div>
+      </ul>
+    </div>
   {% endif %}
 </div>
 {% endblock %}

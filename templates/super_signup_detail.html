@@ -1,26 +1,201 @@
 {% extends "base.html" %}
-{% block title %}Signup #{{ sr.id }} · ABMRC · Arc Connect{% endblock %}
+{% block title %}Request #{{ sr.id }} · ABMRC · Arc Connect{% endblock %}
+{% block head_extra %}
+<style>
+  .sd-page { max-width: 1100px; margin: 0 auto; padding: 0 24px 32px; }
+
+  .sd-back {
+    color: #2E8BAD; text-decoration: none; font-size: 13px;
+    display: inline-block; margin-bottom: 8px;
+  }
+  .sd-back:hover { text-decoration: underline; }
+
+  .sd-header {
+    margin-bottom: 24px; display: flex; justify-content: space-between;
+    align-items: flex-start; gap: 16px; flex-wrap: wrap;
+  }
+  .sd-header h1 {
+    margin: 0 0 6px 0; color: #142c4a; font-size: 24px; font-weight: 600;
+  }
+  .sd-header .meta {
+    color: #7a8694; font-size: 13px; line-height: 1.5;
+  }
+  .sd-header .meta .label {
+    font-weight: 600; color: #2c3e50;
+  }
+
+  .sd-status {
+    display: inline-block; padding: 5px 12px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; align-self: flex-start;
+  }
+  .sd-status.is-pending  { background: #fff5d6; color: #7a5d00; }
+  .sd-status.is-info     { background: #e3f5fc; color: #2E8BAD; }
+  .sd-status.is-approved { background: #e0f2e4; color: #1e6c34; }
+  .sd-status.is-rejected { background: #fbe1e1; color: #832222; }
+
+  /* Flash */
+  .sd-flash { margin-bottom: 20px; }
+  .sd-flash .flash {
+    padding: 10px 14px; border-radius: 6px; font-size: 14px; margin-bottom: 8px;
+  }
+  .sd-flash .flash-success { background: #e0f2e4; border: 1px solid #b9d9bf; color: #1e6c34; }
+  .sd-flash .flash-error   { background: #fbe1e1; border: 1px solid #f4c2c2; color: #832222; }
+
+  /* Layout: 2-col on desktop, 1-col on small screens */
+  .sd-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 880px) {
+    .sd-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Cards */
+  .sd-card {
+    background: #fff; border: 1px solid #e5ebf2; border-radius: 10px;
+    overflow: hidden;
+  }
+  .sd-card-header {
+    padding: 14px 20px; border-bottom: 1px solid #f0f3f7;
+    background: #fafbfd;
+  }
+  .sd-card-header h2 {
+    margin: 0; font-size: 14px; font-weight: 700; color: #142c4a;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .sd-card-body { padding: 20px; }
+
+  /* Submitted info: clean key/value rows */
+  .sd-fields {
+    display: grid; gap: 16px;
+  }
+  .sd-field {
+    display: grid; grid-template-columns: 130px 1fr; gap: 14px;
+    align-items: baseline;
+  }
+  .sd-field-label {
+    font-size: 12px; font-weight: 600; color: #7a8694;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .sd-field-value {
+    color: #142c4a; font-size: 14px; line-height: 1.5;
+  }
+  .sd-field-value.org-name { font-size: 16px; font-weight: 600; }
+  .sd-field-value a { color: #2E8BAD; text-decoration: none; }
+  .sd-field-value a:hover { text-decoration: underline; }
+  .sd-field-value.npi { font-family: 'Roboto Mono', monospace; font-size: 13px; }
+  .sd-field-value.notes { white-space: pre-wrap; color: #2c3e50; font-size: 13px; }
+
+  /* Action sections */
+  .sd-action-block {
+    padding: 18px 0; border-top: 1px solid #f0f3f7;
+  }
+  .sd-action-block:first-child { border-top: 0; padding-top: 0; }
+  .sd-action-block:last-child  { padding-bottom: 0; }
+  .sd-action-block h3 {
+    margin: 0 0 4px 0; font-size: 14px; font-weight: 600; color: #142c4a;
+  }
+  .sd-action-block .desc {
+    color: #7a8694; font-size: 12px; line-height: 1.5; margin-bottom: 12px;
+  }
+
+  /* Approve — highlight as primary path */
+  .sd-action-block.is-approve {
+    background: #f1faff; margin: -20px -20px 0 -20px;
+    padding: 20px; border-bottom: 1px solid #d0eaf6;
+    border-top: 0; border-radius: 0;
+  }
+  .sd-action-block.is-approve h3 { color: #2E8BAD; }
+
+  /* Form fields */
+  .sd-form-row { margin-bottom: 12px; }
+  .sd-form-row label {
+    display: block; font-size: 13px; font-weight: 600;
+    color: #2c3e50; margin-bottom: 4px;
+  }
+  .sd-form-row label .req { color: #c92a2a; margin-left: 2px; }
+  .sd-form-row select,
+  .sd-form-row input,
+  .sd-form-row textarea {
+    width: 100%; box-sizing: border-box;
+    padding: 9px 11px; font-size: 13px;
+    border: 1px solid #d4dbe5; border-radius: 6px;
+    background: #fff; color: #142c4a; font-family: inherit;
+  }
+  .sd-form-row select:focus,
+  .sd-form-row input:focus,
+  .sd-form-row textarea:focus {
+    outline: none; border-color: #43C1ED;
+    box-shadow: 0 0 0 3px rgba(67, 193, 237, 0.15);
+  }
+  .sd-form-row textarea { resize: vertical; min-height: 60px; }
+
+  /* Buttons */
+  .sd-btn {
+    display: inline-block; border-radius: 6px; font-weight: 600;
+    font-size: 13px; padding: 9px 18px; cursor: pointer;
+    border: 1px solid transparent; transition: background 0.15s, border-color 0.15s;
+    text-decoration: none; line-height: 1.2;
+    font-family: inherit;
+  }
+  .sd-btn-primary  { background: #43C1ED; border-color: #43C1ED; color: #fff; }
+  .sd-btn-primary:hover  { background: #2E8BAD; border-color: #2E8BAD; }
+  .sd-btn-large { padding: 12px 24px; font-size: 14px; }
+  .sd-btn-danger   { background: #fff; border-color: #C00000; color: #C00000; }
+  .sd-btn-danger:hover   { background: #C00000; color: #fff; }
+  .sd-btn-secondary{ background: #fff; border-color: #d4dbe5; color: #2c3e50; }
+  .sd-btn-secondary:hover{ background: #f0f3f7; }
+
+  /* Empty state when finalized */
+  .sd-finalized {
+    padding: 28px 20px; text-align: center; color: #7a8694; font-size: 13px;
+    line-height: 1.5;
+  }
+  .sd-finalized-icon { font-size: 28px; opacity: 0.4; display: block; margin-bottom: 6px; }
+
+  /* Audit trail */
+  .sd-audit { margin-top: 24px; }
+  .sd-audit table {
+    width: 100%; border-collapse: collapse; background: #fff;
+  }
+  .sd-audit th {
+    text-align: left; padding: 10px 16px; font-size: 11px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #7a8694; background: #fafbfd; border-bottom: 1px solid #e5ebf2;
+  }
+  .sd-audit td {
+    padding: 10px 16px; font-size: 13px; color: #2c3e50;
+    border-bottom: 1px solid #f0f3f7;
+  }
+  .sd-audit td:first-child { color: #7a8694; font-size: 12px; white-space: nowrap; }
+</style>
+{% endblock %}
 {% block body %}
-<div class="page">
-  <div class="page-header">
+<div class="sd-page">
+  <a href="{{ url_for('super_signups') }}" class="sd-back">← Pending Requests</a>
+
+  <div class="sd-header">
     <div>
-      <h1>Signup request #{{ sr.id }}</h1>
-      <div class="page-sub">
-        Submitted {{ sr.submitted_at }} · Source IP {{ sr.source_ip or 'unknown' }} ·
-        {% if sr.status == 'pending_review' %}<span class="badge badge-warning">Pending review</span>
-        {% elif sr.status == 'info_requested' %}<span class="badge badge-info">Info requested</span>
-        {% elif sr.status == 'approved' %}<span class="badge badge-success">Approved</span>
-        {% elif sr.status == 'rejected' %}<span class="badge badge-error">Rejected</span>{% endif %}
+      <h1>Request #{{ sr.id }} · {{ sr.org_name }}</h1>
+      <div class="meta">
+        <span class="label">Submitted:</span> {{ sr.submitted_at }}
+        &nbsp;·&nbsp;
+        <span class="label">Source IP:</span> {{ sr.source_ip or 'unknown' }}
       </div>
     </div>
-    <div class="page-header-actions">
-      <a href="{{ url_for('super_signups') }}" class="btn btn-link">← Pending signups</a>
+    <div>
+      {% if sr.status == 'pending_review' %}<span class="sd-status is-pending">Pending review</span>
+      {% elif sr.status == 'info_requested' %}<span class="sd-status is-info">Info requested</span>
+      {% elif sr.status == 'approved' %}<span class="sd-status is-approved">Approved</span>
+      {% elif sr.status == 'rejected' %}<span class="sd-status is-rejected">Rejected</span>{% endif %}
     </div>
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-      <div class="flash-messages">
+      <div class="sd-flash">
         {% for category, msg in messages %}
           <div class="flash flash-{{ category }}">{{ msg }}</div>
         {% endfor %}
@@ -28,105 +203,156 @@
     {% endif %}
   {% endwith %}
 
-  <div class="grid-2col">
-    <div class="card">
-      <div class="card-header"><h2>Submitted information</h2></div>
-      <div class="card-body">
-        <dl class="kv">
-          <dt>Organization</dt>
-          <dd><strong>{{ sr.org_name }}</strong></dd>
-          <dt>NPI</dt>
-          <dd>{{ sr.npi }}</dd>
-          <dt>Address</dt>
-          <dd>
-            {{ sr.address_street }}<br>
-            {{ sr.address_city }}, {{ sr.address_state }} {{ sr.address_zip }}
-          </dd>
-          <dt>Submitter</dt>
-          <dd>{{ sr.submitter_name }}<br><a href="mailto:{{ sr.submitter_email }}">{{ sr.submitter_email }}</a></dd>
+  <div class="sd-grid">
+    <!-- ──────── Submitted information ──────── -->
+    <div class="sd-card">
+      <div class="sd-card-header"><h2>Submitted information</h2></div>
+      <div class="sd-card-body">
+        <div class="sd-fields">
+          <div class="sd-field">
+            <div class="sd-field-label">Organization</div>
+            <div class="sd-field-value org-name">{{ sr.org_name }}</div>
+          </div>
+          <div class="sd-field">
+            <div class="sd-field-label">NPI</div>
+            <div class="sd-field-value npi">{{ sr.npi }}</div>
+          </div>
+          <div class="sd-field">
+            <div class="sd-field-label">Address</div>
+            <div class="sd-field-value">
+              {{ sr.address_street }}<br>
+              {{ sr.address_city }}, {{ sr.address_state }} {{ sr.address_zip }}
+            </div>
+          </div>
+          <div class="sd-field">
+            <div class="sd-field-label">Submitter</div>
+            <div class="sd-field-value">
+              {{ sr.submitter_name }}<br>
+              <a href="mailto:{{ sr.submitter_email }}">{{ sr.submitter_email }}</a>
+            </div>
+          </div>
           {% if sr.info_request_message %}
-            <dt>Info-request message</dt>
-            <dd style="white-space: pre-wrap;">{{ sr.info_request_message }}</dd>
+            <div class="sd-field">
+              <div class="sd-field-label">Info request</div>
+              <div class="sd-field-value notes">{{ sr.info_request_message }}</div>
+            </div>
           {% endif %}
           {% if sr.rejection_reason %}
-            <dt>Rejection reason</dt>
-            <dd>
-              {{ sr.rejection_reason | replace('_', ' ') | title }}
-              {% if sr.rejection_notes %}<br><span class="muted">{{ sr.rejection_notes }}</span>{% endif %}
-            </dd>
+            <div class="sd-field">
+              <div class="sd-field-label">Rejection</div>
+              <div class="sd-field-value">
+                {{ sr.rejection_reason | replace('_', ' ') | title }}
+                {% if sr.rejection_notes %}<br><span style="color: #7a8694; font-size: 13px;">{{ sr.rejection_notes }}</span>{% endif %}
+              </div>
+            </div>
           {% endif %}
           {% if sr.approved_org_id %}
-            <dt>Created organization</dt>
-            <dd>org_id={{ sr.approved_org_id }}</dd>
+            <div class="sd-field">
+              <div class="sd-field-label">Created org</div>
+              <div class="sd-field-value">
+                <form method="POST" action="{{ url_for('super_set_acting_org', org_id=sr.approved_org_id) }}" style="display: inline; margin: 0;">
+                  <button type="submit" style="background: none; border: 0; padding: 0; color: #2E8BAD; cursor: pointer; font: inherit; text-decoration: underline;">
+                    Open organization #{{ sr.approved_org_id }} →
+                  </button>
+                </form>
+              </div>
+            </div>
           {% endif %}
-        </dl>
+        </div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-header"><h2>Actions</h2></div>
-      <div class="card-body">
+    <!-- ──────── Actions ──────── -->
+    <div class="sd-card">
+      <div class="sd-card-header"><h2>Review actions</h2></div>
+      <div class="sd-card-body">
         {% if sr.status in ('pending_review', 'info_requested') %}
-          <form method="POST" action="{{ url_for('super_signup_approve', signup_id=sr.id) }}"
-                onsubmit="return confirm('Approve this signup and create a customer organization?');"
-                style="margin-bottom: 16px;">
-            <button type="submit" class="btn btn-primary btn-large">Approve & create organization</button>
-            <div class="form-hint">Creates a `pending_setup` customer org with the submitted fields prefilled. You'll attach the signed BAA PDF on the next step.</div>
-          </form>
 
-          <hr>
-
-          <form method="POST" action="{{ url_for('super_signup_reject', signup_id=sr.id) }}" style="margin-top: 16px;">
-            <h4>Reject</h4>
-            <div class="form-row">
-              <label for="reason_category">Reason category <span class="req">*</span></label>
-              <select name="reason_category" id="reason_category" required>
-                <option value="">— choose a reason —</option>
-                <option value="missing_or_invalid_npi">Missing or invalid NPI</option>
-                <option value="existing_customer">Existing customer organization</option>
-                <option value="suspicious_source">Suspicious source</option>
-                <option value="commercial_terms_not_aligned">Commercial terms not aligned</option>
-                <option value="other">Other</option>
-              </select>
+          {# 1. Approve — primary, highlighted #}
+          <div class="sd-action-block is-approve">
+            <h3>Approve & create organization</h3>
+            <div class="desc">
+              Creates a customer main organization (status <code>pending_setup</code>) with the
+              submitted fields prefilled. You'll attach the signed BAA PDF on the next step.
             </div>
-            <div class="form-row">
-              <label for="reason_notes">Notes (optional)</label>
-              <textarea name="reason_notes" id="reason_notes" rows="2"></textarea>
-            </div>
-            <button type="submit" class="btn btn-danger"
-                    onclick="return confirm('Reject this signup? An email will be sent to the submitter with the reason category.');">Reject</button>
-          </form>
+            <form method="POST" action="{{ url_for('super_signup_approve', signup_id=sr.id) }}"
+                  onsubmit="return confirm('Approve this request and create a customer organization?');">
+              <button type="submit" class="sd-btn sd-btn-primary sd-btn-large">Approve →</button>
+            </form>
+          </div>
 
-          <hr style="margin-top: 16px;">
-
+          {# 2. Request more info (only when status=pending_review) — second priority #}
           {% if sr.status == 'pending_review' %}
-            <form method="POST" action="{{ url_for('super_signup_request_info', signup_id=sr.id) }}" style="margin-top: 16px;">
-              <h4>Request more info</h4>
-              <div class="form-row">
-                <label for="message">Message to submitter <span class="req">*</span></label>
-                <textarea name="message" id="message" rows="3" required
-                          placeholder="e.g., Could you confirm the NPI on the NPPES record matches the legal organization name?"></textarea>
+            <div class="sd-action-block">
+              <h3>Request more info</h3>
+              <div class="desc">
+                Send a question to the submitter. Status moves to <code>info_requested</code>.
+                The submitter replies via email; mark the request "ready" below when their answer comes in.
               </div>
-              <button type="submit" class="btn">Send info request</button>
-              <div class="form-hint">Status will move to <code>info_requested</code>. Submitter replies via email; return to review when ready.</div>
-            </form>
+              <form method="POST" action="{{ url_for('super_signup_request_info', signup_id=sr.id) }}">
+                <div class="sd-form-row">
+                  <label for="message">Message <span class="req">*</span></label>
+                  <textarea name="message" id="message" rows="3" required
+                            placeholder="e.g., Could you confirm the NPI on the NPPES record matches the legal organization name?"></textarea>
+                </div>
+                <button type="submit" class="sd-btn sd-btn-secondary">Send info request</button>
+              </form>
+            </div>
           {% else %}
-            <form method="POST" action="{{ url_for('super_signup_return_to_review', signup_id=sr.id) }}" style="margin-top: 16px;">
-              <h4>Submitter replied?</h4>
-              <button type="submit" class="btn">Return to pending review</button>
-            </form>
+            <div class="sd-action-block">
+              <h3>Submitter replied?</h3>
+              <div class="desc">Move the request back to <code>pending_review</code> once the submitter has answered your question.</div>
+              <form method="POST" action="{{ url_for('super_signup_return_to_review', signup_id=sr.id) }}">
+                <button type="submit" class="sd-btn sd-btn-secondary">Return to pending review</button>
+              </form>
+            </div>
           {% endif %}
+
+          {# 3. Reject — last because it's terminal #}
+          <div class="sd-action-block">
+            <h3>Reject</h3>
+            <div class="desc">
+              Sends a templated email to the submitter with the reason category (free-text notes are not included in the email).
+              Rejection is final but the submitter can submit a fresh request.
+            </div>
+            <form method="POST" action="{{ url_for('super_signup_reject', signup_id=sr.id) }}"
+                  onsubmit="return confirm('Reject this request? Submitter will be notified.');">
+              <div class="sd-form-row">
+                <label for="reason_category">Reason category <span class="req">*</span></label>
+                <select name="reason_category" id="reason_category" required>
+                  <option value="">— choose a reason —</option>
+                  <option value="missing_or_invalid_npi">Missing or invalid NPI</option>
+                  <option value="existing_customer">Existing customer organization</option>
+                  <option value="suspicious_source">Suspicious source</option>
+                  <option value="commercial_terms_not_aligned">Commercial terms not aligned</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="sd-form-row">
+                <label for="reason_notes">Internal notes (optional)</label>
+                <textarea name="reason_notes" id="reason_notes" rows="2"
+                          placeholder="Notes for the audit trail; not sent to the submitter."></textarea>
+              </div>
+              <button type="submit" class="sd-btn sd-btn-danger">Reject request</button>
+            </form>
+          </div>
+
         {% else %}
-          <div class="empty-state">This signup is finalized ({{ sr.status }}). No further actions are available.</div>
+          <div class="sd-finalized">
+            <span class="sd-finalized-icon">{% if sr.status == 'approved' %}✓{% else %}✕{% endif %}</span>
+            This request was {{ sr.status }} on {{ sr.reviewed_at }}.<br>
+            No further actions are available.
+          </div>
         {% endif %}
       </div>
     </div>
   </div>
 
+  <!-- ──────── Audit trail ──────── -->
   {% if transitions %}
-    <div class="card" style="margin-top: 24px;">
-      <div class="card-header"><h2>Audit trail</h2></div>
-      <table class="data-table">
+    <div class="sd-card sd-audit">
+      <div class="sd-card-header"><h2>Audit trail</h2></div>
+      <table>
         <thead>
           <tr>
             <th>When</th>
