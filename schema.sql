@@ -54,7 +54,11 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE NOT NULL,
     first_name TEXT,
     last_name TEXT,
-    role TEXT NOT NULL CHECK(role IN ('admin', 'clinician', 'billing', 'read_only', 'customer_service', 'account_executive', 'super_admin')),
+    -- Per URS LD-8: Release 1 has a deliberately minimal role enum.
+    -- super_admin = ABMRC; admin = group/satellite admin (distinguished by org type+parent);
+    -- user = everyone else, undifferentiated. Granular roles (clinician/billing/etc.)
+    -- deferred to Release 2 (see URS §3.3 Won't-do).
+    role TEXT NOT NULL CHECK(role IN ('admin', 'user', 'super_admin')),
     phone TEXT,
     is_active INTEGER DEFAULT 1,
     last_login_at TIMESTAMP,
@@ -355,7 +359,7 @@ CREATE TABLE IF NOT EXISTS alert_rules (
     notify_email INTEGER DEFAULT 1,
     notify_in_app INTEGER DEFAULT 1,
     notify_sms INTEGER DEFAULT 0,
-    notify_recipient_roles TEXT,  -- JSON: ["admin","clinician"]
+    notify_recipient_roles TEXT,  -- JSON: ["admin","user"] per LD-8
     is_active INTEGER DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -628,3 +632,36 @@ CREATE TABLE IF NOT EXISTS heatmap_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
+
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Public self-service signup requests (REQ-3.8 / REQ-3.9)
+-- ═══════════════════════════════════════════════════════════════════
+-- Prospective HMEs submit a public form on the Arc Connect website. ABMRC
+-- super admins review the queue, then approve (creates an organizations row
+-- with prefilled fields) / reject (with structured reason) / request more
+-- info. Signup_requests rows are retained indefinitely for audit. State
+-- machine: pending_review ⇄ info_requested → approved | rejected.
+
+CREATE TABLE IF NOT EXISTS signup_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    npi TEXT NOT NULL,
+    org_name TEXT NOT NULL,
+    address_street TEXT NOT NULL,
+    address_city TEXT NOT NULL,
+    address_state TEXT NOT NULL,
+    address_zip TEXT NOT NULL,
+    submitter_name TEXT NOT NULL,
+    submitter_email TEXT NOT NULL,
+    source_ip TEXT,
+    status TEXT NOT NULL DEFAULT 'pending_review'
+        CHECK(status IN ('pending_review', 'info_requested', 'approved', 'rejected')),
+    rejection_reason TEXT,    -- structured category when status='rejected'
+    rejection_notes TEXT,     -- free-text notes when status='rejected'
+    info_request_message TEXT,  -- free text when status='info_requested'
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reviewed_by_user_id INTEGER REFERENCES users(id),
+    reviewed_at TIMESTAMP,
+    approved_org_id INTEGER REFERENCES organizations(id)
+);
+CREATE INDEX IF NOT EXISTS idx_signup_status ON signup_requests(status, submitted_at DESC);

@@ -61,10 +61,9 @@
         <div class="form-group span-2">
           <label>Notify which roles</label>
           <div class="check-group" style="flex-direction: row; gap: 24px;">
-            {% set active_roles = rule_roles if rule_roles is defined else ['admin','clinician'] %}
+            {% set active_roles = rule_roles if rule_roles is defined else ['admin','user'] %}
             <label><input type="checkbox" name="notify_recipient_roles" value="admin" {% if 'admin' in active_roles %}checked{% endif %}> Admins</label>
-            <label><input type="checkbox" name="notify_recipient_roles" value="clinician" {% if 'clinician' in active_roles %}checked{% endif %}> Clinicians</label>
-            <label><input type="checkbox" name="notify_recipient_roles" value="billing" {% if 'billing' in active_roles %}checked{% endif %}> Billing</label>
+            <label><input type="checkbox" name="notify_recipient_roles" value="user" {% if 'user' in active_roles %}checked{% endif %}> Users</label>
           </div>
         </div>
 

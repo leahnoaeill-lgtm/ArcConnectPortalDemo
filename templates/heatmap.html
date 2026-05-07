@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_template|default("base.html") %}
 {% block title %}Population health heat map{% endblock %}
 {% block head_extra %}
 <style>
@@ -79,6 +79,9 @@
 {% endblock %}
 {% block body %}
 <div class="page">
+  {% if not embed_mode %}
+    <a href="{{ back_url }}" class="btn btn-link btn-sm" style="margin-bottom: 8px; display: inline-block;">← Back to dashboard</a>
+  {% endif %}
   <div class="page-header">
     <div>
       <h1>Population health heat map</h1>
@@ -541,7 +544,11 @@
   }
 
   // ── MAP VIEW renderer ──────────────────────────────────────────────
-  let mapAutoFitDone = false;
+  // Start the heat map in a zoomed-out state (full-US view) on initial load.
+  // Initialize to `true` so the first-render auto-fit is skipped — the user
+  // can click the Fit zoom-control button at any time to zoom to data, but
+  // the default starting view is the full country.
+  let mapAutoFitDone = true;
   function renderMapBin(bin, color, rScale, meta) {
     const entries = Object.keys(bin.zip3).map(function (z) {
       const e = bin.zip3[z];
@@ -746,7 +753,8 @@
   // ── Wiring ──────────────────────────────────────────────────────────
   layerSelect.addEventListener('change', function () {
     updateLayerDesc();
-    mapAutoFitDone = false;   // re-fit if the new metric has different region coverage
+    // Don't auto-refit on layer change — preserve the user's chosen zoom state.
+    // (User can click the Fit zoom-control button to refit to the new layer's data.)
     loadData();
   });
   slider.addEventListener('input', function () {
@@ -755,6 +763,17 @@
   });
   viewTabs.forEach(function (t) {
     t.addEventListener('click', function () { setView(t.dataset.view); });
+  });
+
+  // When this page is embedded inside another dashboard view (parent_overview
+  // iframes /heatmap?embed=1), the parent renders Map/Lung pills outside the
+  // iframe and drives this page via postMessage. Accept those signals.
+  window.addEventListener('message', function (ev) {
+    if (!ev || !ev.data) return;
+    if (ev.data.type === 'arcconnect.heatmap.setView' &&
+        (ev.data.view === 'map' || ev.data.view === 'lung')) {
+      setView(ev.data.view);
+    }
   });
 
   playBtn.addEventListener('click', function () {

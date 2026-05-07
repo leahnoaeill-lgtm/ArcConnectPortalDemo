@@ -163,13 +163,16 @@ def seed():
                  role, phone) VALUES (?, ?, ?, ?, 'admin', ?)""",
               (adap_id, 'karen.h@adapt.com', 'Karen', 'Hughes', '312-555-0100'))
 
-    # Adapt Denver users
+    # Adapt Denver users.
+    # Per URS LD-8 the Release 1 role enum is super_admin / admin / user only.
+    # Job titles like "respiratory therapist" / "billing analyst" are descriptive
+    # — the system enum collapses them all to 'user' (URS §2.3 role glossary).
     denver_users = [
-        ('priya.s@adapt.com', 'Priya', 'Shah', 'admin', '303-555-0141'),
-        ('james.r@adapt.com', 'James', 'Reyes', 'clinician', '303-555-0142'),
-        ('alex.k@adapt.com', 'Alex', 'Kim', 'clinician', '303-555-0143'),
-        ('sam.l@adapt.com', 'Sam', 'Liu', 'billing', '303-555-0144'),
-        ('devi.p@adapt.com', 'Devi', 'Patel', 'clinician', '303-555-0145'),
+        ('priya.s@adapt.com', 'Priya', 'Shah',  'admin', '303-555-0141'),
+        ('james.r@adapt.com', 'James', 'Reyes', 'user',  '303-555-0142'),
+        ('alex.k@adapt.com',  'Alex',  'Kim',   'user',  '303-555-0143'),
+        ('sam.l@adapt.com',   'Sam',   'Liu',   'user',  '303-555-0144'),
+        ('devi.p@adapt.com',  'Devi',  'Patel', 'user',  '303-555-0145'),
     ]
     denver_user_ids = {}
     for email, fn, ln, role, phone in denver_users:
@@ -184,7 +187,7 @@ def seed():
               (adap_boulder, 'linda.w@adapt.com', 'Linda', 'Wong', 'admin', '303-555-0213'))
     c.execute("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone)
                  VALUES (?, ?, ?, ?, ?, ?)""",
-              (adap_boulder, 'tom.g@adapt.com', 'Tom', 'Garcia', 'clinician', '303-555-0214'))
+              (adap_boulder, 'tom.g@adapt.com', 'Tom', 'Garcia', 'user', '303-555-0214'))
 
     # Adapt Phoenix
     c.execute("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone)
@@ -534,7 +537,7 @@ def seed():
                      notify_recipient_roles)
                      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)""",
                   (adap_denver, name, desc, metric, threshold, window, severity,
-                   json.dumps(['admin','clinician'])))
+                   json.dumps(['admin','user'])))
         rule_ids[name] = c.lastrowid
 
     # Adapt parent org — seed the same default rule set so the parent-managed
@@ -545,7 +548,7 @@ def seed():
                      notify_recipient_roles)
                      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)""",
                   (adap_id, name, desc, metric, threshold, window, severity,
-                   json.dumps(['admin','clinician'])))
+                   json.dumps(['admin','user'])))
 
     # Boulder — copy two default rules
     for name, metric, threshold, window, severity, desc in rules[:2]:
@@ -554,7 +557,7 @@ def seed():
                      notify_recipient_roles)
                      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)""",
                   (adap_boulder, name, desc, metric, threshold, window, severity,
-                   json.dumps(['admin','clinician'])))
+                   json.dumps(['admin','user'])))
 
     # Sunwest — copy one rule
     c.execute("""INSERT INTO alert_rules (organization_id, name, description, metric,
@@ -1438,7 +1441,7 @@ def seed():
     print('  support@abmrespiratory.com (ABMRC super admin — view-only across all orgs)')
     print('  karen.h@adapt.com     (Adapt HQ admin — parent rollup + switch location)')
     print('  priya.s@adapt.com     (Adapt — Denver admin — full location admin)')
-    print('  james.r@adapt.com     (Adapt — Denver clinician)')
+    print('  james.r@adapt.com     (Adapt — Denver user)')
     print('  linda.w@adapt.com     (Adapt — Boulder admin)')
     print('  maria.t@sunwest.com  (Sunwest Medical admin)')
 

@@ -279,7 +279,49 @@ def feature_enabled(flag_name, org_id=None):
 SUPER_ADMIN_WRITE_ALLOWLIST = {
     'login', 'logout', 'super_org_new', 'super_org_suspend', 'super_org_activate',
     'super_baa_new', 'super_user_invite', 'super_set_acting_org', 'super_clear_acting_org',
+    # REQ-3.9 self-service signup review actions
+    'super_signup_approve', 'super_signup_reject', 'super_signup_request_info',
+    'super_signup_return_to_review',
+    # REQ-3.8 public signup form (no auth required, but POSTs from anonymous users)
+    'public_signup_submit',
 }
+
+
+# ── Public signup rate limiting (REQ-3.8 AC-3) ────────────────────────────────
+# In-memory; resets on app restart. Fine for the prototype; production would
+# use Redis or the WAF layer.
+from collections import defaultdict
+_SIGNUP_RATE_LIMIT_PER_HOUR = 3
+_signup_submissions_by_ip = defaultdict(list)  # ip -> [datetime, ...]
+
+
+def _signup_rate_limit_check(ip):
+    """Returns True if the IP is under the limit and may submit; False if rate-limited."""
+    now = datetime.utcnow()
+    cutoff = now - timedelta(hours=1)
+    _signup_submissions_by_ip[ip] = [t for t in _signup_submissions_by_ip[ip] if t > cutoff]
+    if len(_signup_submissions_by_ip[ip]) >= _SIGNUP_RATE_LIMIT_PER_HOUR:
+        return False
+    _signup_submissions_by_ip[ip].append(now)
+    return True
+
+
+def _signup_pending_count():
+    """Count of signup_requests in pending_review or info_requested state."""
+    row = q_one("""SELECT COUNT(*) AS n FROM signup_requests
+                   WHERE status IN ('pending_review', 'info_requested')""")
+    return row['n'] if row else 0
+
+
+def _signup_audit(actor_user_id, signup_id, prior_status, new_status, detail):
+    """Write a status-transition audit-log event for a signup_request (REQ-3.9 AC-4)."""
+    db = get_db()
+    db.execute("""INSERT INTO access_log
+                  (user_id, organization_id, event, ref_type, ref_id, detail, is_external_access)
+                  VALUES (?, NULL, 'signup_request_transition', 'signup_request', ?, ?, 1)""",
+               (actor_user_id, signup_id,
+                f'{prior_status} → {new_status}: {detail}'))
+    db.commit()
 
 
 @app.before_request
@@ -876,6 +918,267 @@ def _baa_status(baa_row, today=None):
     return ('active', days)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Public self-service signup (REQ-3.8) + ABMRC review queue (REQ-3.9)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/signup', methods=['GET'])
+def public_signup_form():
+    """Public, unauthenticated signup form (REQ-3.8 AC-1)."""
+    return render_template('public_signup.html')
+
+
+@app.route('/signup', methods=['POST'])
+def public_signup_submit():
+    """Process a public signup submission (REQ-3.8 AC-2..AC-6)."""
+    # Honeypot — silent discard (REQ-3.8 AC-3 / SR-3.8.4)
+    if request.form.get('company_url', '').strip():
+        # Bot detected; show success page anyway to avoid revealing the trap
+        return redirect(url_for('public_signup_thanks'))
+
+    # Rate limit by source IP (REQ-3.8 AC-3 / SR-3.8.3)
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr) or '0.0.0.0'
+    ip = ip.split(',')[0].strip()
+    if not _signup_rate_limit_check(ip):
+        flash('Too many signup requests from your network in the last hour. Please try again later.', 'error')
+        return redirect(url_for('public_signup_form'))
+
+    # Field validation (REQ-3.8 AC-2 / SR-3.8.2)
+    npi = (request.form.get('npi') or '').strip()
+    org_name = (request.form.get('org_name') or '').strip()
+    address_street = (request.form.get('address_street') or '').strip()
+    address_city = (request.form.get('address_city') or '').strip()
+    address_state = (request.form.get('address_state') or '').strip().upper()
+    address_zip = (request.form.get('address_zip') or '').strip()
+    submitter_name = (request.form.get('submitter_name') or '').strip()
+    submitter_email = (request.form.get('submitter_email') or '').strip().lower()
+
+    errors = []
+    if not (npi.isdigit() and len(npi) == 10):
+        errors.append('NPI must be exactly 10 digits.')
+    if not (1 <= len(org_name) <= 200):
+        errors.append('Organization name is required (1–200 characters).')
+    if not (1 <= len(address_street) <= 200):
+        errors.append('Street address is required.')
+    if not (1 <= len(address_city) <= 100):
+        errors.append('City is required.')
+    if len(address_state) != 2:
+        errors.append('State must be a 2-letter code (e.g., CA).')
+    if not (address_zip.replace('-', '').isdigit() and 5 <= len(address_zip.replace('-', '')) <= 9):
+        errors.append('ZIP code is invalid.')
+    if not (1 <= len(submitter_name) <= 100):
+        errors.append('Your name is required.')
+    if '@' not in submitter_email or '.' not in submitter_email.split('@')[-1]:
+        errors.append('A valid email address is required.')
+
+    if errors:
+        for e in errors:
+            flash(e, 'error')
+        return redirect(url_for('public_signup_form'))
+
+    # Create signup_request row (REQ-3.8 AC-4 / SR-3.8.5)
+    db = get_db()
+    cur = db.execute("""INSERT INTO signup_requests
+                        (npi, org_name, address_street, address_city, address_state, address_zip,
+                         submitter_name, submitter_email, source_ip, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review')""",
+                     (npi, org_name, address_street, address_city, address_state, address_zip,
+                      submitter_name, submitter_email, ip))
+    signup_id = cur.lastrowid
+    db.commit()
+
+    # Email notification (REQ-3.8 AC-5 / SR-3.8.6) — stub until REQ-17.1 lights up the
+    # transactional-email pipeline. For the prototype we log to stdout so demos can
+    # show the notification firing.
+    print(f'[SIGNUP NOTIFY] new signup_request id={signup_id} from {submitter_email} '
+          f'org={org_name!r} npi={npi} ip={ip} — review at /super/signups/{signup_id}',
+          flush=True)
+
+    return redirect(url_for('public_signup_thanks'))
+
+
+@app.route('/signup/thanks')
+def public_signup_thanks():
+    """Confirmation page shown after a successful signup submission."""
+    return render_template('public_signup_thanks.html')
+
+
+# ── ABMRC review queue ──────────────────────────────────────────────────────
+
+@app.route('/super/signups')
+@require_login
+def super_signups():
+    """ABMRC pending-signups review queue (REQ-3.9 AC-1)."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    pending = q_all("""SELECT * FROM signup_requests
+                       WHERE status IN ('pending_review', 'info_requested')
+                       ORDER BY submitted_at DESC""")
+    closed = q_all("""SELECT * FROM signup_requests
+                      WHERE status IN ('approved', 'rejected')
+                      ORDER BY submitted_at DESC LIMIT 25""")
+    return render_template('super_signups.html', pending=pending, closed=closed)
+
+
+@app.route('/super/signups/<int:signup_id>')
+@require_login
+def super_signup_detail(signup_id):
+    """Review a single signup request (REQ-3.9 AC-2)."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
+    if not sr:
+        abort(404)
+    transitions = q_all("""SELECT al.*, u.first_name, u.last_name
+                           FROM access_log al
+                           LEFT JOIN users u ON u.id = al.user_id
+                           WHERE al.event = 'signup_request_transition' AND al.ref_id = ?
+                           ORDER BY al.occurred_at DESC""", (signup_id,))
+    return render_template('super_signup_detail.html', sr=sr, transitions=transitions)
+
+
+@app.route('/super/signups/<int:signup_id>/approve', methods=['POST'])
+@require_login
+def super_signup_approve(signup_id):
+    """Approve a signup request — creates the customer org with prefilled fields (REQ-3.9 AC-2 + SR-3.9.3)."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
+    if not sr:
+        abort(404)
+    if sr['status'] not in ('pending_review', 'info_requested'):
+        flash('This signup request is already finalized; cannot approve.', 'error')
+        return redirect(url_for('super_signup_detail', signup_id=signup_id))
+
+    # Create the customer main organization with submitted fields prefilled (REQ-3.2 path b).
+    # NPI is preserved on the signup_request row (linked via approved_org_id) since the
+    # prototype `organizations` table doesn't have an NPI column.
+    db = get_db()
+    cur = db.execute("""INSERT INTO organizations
+                        (name, type, status, address_line1, city, state, zip)
+                        VALUES (?, 'parent', 'pending_setup', ?, ?, ?, ?)""",
+                     (sr['org_name'], sr['address_street'], sr['address_city'],
+                      sr['address_state'], sr['address_zip']))
+    org_id = cur.lastrowid
+
+    # Mark the signup as approved
+    user = current_user()
+    db.execute("""UPDATE signup_requests
+                  SET status = 'approved', reviewed_by_user_id = ?, reviewed_at = CURRENT_TIMESTAMP,
+                      approved_org_id = ?
+                  WHERE id = ?""", (user['id'], org_id, signup_id))
+    db.commit()
+
+    _signup_audit(user['id'], signup_id, sr['status'], 'approved',
+                  f'approved → org_id={org_id} ({sr["org_name"]})')
+    print(f'[SIGNUP NOTIFY] approval email to {sr["submitter_email"]} — '
+          f'next step: BAA upload for org_id={org_id}', flush=True)
+
+    flash(f'Signup approved. New customer organization "{sr["org_name"]}" created '
+          f'(pending BAA upload). Next: attach the signed BAA PDF to complete onboarding.', 'success')
+    return redirect(url_for('super_org_baa_new', org_id=org_id) if False else url_for('super_signups'))
+
+
+@app.route('/super/signups/<int:signup_id>/reject', methods=['POST'])
+@require_login
+def super_signup_reject(signup_id):
+    """Reject a signup request (REQ-3.9 AC-2 + SR-3.9.4)."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
+    if not sr:
+        abort(404)
+    if sr['status'] not in ('pending_review', 'info_requested'):
+        flash('This signup request is already finalized; cannot reject.', 'error')
+        return redirect(url_for('super_signup_detail', signup_id=signup_id))
+
+    reason = (request.form.get('reason_category') or '').strip()
+    notes = (request.form.get('reason_notes') or '').strip() or None
+    valid_reasons = {'missing_or_invalid_npi', 'existing_customer', 'suspicious_source',
+                     'commercial_terms_not_aligned', 'other'}
+    if reason not in valid_reasons:
+        flash('Please choose a rejection reason category.', 'error')
+        return redirect(url_for('super_signup_detail', signup_id=signup_id))
+
+    db = get_db()
+    user = current_user()
+    db.execute("""UPDATE signup_requests
+                  SET status = 'rejected', reviewed_by_user_id = ?, reviewed_at = CURRENT_TIMESTAMP,
+                      rejection_reason = ?, rejection_notes = ?
+                  WHERE id = ?""", (user['id'], reason, notes, signup_id))
+    db.commit()
+
+    _signup_audit(user['id'], signup_id, sr['status'], 'rejected',
+                  f'rejected: {reason}' + (f' — {notes}' if notes else ''))
+    print(f'[SIGNUP NOTIFY] rejection email to {sr["submitter_email"]} — reason: {reason}',
+          flush=True)
+
+    flash(f'Signup request rejected. Submitter notified.', 'success')
+    return redirect(url_for('super_signups'))
+
+
+@app.route('/super/signups/<int:signup_id>/request_info', methods=['POST'])
+@require_login
+def super_signup_request_info(signup_id):
+    """Request more information from the submitter (REQ-3.9 AC-2 + SR-3.9.5)."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
+    if not sr:
+        abort(404)
+    if sr['status'] not in ('pending_review',):
+        flash('More info can only be requested while the signup is in pending_review.', 'error')
+        return redirect(url_for('super_signup_detail', signup_id=signup_id))
+
+    message = (request.form.get('message') or '').strip()
+    if not message:
+        flash('Please enter the question or info you need from the submitter.', 'error')
+        return redirect(url_for('super_signup_detail', signup_id=signup_id))
+
+    db = get_db()
+    user = current_user()
+    db.execute("""UPDATE signup_requests
+                  SET status = 'info_requested', reviewed_by_user_id = ?,
+                      reviewed_at = CURRENT_TIMESTAMP, info_request_message = ?
+                  WHERE id = ?""", (user['id'], message, signup_id))
+    db.commit()
+
+    _signup_audit(user['id'], signup_id, sr['status'], 'info_requested', f'info request: {message[:80]}')
+    print(f'[SIGNUP NOTIFY] info-request email to {sr["submitter_email"]}: {message}', flush=True)
+
+    flash('Info-request email sent to submitter. Status set to info_requested.', 'success')
+    return redirect(url_for('super_signups'))
+
+
+@app.route('/super/signups/<int:signup_id>/return_to_review', methods=['POST'])
+@require_login
+def super_signup_return_to_review(signup_id):
+    """Return an info_requested signup back to pending_review (after submitter replied via email)."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
+    if not sr:
+        abort(404)
+    if sr['status'] != 'info_requested':
+        flash('Only info_requested signups can be returned to review.', 'error')
+        return redirect(url_for('super_signup_detail', signup_id=signup_id))
+
+    db = get_db()
+    user = current_user()
+    db.execute("""UPDATE signup_requests SET status = 'pending_review', reviewed_at = CURRENT_TIMESTAMP
+                  WHERE id = ?""", (signup_id,))
+    db.commit()
+
+    _signup_audit(user['id'], signup_id, 'info_requested', 'pending_review',
+                  'submitter replied; ready for re-review')
+    flash('Signup returned to pending review.', 'success')
+    return redirect(url_for('super_signup_detail', signup_id=signup_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ABMRC console
+# ─────────────────────────────────────────────────────────────────────────────
+
 @app.route('/super')
 @require_login
 def super_dashboard():
@@ -919,7 +1222,8 @@ def super_dashboard():
                            pending_count=counts['pending'] or 0,
                            total_patients=totals['patients'] or 0,
                            total_devices=totals['devices'] or 0,
-                           total_alerts=totals['alerts'] or 0)
+                           total_alerts=totals['alerts'] or 0,
+                           pending_signups_count=_signup_pending_count())
 
 
 @app.route('/super/orgs/new', methods=['GET', 'POST'])
@@ -1363,14 +1667,14 @@ def _heatmap_time_bins(months_back=12):
 @app.route('/heatmap')
 @require_login
 def heatmap():
-    """Population-health heat map — visible to admin + clinician roles.
+    """Population-health heat map — visible to admin + user roles.
     Tenant scope follows scope_org_ids(); ABMRC users not drilled into a
     customer get bounced to /super/map (they have a state-level view there)."""
     u = current_user()
     if not u:
         return redirect(url_for('login'))
-    if u['role'] not in ('admin', 'clinician', 'super_admin'):
-        flash('Heat map requires an admin or clinician account.', 'error')
+    if u['role'] not in ('admin', 'user', 'super_admin'):
+        flash('Heat map requires an admin or user account.', 'error')
         return redirect(url_for('dashboard'))
     if is_super_admin() and not session.get('super_acting_org_id'):
         # Super admin at their own dashboard — direct them to the state map.
@@ -1393,10 +1697,28 @@ def heatmap():
         org = current_org()
         scope_label = f'{org["name"]}' if org else ''
 
+    # Embed mode: when the heat map is rendered inside an iframe on another
+    # dashboard view (e.g., /parent), suppress the page chrome so it fills the
+    # iframe cleanly. Triggered by `?embed=1` query string.
+    embed = request.args.get('embed') == '1'
+    base_template = 'embed_base.html' if embed else 'base.html'
+
+    # Compute the right "← Back to dashboard" target for the page header. Only
+    # rendered in non-embed mode (the embedded iframe doesn't show the header).
+    if is_super_admin() and session.get('super_acting_org_id'):
+        back_url = url_for('super_dashboard')
+    elif is_parent_admin() and not session.get('acting_org_id'):
+        back_url = url_for('parent_overview')
+    else:
+        back_url = url_for('dashboard')
+
     return render_template('heatmap.html',
                            layers=enabled_layers,
                            default_layer=enabled_layers[0]['key'],
-                           scope_label=scope_label)
+                           scope_label=scope_label,
+                           base_template=base_template,
+                           embed_mode=embed,
+                           back_url=back_url)
 
 
 @app.route('/api/heatmap-data')
@@ -1410,7 +1732,7 @@ def api_heatmap_data():
     u = current_user()
     if not u:
         return jsonify({'error': 'unauthenticated'}), 401
-    if u['role'] not in ('admin', 'clinician', 'super_admin'):
+    if u['role'] not in ('admin', 'user', 'super_admin'):
         return jsonify({'error': 'forbidden'}), 403
 
     metric = (request.args.get('metric') or 'active_patients').strip()
@@ -1719,10 +2041,13 @@ def settings_heatmap_layers():
         return redirect(url_for('settings'))
     submitted = request.form.getlist('layer')
     valid = [k for k in submitted if k in HEATMAP_LAYER_BY_KEY]
+    # Anchor the redirect on the layers section so the user stays scrolled to
+    # where they were working, instead of jumping back to the top of /settings.
+    layers_anchor = url_for('settings') + '#heatmap-layers'
     if not valid:
         # Refuse to save an empty selection — heat map would be unusable.
         flash('Pick at least one heat-map layer.', 'error')
-        return redirect(url_for('settings'))
+        return redirect(layers_anchor)
     payload = json.dumps(valid)
     q_exec("""INSERT INTO heatmap_settings
               (organization_id, layers_json, updated_at, updated_by_user_id)
@@ -1733,7 +2058,7 @@ def settings_heatmap_layers():
                 updated_by_user_id = excluded.updated_by_user_id""",
            (settings_oid, payload, u['id']))
     flash('Heat-map layers saved.', 'success')
-    return redirect(url_for('settings'))
+    return redirect(layers_anchor)
 
 
 # ── Dashboard ────────────────────────────────────────────────────────────────
@@ -3000,7 +3325,7 @@ def patient_edit(patient_id):
         flash('Patient updated.', 'success')
         return redirect(url_for('patient_detail', patient_id=patient_id))
     clinicians = q_all("""SELECT * FROM users WHERE organization_id = ? AND is_active = 1
-                          AND role IN ('clinician', 'admin') ORDER BY last_name""", (oid,))
+                          AND role IN ('user', 'admin') ORDER BY last_name""", (oid,))
     clinics = q_all("""SELECT * FROM referring_clinics WHERE organization_id = ? AND is_active = 1
                        ORDER BY name""", (oid,))
     providers = q_all("""SELECT rp.*, c.name AS clinic_name FROM referring_providers rp
@@ -3146,7 +3471,7 @@ def patient_new():
         flash('Patient added.', 'success')
         return redirect(url_for('patients'))
     clinicians = q_all("""SELECT * FROM users WHERE organization_id = ? AND is_active = 1
-                          AND role IN ('clinician', 'admin') ORDER BY last_name""", (oid,))
+                          AND role IN ('user', 'admin') ORDER BY last_name""", (oid,))
     clinics = q_all("""SELECT * FROM referring_clinics WHERE organization_id = ? AND is_active = 1
                        ORDER BY name""", (oid,))
     providers = q_all("""SELECT rp.*, c.name AS clinic_name FROM referring_providers rp
@@ -3499,6 +3824,10 @@ def settings():
             assignee = q_one('SELECT id FROM users WHERE id = ? AND organization_id = ?',
                              (default_assignee, oid))
             if not assignee: default_assignee = None
+        # Timezone falls back to the existing org value (not a hard-coded default)
+        # so a missing form field never silently clobbers a previously-set timezone.
+        existing_org = q_one('SELECT timezone FROM organizations WHERE id = ?', (oid,))
+        new_tz = request.form.get('timezone') or (existing_org['timezone'] if existing_org else 'America/New_York')
         q_exec("""UPDATE organizations SET name = ?, phone = ?, email = ?,
                   address_line1 = ?, address_line2 = ?, city = ?, state = ?, zip = ?,
                   timezone = ?, default_assignee_user_id = ? WHERE id = ?""",
@@ -3506,8 +3835,7 @@ def settings():
                 request.form.get('email'), request.form.get('address_line1'),
                 request.form.get('address_line2'), request.form.get('city'),
                 request.form.get('state'), request.form.get('zip'),
-                request.form.get('timezone', 'America/New_York'),
-                default_assignee, oid))
+                new_tz, default_assignee, oid))
         # Logo upload (optional)
         logo_file = request.files.get('logo')
         if logo_file and logo_file.filename:
@@ -3774,8 +4102,8 @@ def user_edit(user_id):
             flash('Another user already has that email.', 'error')
             return redirect(url_for('user_edit', user_id=user_id))
         role = request.form.get('role')
-        if role not in ('admin', 'clinician', 'billing', 'read_only',
-                        'customer_service', 'account_executive'):
+        # Per LD-8: Release 1 role enum is admin / user only at the customer tier.
+        if role not in ('admin', 'user'):
             flash('Invalid role.', 'error')
             return redirect(url_for('user_edit', user_id=user_id))
         # Don't let an admin strip the last active admin role from the org —

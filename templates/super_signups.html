@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Pending signups · ABMRC · Arc Connect{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Pending signup requests</h1>
+      <div class="page-sub">
+        Self-service signups submitted via the public Arc Connect website (REQ-3.8).
+        Approve to auto-create a customer organization with prefilled fields.
+      </div>
+    </div>
+    <div class="page-header-actions">
+      <a href="{{ url_for('super_dashboard') }}" class="btn btn-link">← ABMRC dashboard</a>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-messages">
+        {% for category, msg in messages %}
+          <div class="flash flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Open ({{ pending|length }})</h2>
+    </div>
+    {% if pending %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Submitted</th>
+            <th>Organization</th>
+            <th>NPI</th>
+            <th>Submitter</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sr in pending %}
+            <tr>
+              <td>{{ sr.submitted_at }}</td>
+              <td><strong>{{ sr.org_name }}</strong></td>
+              <td>{{ sr.npi }}</td>
+              <td>{{ sr.submitter_name }}<br><span class="muted">{{ sr.submitter_email }}</span></td>
+              <td>
+                {% if sr.status == 'pending_review' %}
+                  <span class="badge badge-warning">Pending review</span>
+                {% elif sr.status == 'info_requested' %}
+                  <span class="badge badge-info">Info requested</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('super_signup_detail', signup_id=sr.id) }}" class="btn btn-sm">Review</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">No open signup requests.</div>
+    {% endif %}
+  </div>
+
+  {% if closed %}
+  <div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+      <h2>Recently closed (last 25)</h2>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Submitted</th>
+          <th>Organization</th>
+          <th>NPI</th>
+          <th>Submitter</th>
+          <th>Outcome</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sr in closed %}
+          <tr>
+            <td>{{ sr.submitted_at }}</td>
+            <td>{{ sr.org_name }}</td>
+            <td>{{ sr.npi }}</td>
+            <td>{{ sr.submitter_email }}</td>
+            <td>
+              {% if sr.status == 'approved' %}
+                <span class="badge badge-success">Approved</span>
+              {% elif sr.status == 'rejected' %}
+                <span class="badge badge-error">Rejected</span>
+                {% if sr.rejection_reason %}<br><span class="muted">{{ sr.rejection_reason | replace('_', ' ') }}</span>{% endif %}
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('super_signup_detail', signup_id=sr.id) }}" class="btn btn-sm btn-link">View</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

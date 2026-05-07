@@ -1158,12 +1158,17 @@ a.kpi-link:hover .sub {
 .badge.status-active      { background: var(--ac-green); color: white; }
 .badge.status-inactive    { background: var(--ac-gray); color: white; }
 
+/* Per LD-8: Release 1 role enum is admin / user / super_admin only.
+   Legacy classes (role-clinician, role-billing, etc.) kept as aliases of
+   role-user so any leftover references in cached pages still render. */
 .badge.role-admin             { background: var(--ac-cyan); color: white; }
-.badge.role-clinician         { background: var(--ac-slate); color: white; }
-.badge.role-billing           { background: #8B6CC6; color: white; }
-.badge.role-customer_service  { background: #2E8EBC; color: white; }
-.badge.role-account_executive { background: #4CAF50; color: white; }
-.badge.role-read_only         { background: var(--ac-gray); color: white; }
+.badge.role-user              { background: var(--ac-slate); color: white; }
+.badge.role-super_admin       { background: #8B6CC6; color: white; }
+.badge.role-clinician,
+.badge.role-billing,
+.badge.role-customer_service,
+.badge.role-account_executive,
+.badge.role-read_only         { background: var(--ac-slate); color: white; }
 
 /* Task status badges */
 .badge.task-status-todo             { background: var(--ac-slate-light); color: var(--ac-slate-deep); }

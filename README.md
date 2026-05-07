@@ -31,7 +31,7 @@ python seed.py
 |---|---|---|---|
 | `karen.h@adapt.com` | Admin | Adapt (parent HQ) | Sees rollup across all Adapt locations + can switch into any |
 | `priya.s@adapt.com` | Admin | Adapt — Denver | Full location admin |
-| `james.r@adapt.com` | Clinician | Adapt — Denver | Read-mostly; no settings |
+| `james.r@adapt.com` | User | Adapt — Denver | Read-mostly; no settings (per LD-8 the Release 1 role enum is admin / user / super_admin only — "clinician", "billing" etc. are descriptive job titles, not enum values) |
 | `linda.w@adapt.com` | Admin | Adapt — Boulder | Different location under same parent |
 | `maria.t@sunwest.com` | Admin | Sunwest Medical | Unrelated org (multi-tenant isolation test) |
 

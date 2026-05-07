@@ -8,6 +8,14 @@
       <div class="subtitle">{{ active_count }} active · {{ pending_count }} pending <span class="muted">(including sub-locations)</span></div>
     </div>
     <div class="actions">
+      {% if pending_signups_count and pending_signups_count > 0 %}
+        <a href="{{ url_for('super_signups') }}" class="btn"
+           style="background: #fff3cd; border: 1px solid #ffe69c; color: #664d03;">
+          Pending signups
+          <span style="margin-left: 6px; background: #c92a2a; color: #fff; padding: 2px 8px; border-radius: 10px; font-weight: 700; font-size: 12px;">{{ pending_signups_count }}</span>
+        </a>
+      {% endif %}
+      <a href="{{ url_for('super_signups') }}" class="btn">All signups</a>
       <a href="{{ url_for('super_org_new') }}" class="btn btn-primary">+ New organization</a>
     </div>
   </div>

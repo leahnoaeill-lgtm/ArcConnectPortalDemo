@@ -36,13 +36,15 @@
           <label>Role</label>
           <select name="role" required>
             <option value="">— select —</option>
-            <option value="admin"             {% if is_edit and user.role == 'admin' %}selected{% endif %}>Admin</option>
-            <option value="clinician"         {% if is_edit and user.role == 'clinician' %}selected{% endif %}>Clinician</option>
-            <option value="billing"           {% if is_edit and user.role == 'billing' %}selected{% endif %}>Billing</option>
-            <option value="customer_service"  {% if is_edit and user.role == 'customer_service' %}selected{% endif %}>Customer Service</option>
-            <option value="account_executive" {% if is_edit and user.role == 'account_executive' %}selected{% endif %}>Account Executive</option>
-            <option value="read_only"         {% if is_edit and user.role == 'read_only' %}selected{% endif %}>Read only</option>
+            <option value="admin" {% if is_edit and user.role == 'admin' %}selected{% endif %}>Admin</option>
+            <option value="user"  {% if is_edit and user.role == 'user' %}selected{% endif %}>User</option>
           </select>
+          <div class="form-hint">
+            Per LD-8, Release 1 has only two customer-tier roles: <strong>Admin</strong>
+            (manages org settings, users, alert rules, engagement features) and
+            <strong>User</strong> (clinical and operational workflows; no settings).
+            Granular role types deferred to Release 2.
+          </div>
         </div>
         <div class="form-group">
           <label>Phone</label>

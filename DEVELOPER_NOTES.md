@@ -113,11 +113,16 @@ work should use these labels.
 - The parent override cascades for **messaging AND mood free-text response**
   (treated as one engagement bundle).
 
-### Role vocabulary
-- `admin` — full control within their organization scope
-- `clinician` — reads/writes patients, tasks, alerts, inbox, referrals
-- `billing` — reads patients, prescriptions, insurance; no therapy data writes
-- `read_only` — no writes anywhere
+### Role vocabulary (Release 1, per URS LD-8)
+
+- `super_admin` — ABMRC operator
+- `admin` — group admin (parent org) or satellite-location admin (distinguished by `parent_id`)
+- `user` — every other portal user, undifferentiated
+
+Granular role types (clinician / billing / customer-service / account-executive / read-only)
+are **deferred to Release 2** per LD-8. Job titles like "respiratory therapist" or
+"billing analyst" are descriptive — the system enum collapses them all to `user`
+with identical permissions. See URS §2.3 role glossary.
 
 Destructive actions (hard-delete) are `@require_admin`. Add/edit/deactivate
 on referring clinics and providers are open to any logged-in user per

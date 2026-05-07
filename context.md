@@ -70,7 +70,7 @@ Font stack: `'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif`
 
 ```
 organizations      ─ parent/child hierarchy; type = 'parent' or 'location'
-users              ─ staff at an org; role = admin | clinician | billing | read_only
+users              ─ staff at an org; role = admin | user (Release 2 may add granular roles per LD-8)
 referring_clinics  ─ external physician practices (per-location directory)
 referring_providers─ MDs/NPs/PAs inside a clinic (per-location)
 patient_insurance  ─ 1:N with patient; payer + plan + approval date + auth #
@@ -248,6 +248,6 @@ Login as one of these to explore:
 | User | Role | Org | What they see |
 |---|---|---|---|
 | `priya.s@adapt.com` | Admin | Adapt — Denver | Full location admin view |
-| `james.r@adapt.com` | Clinician | Adapt — Denver | Same screens, no settings access |
+| `james.r@adapt.com` | User | Adapt — Denver | Same screens, no settings access (per LD-8 the Release 1 role enum is admin / user / super_admin only) |
 | `karen.h@adapt.com` | Admin | Adapt (parent HQ) | Rollup + can switch into any location |
 | `maria.t@sunwest.com` | Admin | Sunwest Medical | A second org for multi-tenant testing |

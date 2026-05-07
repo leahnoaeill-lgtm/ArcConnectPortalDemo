@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}Sign up · Arc Connect{% endblock %}
+{% block body %}
+
+<style>
+  /* Public signup form — self-contained styling so it works regardless of arc.css form classes */
+  .signup-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 32px 16px;
+    background: linear-gradient(180deg, #f6f9fc 0%, #ffffff 100%);
+  }
+  .signup-card {
+    width: 100%;
+    max-width: 720px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(20, 44, 74, 0.08), 0 1px 3px rgba(20, 44, 74, 0.04);
+    padding: 40px 48px;
+  }
+  .signup-card .logo {
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .signup-card .logo img {
+    height: 56px;
+  }
+  .signup-card h1 {
+    text-align: center;
+    margin: 8px 0 8px 0;
+    color: #142c4a;
+    font-size: 26px;
+    font-weight: 600;
+  }
+  .signup-card .lede {
+    text-align: center;
+    color: #556677;
+    font-size: 14px;
+    line-height: 1.55;
+    margin: 0 0 28px 0;
+  }
+  .signup-card .lede strong {
+    color: #142c4a;
+  }
+
+  .signup-flash {
+    margin: 0 0 20px 0;
+  }
+  .signup-flash .flash {
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  .signup-flash .flash-error {
+    background: #fbe7e7;
+    border: 1px solid #f4c2c2;
+    color: #832222;
+  }
+  .signup-flash .flash-success {
+    background: #e8f3ea;
+    border: 1px solid #b9d9bf;
+    color: #245132;
+  }
+
+  .signup-section {
+    border-top: 1px solid #e5ebf2;
+    padding-top: 20px;
+    margin-top: 20px;
+  }
+  .signup-section:first-of-type {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+  }
+  .signup-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #142c4a;
+    margin: 0 0 14px 0;
+  }
+
+  .field-grid {
+    display: grid;
+    gap: 14px 16px;
+  }
+  .field-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .field-grid.cols-3 { grid-template-columns: 2fr 1fr 1.2fr; }
+  .field {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .field label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 5px;
+  }
+  .field label .req {
+    color: #c92a2a;
+    font-weight: 400;
+    margin-left: 2px;
+  }
+  .field input {
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 1px solid #d4dbe5;
+    border-radius: 6px;
+    background: #fff;
+    color: #142c4a;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .field input:focus {
+    outline: none;
+    border-color: #43C1ED;
+    box-shadow: 0 0 0 3px rgba(67, 193, 237, 0.18);
+  }
+  .field input::placeholder {
+    color: #aab4c0;
+  }
+  .field-hint {
+    font-size: 12px;
+    color: #7a8694;
+    margin-top: 5px;
+  }
+
+  .signup-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid #e5ebf2;
+  }
+  .signup-actions .btn-submit {
+    background: #43C1ED;
+    color: #fff;
+    border: 1px solid #43C1ED;
+    padding: 12px 28px;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
+  .signup-actions .btn-submit:hover {
+    background: #2E8BAD;
+    border-color: #2E8BAD;
+    box-shadow: 0 4px 10px rgba(67, 193, 237, 0.25);
+  }
+  .signup-actions .back-link {
+    color: #556677;
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .signup-actions .back-link:hover {
+    color: #142c4a;
+    text-decoration: underline;
+  }
+
+  .signup-footer {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 12px;
+    color: #7a8694;
+    line-height: 1.5;
+  }
+
+  /* Mobile */
+  @media (max-width: 640px) {
+    .signup-card { padding: 28px 20px; }
+    .field-grid.cols-2,
+    .field-grid.cols-3 { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="signup-page">
+  <div class="signup-card">
+    <div class="logo">
+      <img src="{{ url_for('static', filename='img/arc-connect-logo.png') }}" alt="Arc Connect">
+    </div>
+    <h1>Sign up your organization</h1>
+    <p class="lede">
+      Tell us about your HME or home-health organization. An ABMRC representative will
+      review your request and contact you within <strong>2 business days</strong>.
+    </p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="signup-flash">
+          {% for category, msg in messages %}
+            <div class="flash flash-{{ category }}">{{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('public_signup_submit') }}" autocomplete="off" novalidate>
+      <!-- Honeypot field — bots fill this; humans never see it (CSS-hidden) -->
+      <div style="position: absolute; left: -9999px;" aria-hidden="true">
+        <label>Company URL <input type="text" name="company_url" tabindex="-1" autocomplete="off"></label>
+      </div>
+
+      <!-- Organization section -->
+      <div class="signup-section">
+        <div class="signup-section-title">Organization</div>
+
+        <div class="field-grid cols-2">
+          <div class="field">
+            <label for="npi">NPI number <span class="req">*</span></label>
+            <input type="text" id="npi" name="npi" maxlength="10" required
+                   pattern="\d{10}" inputmode="numeric"
+                   placeholder="10-digit identifier">
+            <div class="field-hint">Your 10-digit NPI from NPPES.</div>
+          </div>
+          <div class="field">
+            <label for="org_name">Legal organization name <span class="req">*</span></label>
+            <input type="text" id="org_name" name="org_name" maxlength="200" required
+                   placeholder="e.g., Adapt Respiratory, Inc.">
+          </div>
+        </div>
+
+        <div class="field-grid" style="margin-top: 14px;">
+          <div class="field">
+            <label for="address_street">Street address <span class="req">*</span></label>
+            <input type="text" id="address_street" name="address_street" maxlength="200" required>
+          </div>
+        </div>
+
+        <div class="field-grid cols-3" style="margin-top: 14px;">
+          <div class="field">
+            <label for="address_city">City <span class="req">*</span></label>
+            <input type="text" id="address_city" name="address_city" maxlength="100" required>
+          </div>
+          <div class="field">
+            <label for="address_state">State <span class="req">*</span></label>
+            <input type="text" id="address_state" name="address_state" maxlength="2" required
+                   pattern="[A-Za-z]{2}" placeholder="CA" style="text-transform: uppercase;">
+          </div>
+          <div class="field">
+            <label for="address_zip">ZIP <span class="req">*</span></label>
+            <input type="text" id="address_zip" name="address_zip" maxlength="10" required
+                   pattern="\d{5}(-\d{4})?" placeholder="94103">
+          </div>
+        </div>
+      </div>
+
+      <!-- Contact section -->
+      <div class="signup-section">
+        <div class="signup-section-title">Your contact</div>
+
+        <div class="field-grid cols-2">
+          <div class="field">
+            <label for="submitter_name">Your full name <span class="req">*</span></label>
+            <input type="text" id="submitter_name" name="submitter_name" maxlength="100" required
+                   autocomplete="name">
+          </div>
+          <div class="field">
+            <label for="submitter_email">Your email address <span class="req">*</span></label>
+            <input type="email" id="submitter_email" name="submitter_email" required
+                   placeholder="you@example.com" autocomplete="email">
+            <div class="field-hint">We'll send your follow-up to this address within 2 business days.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="signup-actions">
+        <a href="{{ url_for('login') }}" class="back-link">← Back to sign in</a>
+        <button type="submit" class="btn-submit">Submit request</button>
+      </div>
+
+      <div class="signup-footer">
+        By submitting, you confirm the information above is accurate.
+        ABMRC will reach out with next steps, including BAA execution and onboarding.
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

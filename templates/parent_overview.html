@@ -1,10 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Network rollup · Arc Connect Portal{% endblock %}
-{% block head_extra %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-      crossorigin=""/>
-{% endblock %}
+{# Leaflet CSS removed — the parent dashboard's "Network map" widget was
+   replaced with an embedded heat map iframe (see card below). #}
 {% block body %}
 <div class="page">
 
@@ -119,16 +116,67 @@
     </div>
   </div>
 
-  <!-- ══════════════════ Network map ══════════════════ -->
+  <!-- ══════════════════ Network heat map ══════════════════ -->
+  <style>
+    .hm-view-pills {
+      display: inline-flex; gap: 0;
+      border: 1px solid var(--ac-border-strong);
+      border-radius: 999px; overflow: hidden;
+    }
+    .hm-view-pill {
+      border: 0; background: #fff; color: var(--ac-slate-deep);
+      font-weight: 600; padding: 6px 16px; cursor: pointer; font-size: 13px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .hm-view-pill:hover { background: var(--ac-cyan-light); }
+    .hm-view-pill.is-active {
+      background: var(--ac-cyan); color: #fff;
+    }
+    .hm-view-pill.is-active:hover { background: var(--ac-cyan); }
+  </style>
   <div class="card mb-3">
-    <div class="card-header">
-      <h2>Network map</h2>
-      <span class="small muted">Click a hotspot to open that location</span>
+    <div class="card-header" style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+      <h2 style="margin: 0;">Network heat map</h2>
+      <div class="hm-view-pills" role="tablist" aria-label="Heat map view">
+        <button type="button" role="tab" data-view="map" aria-selected="true"
+                class="hm-view-pill is-active">🗺 Map</button>
+        <button type="button" role="tab" data-view="lung" aria-selected="false"
+                class="hm-view-pill">🫁 Lung</button>
+      </div>
+      <a href="{{ url_for('heatmap') }}" class="small" style="margin-left: auto;">Open full heat map →</a>
     </div>
     <div class="card-body no-pad">
-      <div id="network-map" style="height: 420px; border-radius: 0 0 var(--radius-lg) var(--radius-lg);"></div>
+      <iframe id="hm-iframe" src="{{ url_for('heatmap') }}?embed=1"
+              title="Population-health heat map across the network"
+              loading="lazy"
+              style="width: 100%; height: 640px; border: 0; display: block;
+                     border-radius: 0 0 var(--radius-lg) var(--radius-lg); background: #fff;"></iframe>
     </div>
   </div>
+
+  <script>
+    // Drive the embedded heat-map's view selector via postMessage so the
+    // dashboard pills feel native (the heat-map template's own internal tabs
+    // still work for direct visits to /heatmap).
+    (function () {
+      const pills = document.querySelectorAll('.hm-view-pill');
+      const iframe = document.getElementById('hm-iframe');
+      pills.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const view = btn.dataset.view;
+          pills.forEach(function (p) {
+            const active = p.dataset.view === view;
+            p.classList.toggle('is-active', active);
+            p.setAttribute('aria-selected', active ? 'true' : 'false');
+          });
+          if (iframe.contentWindow) {
+            iframe.contentWindow.postMessage(
+              { type: 'arcconnect.heatmap.setView', view: view }, '*');
+          }
+        });
+      });
+    })();
+  </script>
 
   <script>
     function switchChart(view) {
@@ -177,118 +225,5 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-        crossorigin=""></script>
-<script>
-(function() {
-  const map = L.map('network-map', {
-    scrollWheelZoom: false,
-    zoomControl: true,
-  }).setView([39.5, -98.5], 4);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap',
-    maxZoom: 18,
-  }).addTo(map);
-
-  const cyan  = '#43C1ED';
-  const slate = '#5A656F';
-  const red   = '#C00000';
-  const green = '#00B050';
-  const yellow= '#FCBE03';
-
-  // HQ pin (diamond-style, different color)
-  {% if parent_org.latitude and parent_org.longitude %}
-  const hq = L.circleMarker([{{ parent_org.latitude }}, {{ parent_org.longitude }}], {
-    radius: 10, fillColor: slate, color: 'white', weight: 3, fillOpacity: 1
-  }).addTo(map);
-  hq.bindPopup(`
-    <div style="font-family: Roboto, sans-serif;">
-      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: ${slate};">Headquarters</div>
-      <div style="font-size: 14px; font-weight: 600; margin-top: 4px;">{{ parent_org.name }}</div>
-      <div style="font-size: 12px; color: #888; margin-top: 2px;">{{ parent_org.city }}, {{ parent_org.state }}</div>
-    </div>
-  `);
-  {% endif %}
-
-  const locations = [
-    {% for loc in locations %}
-      {% if loc.latitude and loc.longitude %}
-      {
-        id: {{ loc.id }},
-        name: {{ loc.name | tojson }},
-        city: {{ (loc.city or '') | tojson }},
-        state: {{ (loc.state or '') | tojson }},
-        phone: {{ (loc.phone or '') | tojson }},
-        lat: {{ loc.latitude }},
-        lng: {{ loc.longitude }},
-        patients: {{ loc.patient_count }},
-        devices_in_use: {{ loc.devices_in_use }},
-        device_count: {{ loc.device_count }},
-        critical: {{ loc.critical_alerts }},
-        active: {{ loc.active_alerts }},
-        adherence: {{ loc.avg_adherence or 'null' }},
-        users: {{ loc.user_count }},
-        url: {{ url_for('switch_location', org_id=loc.id) | tojson }}
-      },
-      {% endif %}
-    {% endfor %}
-  ];
-
-  // Draw a line from HQ to each location to show the network
-  {% if parent_org.latitude and parent_org.longitude %}
-  locations.forEach(function(loc) {
-    L.polyline(
-      [[{{ parent_org.latitude }}, {{ parent_org.longitude }}], [loc.lat, loc.lng]],
-      { color: cyan, weight: 1.5, opacity: 0.4, dashArray: '4 4' }
-    ).addTo(map);
-  });
-  {% endif %}
-
-  locations.forEach(function(loc) {
-    let color = green;
-    if (loc.critical > 0) color = red;
-    else if (loc.active > 0) color = yellow;
-
-    const marker = L.circleMarker([loc.lat, loc.lng], {
-      radius: 14,
-      fillColor: color,
-      color: 'white',
-      weight: 3,
-      fillOpacity: 0.95
-    }).addTo(map);
-
-    const popup = `
-      <div style="font-family: Roboto, sans-serif; min-width: 220px;">
-        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: ${slate};">Location</div>
-        <div style="font-size: 15px; font-weight: 600; margin-top: 4px; color: ${cyan};">${loc.name}</div>
-        <div style="font-size: 12px; color: #888; margin: 4px 0 10px;">
-          ${loc.city}${loc.state ? ', ' + loc.state : ''}
-        </div>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 8px 0; border-top: 1px solid #eee; border-bottom: 1px solid #eee; margin-bottom: 10px;">
-          <div><div style="font-size: 18px; font-weight: 300; color: #333;">${loc.patients}</div><div style="font-size: 9px; color: #888; text-transform: uppercase;">Patients</div></div>
-          <div><div style="font-size: 18px; font-weight: 300; color: #333;">${loc.devices_in_use}/${loc.device_count}</div><div style="font-size: 9px; color: #888; text-transform: uppercase;">Devices</div></div>
-          <div><div style="font-size: 18px; font-weight: 300; color: ${loc.critical > 0 ? red : '#333'};">${loc.critical}</div><div style="font-size: 9px; color: #888; text-transform: uppercase;">Critical</div></div>
-        </div>
-        <div style="font-size: 11px; color: #888; margin-bottom: 10px;">
-          Avg adherence <strong>${loc.adherence !== null ? loc.adherence + '%' : '—'}</strong> · ${loc.users} users
-        </div>
-        <a href="${loc.url}" style="display: block; background: ${cyan}; color: white; padding: 6px 12px; text-align: center; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 12px;">Open location →</a>
-      </div>
-    `;
-    marker.bindPopup(popup);
-    marker.on('mouseover', function() { this.openPopup(); });
-  });
-
-  // Auto-fit to show all markers (HQ + locations) with padding
-  const allPoints = locations.map(function(l) { return [l.lat, l.lng]; });
-  {% if parent_org.latitude and parent_org.longitude %}
-  allPoints.push([{{ parent_org.latitude }}, {{ parent_org.longitude }}]);
-  {% endif %}
-  if (allPoints.length > 0) {
-    map.fitBounds(allPoints, { padding: [40, 40] });
-  }
-})();
-</script>
 {% endblock %}

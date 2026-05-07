@@ -447,7 +447,7 @@
               <div>{% if patient.diagnosis %}{{ patient.diagnosis }}{% else %}<span class="muted">Not recorded</span>{% endif %}</div>
             </div>
             <div class="form-group mt-2">
-              <label>Assigned clinician (internal)</label>
+              <label>Assigned user (internal)</label>
               <div>{% if patient.clinician_first %}{{ patient.clinician_first }} {{ patient.clinician_last or '' }}{% else %}<span class="muted">Not assigned</span>{% endif %}</div>
             </div>
             {% if patient.capped_rental_start %}

@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Signup #{{ sr.id }} · ABMRC · Arc Connect{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Signup request #{{ sr.id }}</h1>
+      <div class="page-sub">
+        Submitted {{ sr.submitted_at }} · Source IP {{ sr.source_ip or 'unknown' }} ·
+        {% if sr.status == 'pending_review' %}<span class="badge badge-warning">Pending review</span>
+        {% elif sr.status == 'info_requested' %}<span class="badge badge-info">Info requested</span>
+        {% elif sr.status == 'approved' %}<span class="badge badge-success">Approved</span>
+        {% elif sr.status == 'rejected' %}<span class="badge badge-error">Rejected</span>{% endif %}
+      </div>
+    </div>
+    <div class="page-header-actions">
+      <a href="{{ url_for('super_signups') }}" class="btn btn-link">← Pending signups</a>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-messages">
+        {% for category, msg in messages %}
+          <div class="flash flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="grid-2col">
+    <div class="card">
+      <div class="card-header"><h2>Submitted information</h2></div>
+      <div class="card-body">
+        <dl class="kv">
+          <dt>Organization</dt>
+          <dd><strong>{{ sr.org_name }}</strong></dd>
+          <dt>NPI</dt>
+          <dd>{{ sr.npi }}</dd>
+          <dt>Address</dt>
+          <dd>
+            {{ sr.address_street }}<br>
+            {{ sr.address_city }}, {{ sr.address_state }} {{ sr.address_zip }}
+          </dd>
+          <dt>Submitter</dt>
+          <dd>{{ sr.submitter_name }}<br><a href="mailto:{{ sr.submitter_email }}">{{ sr.submitter_email }}</a></dd>
+          {% if sr.info_request_message %}
+            <dt>Info-request message</dt>
+            <dd style="white-space: pre-wrap;">{{ sr.info_request_message }}</dd>
+          {% endif %}
+          {% if sr.rejection_reason %}
+            <dt>Rejection reason</dt>
+            <dd>
+              {{ sr.rejection_reason | replace('_', ' ') | title }}
+              {% if sr.rejection_notes %}<br><span class="muted">{{ sr.rejection_notes }}</span>{% endif %}
+            </dd>
+          {% endif %}
+          {% if sr.approved_org_id %}
+            <dt>Created organization</dt>
+            <dd>org_id={{ sr.approved_org_id }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Actions</h2></div>
+      <div class="card-body">
+        {% if sr.status in ('pending_review', 'info_requested') %}
+          <form method="POST" action="{{ url_for('super_signup_approve', signup_id=sr.id) }}"
+                onsubmit="return confirm('Approve this signup and create a customer organization?');"
+                style="margin-bottom: 16px;">
+            <button type="submit" class="btn btn-primary btn-large">Approve & create organization</button>
+            <div class="form-hint">Creates a `pending_setup` customer org with the submitted fields prefilled. You'll attach the signed BAA PDF on the next step.</div>
+          </form>
+
+          <hr>
+
+          <form method="POST" action="{{ url_for('super_signup_reject', signup_id=sr.id) }}" style="margin-top: 16px;">
+            <h4>Reject</h4>
+            <div class="form-row">
+              <label for="reason_category">Reason category <span class="req">*</span></label>
+              <select name="reason_category" id="reason_category" required>
+                <option value="">— choose a reason —</option>
+                <option value="missing_or_invalid_npi">Missing or invalid NPI</option>
+                <option value="existing_customer">Existing customer organization</option>
+                <option value="suspicious_source">Suspicious source</option>
+                <option value="commercial_terms_not_aligned">Commercial terms not aligned</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="reason_notes">Notes (optional)</label>
+              <textarea name="reason_notes" id="reason_notes" rows="2"></textarea>
+            </div>
+            <button type="submit" class="btn btn-danger"
+                    onclick="return confirm('Reject this signup? An email will be sent to the submitter with the reason category.');">Reject</button>
+          </form>
+
+          <hr style="margin-top: 16px;">
+
+          {% if sr.status == 'pending_review' %}
+            <form method="POST" action="{{ url_for('super_signup_request_info', signup_id=sr.id) }}" style="margin-top: 16px;">
+              <h4>Request more info</h4>
+              <div class="form-row">
+                <label for="message">Message to submitter <span class="req">*</span></label>
+                <textarea name="message" id="message" rows="3" required
+                          placeholder="e.g., Could you confirm the NPI on the NPPES record matches the legal organization name?"></textarea>
+              </div>
+              <button type="submit" class="btn">Send info request</button>
+              <div class="form-hint">Status will move to <code>info_requested</code>. Submitter replies via email; return to review when ready.</div>
+            </form>
+          {% else %}
+            <form method="POST" action="{{ url_for('super_signup_return_to_review', signup_id=sr.id) }}" style="margin-top: 16px;">
+              <h4>Submitter replied?</h4>
+              <button type="submit" class="btn">Return to pending review</button>
+            </form>
+          {% endif %}
+        {% else %}
+          <div class="empty-state">This signup is finalized ({{ sr.status }}). No further actions are available.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if transitions %}
+    <div class="card" style="margin-top: 24px;">
+      <div class="card-header"><h2>Audit trail</h2></div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Actor</th>
+            <th>Transition</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in transitions %}
+            <tr>
+              <td>{{ t.occurred_at }}</td>
+              <td>{{ t.first_name }} {{ t.last_name }}</td>
+              <td>{{ t.detail }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
