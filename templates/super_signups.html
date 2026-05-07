@@ -135,7 +135,7 @@
     <div>
       <h1>Pending Requests</h1>
       <div class="lede">
-        Self-service signup requests submitted via the public Arc Connect website.
+        Self-service requests submitted via the public Arc Connect website.
         Approve to auto-create the customer organization with the submitted fields prefilled,
         reject with a reason category, or request more info from the submitter.
       </div>
@@ -152,28 +152,25 @@
     {% endif %}
   {% endwith %}
 
-  {# Counts across all statuses for the stats strip #}
-  {% set n_pending  = pending  | selectattr('status', 'equalto', 'pending_review')  | list | length %}
-  {% set n_info     = pending  | selectattr('status', 'equalto', 'info_requested')  | list | length %}
-  {% set n_approved = closed   | selectattr('status', 'equalto', 'approved')        | list | length %}
-  {% set n_rejected = closed   | selectattr('status', 'equalto', 'rejected')        | list | length %}
-
+  {# All-time totals from the route handler — totals dict is queried directly
+     from the DB so the Approved/Rejected counts are not capped by the 25-row
+     "Recently closed" list below. #}
   <div class="pr-stats">
     <div class="pr-stat is-pending">
       <div class="pr-stat-label">Pending review</div>
-      <div class="pr-stat-value">{{ n_pending }}</div>
+      <div class="pr-stat-value">{{ totals.pending }}</div>
     </div>
     <div class="pr-stat is-info">
       <div class="pr-stat-label">Info requested</div>
-      <div class="pr-stat-value">{{ n_info }}</div>
+      <div class="pr-stat-value">{{ totals.info }}</div>
     </div>
     <div class="pr-stat is-approved">
-      <div class="pr-stat-label">Approved (recent)</div>
-      <div class="pr-stat-value">{{ n_approved }}</div>
+      <div class="pr-stat-label">Approved</div>
+      <div class="pr-stat-value">{{ totals.approved }}</div>
     </div>
     <div class="pr-stat is-rejected">
-      <div class="pr-stat-label">Rejected (recent)</div>
-      <div class="pr-stat-value">{{ n_rejected }}</div>
+      <div class="pr-stat-label">Rejected</div>
+      <div class="pr-stat-value">{{ totals.rejected }}</div>
     </div>
   </div>
 
@@ -216,7 +213,7 @@
     {% else %}
       <div class="pr-empty">
         <span class="pr-empty-icon">📭</span>
-        No open signup requests. New submissions from the public signup form will appear here.
+        No open requests. New submissions from the public Arc Connect website will appear here.
       </div>
     {% endif %}
   </div>

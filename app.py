@@ -1008,7 +1008,7 @@ def public_signup_thanks():
 @app.route('/super/signups')
 @require_login
 def super_signups():
-    """ABMRC pending-signups review queue (REQ-3.9 AC-1)."""
+    """ABMRC pending-requests review queue (REQ-3.9 AC-1)."""
     bounce = _require_super_admin()
     if bounce: return bounce
     pending = q_all("""SELECT * FROM signup_requests
@@ -1017,7 +1017,20 @@ def super_signups():
     closed = q_all("""SELECT * FROM signup_requests
                       WHERE status IN ('approved', 'rejected')
                       ORDER BY submitted_at DESC LIMIT 25""")
-    return render_template('super_signups.html', pending=pending, closed=closed)
+    # All-time totals for the stat tiles (independent of the LIMIT-25 closed list).
+    counts = q_one("""SELECT
+                        SUM(CASE WHEN status = 'pending_review'  THEN 1 ELSE 0 END) AS n_pending,
+                        SUM(CASE WHEN status = 'info_requested'  THEN 1 ELSE 0 END) AS n_info,
+                        SUM(CASE WHEN status = 'approved'        THEN 1 ELSE 0 END) AS n_approved,
+                        SUM(CASE WHEN status = 'rejected'        THEN 1 ELSE 0 END) AS n_rejected
+                      FROM signup_requests""") or {}
+    totals = {
+        'pending':  (counts['n_pending']  if counts else 0) or 0,
+        'info':     (counts['n_info']     if counts else 0) or 0,
+        'approved': (counts['n_approved'] if counts else 0) or 0,
+        'rejected': (counts['n_rejected'] if counts else 0) or 0,
+    }
+    return render_template('super_signups.html', pending=pending, closed=closed, totals=totals)
 
 
 @app.route('/super/signups/<int:signup_id>')
