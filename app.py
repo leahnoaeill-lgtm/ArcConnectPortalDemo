@@ -1053,7 +1053,9 @@ def super_signup_detail(signup_id):
 @app.route('/super/signups/<int:signup_id>/approve', methods=['POST'])
 @require_login
 def super_signup_approve(signup_id):
-    """Approve a signup request — creates the customer org with prefilled fields (REQ-3.9 AC-2 + SR-3.9.3)."""
+    """Approve a signup request — creates the customer org + group-admin invitation
+    using submitter info (or operator-overridden email/name) per REQ-3.9 AC-2/AC-10
+    and REQ-3.2 AC-4."""
     bounce = _require_super_admin()
     if bounce: return bounce
     sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
@@ -1061,6 +1063,24 @@ def super_signup_approve(signup_id):
         abort(404)
     if sr['status'] not in ('pending_review', 'info_requested'):
         flash('This signup request is already finalized; cannot approve.', 'error')
+        return redirect(url_for('super_signup_detail', signup_id=signup_id))
+
+    # Read group-admin invite fields. Operator may have overridden the submitter's
+    # email/name (e.g., the submitter was a sales/IT contact, not the actual admin).
+    # Empty form values fall back to the submitter's original info.
+    parts = (sr['submitter_name'] or '').strip().split(None, 1)
+    default_first = parts[0] if parts else ''
+    default_last  = parts[1] if len(parts) > 1 else ''
+    invite_email = (request.form.get('invite_email') or sr['submitter_email'] or '').strip().lower()
+    invite_first = (request.form.get('invite_first_name') or default_first or '').strip()
+    invite_last  = (request.form.get('invite_last_name')  or default_last  or '').strip()
+
+    # Validate
+    if '@' not in invite_email or '.' not in invite_email.split('@')[-1]:
+        flash('A valid group-admin email is required.', 'error')
+        return redirect(url_for('super_signup_detail', signup_id=signup_id))
+    if not invite_first or not invite_last:
+        flash('Group-admin first and last name are required.', 'error')
         return redirect(url_for('super_signup_detail', signup_id=signup_id))
 
     # Create the customer main organization with submitted fields prefilled (REQ-3.2 path b).
@@ -1074,22 +1094,38 @@ def super_signup_approve(signup_id):
                       sr['address_state'], sr['address_zip']))
     org_id = cur.lastrowid
 
-    # Mark the signup as approved
+    # Auto-generate the group-admin invitation per REQ-3.2 AC-4. This mirrors
+    # the direct-create path (super_org_new) — same token format, same 14-day expiry.
+    import secrets
+    from datetime import timedelta as _td
+    token = secrets.token_urlsafe(24)
+    expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
     user = current_user()
+    db.execute("""INSERT INTO org_invitations
+                  (organization_id, email, first_name, last_name, token,
+                   invited_by_user_id, expires_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (org_id, invite_email, invite_first, invite_last, token,
+                user['id'], expires_at))
+
+    # Mark the signup as approved
     db.execute("""UPDATE signup_requests
                   SET status = 'approved', reviewed_by_user_id = ?, reviewed_at = CURRENT_TIMESTAMP,
                       approved_org_id = ?
                   WHERE id = ?""", (user['id'], org_id, signup_id))
     db.commit()
 
+    edited_note = ''
+    if invite_email != (sr['submitter_email'] or '').strip().lower():
+        edited_note = f' (group-admin email overridden: {sr["submitter_email"]} → {invite_email})'
     _signup_audit(user['id'], signup_id, sr['status'], 'approved',
-                  f'approved → org_id={org_id} ({sr["org_name"]})')
-    print(f'[SIGNUP NOTIFY] approval email to {sr["submitter_email"]} — '
-          f'next step: BAA upload for org_id={org_id}', flush=True)
+                  f'approved → org_id={org_id} ({sr["org_name"]}); invited {invite_email}{edited_note}')
+    print(f'[SIGNUP NOTIFY] approval email to {invite_email} — '
+          f'next step: accept invite + BAA upload for org_id={org_id}', flush=True)
 
-    flash(f'Signup approved. New customer organization "{sr["org_name"]}" created '
-          f'(pending BAA upload). Next: attach the signed BAA PDF to complete onboarding.', 'success')
-    return redirect(url_for('super_org_baa_new', org_id=org_id) if False else url_for('super_signups'))
+    flash(f'Approved. Customer organization "{sr["org_name"]}" created (pending BAA + invite acceptance). '
+          f'Group-admin invite sent to {invite_email}.', 'success')
+    return redirect(url_for('super_signups'))
 
 
 @app.route('/super/signups/<int:signup_id>/reject', methods=['POST'])

@@ -268,16 +268,45 @@
       <div class="sd-card-body">
         {% if sr.status in ('pending_review', 'info_requested') %}
 
-          {# 1. Approve — primary, highlighted #}
+          {# 1. Approve — primary, highlighted. Editable group-admin invite fields. #}
+          {# Pre-parse submitter name → first/last for sensible defaults. #}
+          {% set _sn_parts = (sr.submitter_name or '').split(None, 1) %}
+          {% set _default_first = _sn_parts[0] if _sn_parts else '' %}
+          {% set _default_last  = _sn_parts[1] if _sn_parts|length > 1 else '' %}
+
           <div class="sd-action-block is-approve">
             <h3>Approve & create organization</h3>
             <div class="desc">
               Creates a customer main organization (status <code>pending_setup</code>) with the
-              submitted fields prefilled. You'll attach the signed BAA PDF on the next step.
+              submitted fields prefilled, then sends a group-admin invitation to the email below.
+              <strong>Edit the invite recipient if the submitter is not the right person to be the group admin</strong>
+              — common case: the submitter was a sales or IT contact, but the operational admin is someone else.
+              You'll attach the signed BAA PDF on the next step.
             </div>
-            <form method="POST" action="{{ url_for('super_signup_approve', signup_id=sr.id) }}"
-                  onsubmit="return confirm('Approve this request and create a customer organization?');">
-              <button type="submit" class="sd-btn sd-btn-primary sd-btn-large">Approve →</button>
+            <form method="POST" action="{{ url_for('super_signup_approve', signup_id=sr.id) }}">
+              <div class="sd-form-row">
+                <label for="invite_email">Group-admin email <span class="req">*</span></label>
+                <input type="email" name="invite_email" id="invite_email" required
+                       value="{{ sr.submitter_email }}">
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="sd-form-row" style="margin-bottom: 0;">
+                  <label for="invite_first_name">First name <span class="req">*</span></label>
+                  <input type="text" name="invite_first_name" id="invite_first_name" required
+                         value="{{ _default_first }}">
+                </div>
+                <div class="sd-form-row" style="margin-bottom: 0;">
+                  <label for="invite_last_name">Last name <span class="req">*</span></label>
+                  <input type="text" name="invite_last_name" id="invite_last_name" required
+                         value="{{ _default_last }}">
+                </div>
+              </div>
+              <div style="margin-top: 14px;">
+                <button type="submit" class="sd-btn sd-btn-primary sd-btn-large"
+                        onclick="return confirm('Approve this request, create the organization, and send the group-admin invite?');">
+                  Approve & send invite →
+                </button>
+              </div>
             </form>
           </div>
 
