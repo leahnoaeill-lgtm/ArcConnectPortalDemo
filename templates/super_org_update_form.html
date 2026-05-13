@@ -5,48 +5,145 @@
   <div class="page-header">
     <div>
       <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Back</a>
-      <h1 class="mt-2">Update {{ org.name }}</h1>
-      <div class="subtitle">Complete the missing setup for this pending organization. A signed BAA is required before the account can be activated.</div>
+      <h1 class="mt-2">
+        Update {{ org.name }}
+        {% if org.status == 'active' %}
+          <span class="badge status-active">Active</span>
+        {% elif org.status == 'suspended' %}
+          <span class="badge severity-warning">Suspended</span>
+        {% else %}
+          <span class="badge status-inactive">Pending setup</span>
+        {% endif %}
+      </h1>
+      <div class="subtitle">
+        {% if org.status == 'suspended' %}
+          Edit organization details, BAA, and verification. A signed BAA and verification date are required to reactivate this organization.
+        {% elif org.status == 'pending_setup' %}
+          Complete the missing setup for this pending organization. A signed BAA is required before the account can be activated.
+        {% else %}
+          Edit organization details, BAA, and verification.
+        {% endif %}
+      </div>
     </div>
   </div>
 
+  {% set editable = (org.status == 'suspended') %}
+  {% set us_states = [
+    ('AL','Alabama'),('AK','Alaska'),('AZ','Arizona'),('AR','Arkansas'),
+    ('CA','California'),('CO','Colorado'),('CT','Connecticut'),
+    ('DE','Delaware'),('DC','District of Columbia'),('FL','Florida'),
+    ('GA','Georgia'),('HI','Hawaii'),('ID','Idaho'),('IL','Illinois'),
+    ('IN','Indiana'),('IA','Iowa'),('KS','Kansas'),('KY','Kentucky'),
+    ('LA','Louisiana'),('ME','Maine'),('MD','Maryland'),
+    ('MA','Massachusetts'),('MI','Michigan'),('MN','Minnesota'),
+    ('MS','Mississippi'),('MO','Missouri'),('MT','Montana'),
+    ('NE','Nebraska'),('NV','Nevada'),('NH','New Hampshire'),
+    ('NJ','New Jersey'),('NM','New Mexico'),('NY','New York'),
+    ('NC','North Carolina'),('ND','North Dakota'),('OH','Ohio'),
+    ('OK','Oklahoma'),('OR','Oregon'),('PA','Pennsylvania'),
+    ('RI','Rhode Island'),('SC','South Carolina'),('SD','South Dakota'),
+    ('TN','Tennessee'),('TX','Texas'),('UT','Utah'),('VT','Vermont'),
+    ('VA','Virginia'),('WA','Washington'),('WV','West Virginia'),
+    ('WI','Wisconsin'),('WY','Wyoming')
+  ] %}
+  {% set timezones = ['America/New_York','America/Chicago','America/Denver','America/Phoenix','America/Los_Angeles','America/Anchorage','Pacific/Honolulu'] %}
   <form method="POST" enctype="multipart/form-data">
     <div class="card">
       <div class="card-header"><h2>Organization details</h2></div>
       <div class="card-body">
         <div class="form-grid">
-          <div class="form-group required span-2">
+          <div class="form-group {% if editable %}required{% endif %} span-2">
             <label>Organization name</label>
-            <input type="text" name="name" value="{{ org.name or '' }}" required>
+            {% if editable %}
+              <input type="text" name="name" value="{{ org.name or '' }}" required>
+            {% else %}
+              <input type="text" value="{{ org.name or '' }}" disabled>
+            {% endif %}
           </div>
-          <div class="form-group span-2">
+          <div class="form-group {% if editable %}required{% endif %} span-2">
             <label>Address line 1</label>
-            <input type="text" name="address_line1" value="{{ org.address_line1 or '' }}">
+            {% if editable %}
+              <input type="text" name="address_line1" value="{{ org.address_line1 or '' }}" required>
+            {% else %}
+              <input type="text" value="{{ org.address_line1 or '' }}" disabled>
+            {% endif %}
           </div>
           <div class="form-group span-2">
             <label>Address line 2</label>
-            <input type="text" name="address_line2" value="{{ org.address_line2 or '' }}">
+            {% if editable %}
+              <input type="text" name="address_line2" value="{{ org.address_line2 or '' }}">
+            {% else %}
+              <input type="text" value="{{ org.address_line2 or '' }}" disabled>
+            {% endif %}
           </div>
-          <div class="form-group">
+          <div class="form-group {% if editable %}required{% endif %}">
             <label>City</label>
-            <input type="text" name="city" value="{{ org.city or '' }}">
+            {% if editable %}
+              <input type="text" name="city" value="{{ org.city or '' }}" required>
+            {% else %}
+              <input type="text" value="{{ org.city or '' }}" disabled>
+            {% endif %}
           </div>
-          <div class="form-group">
+          <div class="form-group {% if editable %}required{% endif %}">
             <label>State</label>
-            <input type="text" name="state" value="{{ org.state or '' }}">
+            {% if editable %}
+              <select name="state" required>
+                <option value="" disabled {% if not org.state %}selected{% endif %}>Select…</option>
+                {% for code, name in us_states %}
+                  <option value="{{ code }}" {% if org.state == code %}selected{% endif %}>{{ code }} — {{ name }}</option>
+                {% endfor %}
+              </select>
+            {% else %}
+              <input type="text" value="{{ org.state or '' }}" disabled>
+            {% endif %}
           </div>
-          <div class="form-group">
-            <label>ZIP</label>
-            <input type="text" name="zip" value="{{ org.zip or '' }}">
+          <div class="form-group {% if editable %}required{% endif %}">
+            <label>ZIP code</label>
+            {% if editable %}
+              <input type="text" name="zip" value="{{ org.zip or '' }}" required pattern="[0-9]{5}" maxlength="5" inputmode="numeric" placeholder="5 digits">
+            {% else %}
+              <input type="text" value="{{ org.zip or '' }}" disabled>
+            {% endif %}
           </div>
-          <div class="form-group">
+          <div class="form-group {% if editable %}required{% endif %}">
             <label>Phone</label>
-            <input type="tel" name="phone" value="{{ org.phone or '' }}">
+            {% if editable %}
+              <input type="tel" name="phone" value="{{ org.phone or '' }}" required pattern="\(\d{3}\) \d{3}-\d{4}" maxlength="14" placeholder="(555) 555-5555" data-phone-mask>
+            {% else %}
+              <input type="tel" value="{{ org.phone or '' }}" disabled>
+            {% endif %}
+          </div>
+          <div class="form-group {% if editable %}required{% endif %} span-2">
+            <label>Country</label>
+            {% if editable %}
+              <select name="country" required>
+                <option value="US" selected>United States of America</option>
+              </select>
+            {% else %}
+              <input type="text" value="United States of America" disabled>
+            {% endif %}
+          </div>
+          <div class="form-group {% if editable %}required{% endif %} span-2">
+            <label>NPI</label>
+            {% if editable %}
+              <input type="text" name="npi" value="{{ org.npi or '' }}" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier">
+              <div class="help">10 digits, no dashes.</div>
+            {% else %}
+              <input type="text" value="{{ org.npi or '' }}" disabled>
+            {% endif %}
           </div>
           <div class="form-group span-2">
-            <label>NPI</label>
-            <input type="text" name="npi" value="{{ org.npi or '' }}" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier">
-            <div class="help">10 digits, no dashes.</div>
+            <label>Timezone</label>
+            {% if editable %}
+              <select name="timezone">
+                {% set cur = org.timezone or 'America/New_York' %}
+                {% for tz in timezones %}
+                  <option value="{{ tz }}" {% if cur == tz %}selected{% endif %}>{{ tz }}</option>
+                {% endfor %}
+              </select>
+            {% else %}
+              <input type="text" value="{{ org.timezone or 'America/New_York' }}" disabled>
+            {% endif %}
           </div>
         </div>
       </div>
@@ -65,12 +162,11 @@
       <div class="card-body">
         {% if current_baa %}
           <div class="small mb-2">
-            <strong>Current BAA:</strong> {{ current_baa.file_name }}
-            · signed {{ current_baa.signed_date }}
-            · effective {{ current_baa.effective_from }} → {{ current_baa.expires_on }}
-            {% if current_baa.signed_by_name %}· signed by {{ current_baa.signed_by_name }}{% if current_baa.signed_by_title %}, {{ current_baa.signed_by_title }}{% endif %}{% endif %}
+            <strong>Current BAA:</strong>
+            <a href="{{ url_for('static', filename=current_baa.file_path) }}" target="_blank" rel="noopener">{{ current_baa.file_name }}</a>
+            · signed {{ current_baa.signed_date | date_only }}
           </div>
-          <div class="small muted mb-2">Upload a new BAA below to replace it (the existing record is preserved for audit).</div>
+          <div class="small muted mb-2">Upload a new BAA to be active for this account. The previous BAA will be preserved for audit purposes.</div>
         {% else %}
           <div class="small muted mb-2">No BAA on file. Upload a signed BAA to enable activation.</div>
         {% endif %}
@@ -82,14 +178,6 @@
           <div class="form-group">
             <label>Signed date</label>
             <input type="date" name="signed_date">
-          </div>
-          <div class="form-group">
-            <label>Signed by — name</label>
-            <input type="text" name="signed_by_name" placeholder="e.g., Jane Doe">
-          </div>
-          <div class="form-group">
-            <label>Signed by — title</label>
-            <input type="text" name="signed_by_title" placeholder="e.g., CCO">
           </div>
         </div>
       </div>
@@ -107,18 +195,30 @@
       </div>
       <div class="card-body">
         <div class="form-grid">
-          <div class="form-group">
+          <div class="form-group {% if editable %}required{% endif %}">
             <label>Verification date</label>
-            <input type="date" name="verification_date" value="{{ org.verification_date or '' }}">
+            {% if editable %}
+              <input type="date" name="verification_date" value="{{ org.verification_date or '' }}" required>
+            {% else %}
+              <input type="text" value="{{ (org.verification_date | date_only) if org.verification_date else '—' }}" disabled>
+            {% endif %}
           </div>
-          <div class="form-group">
+          <div class="form-group {% if editable %}required{% endif %}">
             <label>Verified by</label>
-            <input type="text" value="{{ current_user.first_name }} {{ current_user.last_name }}" disabled>
-            <div class="help">Recorded automatically when you press Save.{% if verified_by_name and verified_by_name != (current_user.first_name + ' ' + current_user.last_name) %} Previously: {{ verified_by_name }}.{% endif %}</div>
+            {% if editable %}
+              <input type="text" value="{{ current_user.first_name }} {{ current_user.last_name }}" disabled>
+              <div class="help">Recorded automatically when you press Save.{% if verified_by_name and verified_by_name != (current_user.first_name + ' ' + current_user.last_name) %} Previously: {{ verified_by_name }}.{% endif %}</div>
+            {% else %}
+              <input type="text" value="{{ verified_by_name or '—' }}" disabled>
+            {% endif %}
           </div>
           <div class="form-group span-2">
             <label>Notes</label>
-            <textarea name="verification_notes" rows="3" placeholder="What was verified, who confirmed it, any caveats…">{{ org.verification_notes or '' }}</textarea>
+            {% if editable %}
+              <textarea name="verification_notes" rows="3" placeholder="What was verified, who confirmed it, any caveats…">{{ org.verification_notes or '' }}</textarea>
+            {% else %}
+              <textarea rows="3" disabled>{{ org.verification_notes or '' }}</textarea>
+            {% endif %}
           </div>
         </div>
       </div>
@@ -130,4 +230,18 @@
     </div>
   </form>
 </div>
+
+<script>
+  document.querySelectorAll('input[data-phone-mask]').forEach(function(el) {
+    function format(v) {
+      var d = (v || '').replace(/\D/g, '').slice(0, 10);
+      if (d.length >= 7)      return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+      if (d.length >= 4)      return '(' + d.slice(0,3) + ') ' + d.slice(3);
+      if (d.length >= 1)      return '(' + d;
+      return '';
+    }
+    el.addEventListener('input', function(e) { e.target.value = format(e.target.value); });
+    el.addEventListener('blur',  function(e) { e.target.value = format(e.target.value); });
+  });
+</script>
 {% endblock %}

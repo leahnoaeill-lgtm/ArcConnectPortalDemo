@@ -13,11 +13,7 @@
 {% if current_user %}
 <nav class="topbar">
   <a class="topbar-brand" href="{{ url_for('home') }}">
-    <img src="{{ url_for('static', filename='img/arc-connect-logo.png') }}" alt="Arc Connect" class="logo-img">
-    <div class="wordmark">
-      Arc Connect
-      <small>Portal</small>
-    </div>
+    <img src="{{ url_for('static', filename='img/arc-connect-logo.svg') }}" alt="Arc Connect" class="logo-img">
   </a>
 
   <div class="topbar-nav">
@@ -565,6 +561,42 @@ function renderChipPopover(d) {
   </div>`;
   return html;
 }
+
+// Two-step confirm for destructive submit buttons. Tag a button with
+// `data-two-step` (optional `data-two-step-label="..."`) and the first click
+// arms it (label swap + Cancel) instead of submitting; the second click
+// within ~6s submits normally. Click Cancel or wait out the timer to revert.
+(function() {
+  const ARM_TTL_MS = 6000;
+  function disarm(btn) {
+    if (!btn.classList.contains('is-armed')) return;
+    btn.classList.remove('is-armed');
+    btn.textContent = btn.dataset.twoStepOrig || btn.textContent;
+    clearTimeout(btn._twoStepTimer);
+    if (btn._twoStepCancel) { btn._twoStepCancel.remove(); btn._twoStepCancel = null; }
+  }
+  function arm(btn) {
+    btn.dataset.twoStepOrig = btn.textContent.trim();
+    btn.textContent = btn.dataset.twoStepLabel || 'Click again to confirm';
+    btn.classList.add('is-armed');
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn btn-sm two-step-cancel';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); disarm(btn); });
+    btn.parentNode.insertBefore(cancel, btn.nextSibling);
+    btn._twoStepCancel = cancel;
+    btn._twoStepTimer = setTimeout(() => disarm(btn), ARM_TTL_MS);
+  }
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('button[data-two-step]');
+    if (!btn || btn.disabled) return;
+    if (btn.classList.contains('is-armed')) return; // 2nd click — submit normally
+    e.preventDefault();
+    e.stopPropagation();
+    arm(btn);
+  }, true);
+})();
 </script>
 </body>
 </html>

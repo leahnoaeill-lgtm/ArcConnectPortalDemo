@@ -80,29 +80,29 @@ def seed():
 
     # Adapt — Denver
     c.execute("""INSERT INTO organizations (name, parent_id, type, phone, email,
-                 address_line1, city, state, zip, timezone, latitude, longitude)
-                 VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 address_line1, city, state, zip, timezone, latitude, longitude, npi)
+                 VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
               ('Adapt — Denver', adap_id, '303-555-0140', 'denver@adapt.com',
                '4455 Colfax Ave', 'Denver', 'CO', '80220', 'America/Denver',
-               39.7392, -104.9903))
+               39.7392, -104.9903, '1418629735'))
     adap_denver = c.lastrowid
 
     # Adapt — Boulder
     c.execute("""INSERT INTO organizations (name, parent_id, type, phone, email,
-                 address_line1, city, state, zip, timezone, latitude, longitude)
-                 VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 address_line1, city, state, zip, timezone, latitude, longitude, npi)
+                 VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
               ('Adapt — Boulder', adap_id, '303-555-0212', 'boulder@adapt.com',
                '2201 Pearl St', 'Boulder', 'CO', '80302', 'America/Denver',
-               40.0150, -105.2705))
+               40.0150, -105.2705, '1305726841'))
     adap_boulder = c.lastrowid
 
     # Adapt — Phoenix
     c.execute("""INSERT INTO organizations (name, parent_id, type, phone, email,
-                 address_line1, city, state, zip, timezone, latitude, longitude)
-                 VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 address_line1, city, state, zip, timezone, latitude, longitude, npi)
+                 VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
               ('Adapt — Phoenix', adap_id, '602-555-0318', 'phoenix@adapt.com',
                '88 W Camelback Rd', 'Phoenix', 'AZ', '85013', 'America/Phoenix',
-               33.4484, -112.0740))
+               33.4484, -112.0740, '1614207359'))
     adap_phoenix = c.lastrowid
 
     # Sunwest (independent org, separate tenant)

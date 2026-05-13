@@ -27,7 +27,7 @@
       <div class="bulk-actions">
         <button type="submit" name="action" value="acknowledge" class="btn btn-sm" disabled>Acknowledge</button>
         <button type="submit" name="action" value="resolve" class="btn btn-sm btn-danger" disabled
-                onclick="return confirm('Resolve ' + document.querySelectorAll('input.alert-select:checked').length + ' alert(s)? This closes any linked tasks and cannot be undone.');">Resolve</button>
+                data-two-step data-two-step-label="Click again to resolve">Resolve</button>
       </div>
     </div>
     {% for a in alerts %}
@@ -100,9 +100,9 @@
                 <button type="submit" class="btn btn-sm">Acknowledge</button>
               </form>
             {% endif %}
-            <form method="POST" action="{{ url_for('alert_resolve', alert_id=a.id) }}" style="display:inline;"
-                  onsubmit="return confirm('Resolve this alert?\n\nThis marks the underlying condition as cleared and closes any linked task. Use Acknowledge instead if you\u2019re only triaging.');">
-              <button type="submit" class="btn btn-sm btn-danger">Resolve</button>
+            <form method="POST" action="{{ url_for('alert_resolve', alert_id=a.id) }}" style="display:inline;">
+              <button type="submit" class="btn btn-sm btn-danger"
+                      data-two-step data-two-step-label="Click again to resolve">Resolve</button>
             </form>
           {% endif %}
         </div>

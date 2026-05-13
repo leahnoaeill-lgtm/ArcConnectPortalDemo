@@ -6,7 +6,6 @@
     <div>
       <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Back</a>
       <h1 class="mt-2">New customer organization</h1>
-      <div class="subtitle">Organization details and the group admin invite are required. The BAA can be uploaded now or later — the account stays in pending setup until a signed BAA is on file. Use the verification section to record super-admin sign-off.</div>
     </div>
   </div>
 
@@ -20,47 +19,101 @@
             <input type="text" name="name" required>
             <div class="help">Shown across the customer's portal as their main organization name.</div>
           </div>
-          <div class="form-group span-2">
+          <div class="form-group required span-2">
             <label>Address line 1</label>
-            <input type="text" name="address_line1">
+            <input type="text" name="address_line1" required>
           </div>
           <div class="form-group span-2">
             <label>Address line 2</label>
             <input type="text" name="address_line2">
           </div>
-          <div class="form-group">
+          <div class="form-group required">
             <label>City</label>
-            <input type="text" name="city">
+            <input type="text" name="city" required>
           </div>
-          <div class="form-group">
+          <div class="form-group required">
             <label>State</label>
-            <input type="text" name="state">
+            <select name="state" required>
+              <option value="" disabled selected>Select…</option>
+              <option value="AL">AL — Alabama</option>
+              <option value="AK">AK — Alaska</option>
+              <option value="AZ">AZ — Arizona</option>
+              <option value="AR">AR — Arkansas</option>
+              <option value="CA">CA — California</option>
+              <option value="CO">CO — Colorado</option>
+              <option value="CT">CT — Connecticut</option>
+              <option value="DE">DE — Delaware</option>
+              <option value="DC">DC — District of Columbia</option>
+              <option value="FL">FL — Florida</option>
+              <option value="GA">GA — Georgia</option>
+              <option value="HI">HI — Hawaii</option>
+              <option value="ID">ID — Idaho</option>
+              <option value="IL">IL — Illinois</option>
+              <option value="IN">IN — Indiana</option>
+              <option value="IA">IA — Iowa</option>
+              <option value="KS">KS — Kansas</option>
+              <option value="KY">KY — Kentucky</option>
+              <option value="LA">LA — Louisiana</option>
+              <option value="ME">ME — Maine</option>
+              <option value="MD">MD — Maryland</option>
+              <option value="MA">MA — Massachusetts</option>
+              <option value="MI">MI — Michigan</option>
+              <option value="MN">MN — Minnesota</option>
+              <option value="MS">MS — Mississippi</option>
+              <option value="MO">MO — Missouri</option>
+              <option value="MT">MT — Montana</option>
+              <option value="NE">NE — Nebraska</option>
+              <option value="NV">NV — Nevada</option>
+              <option value="NH">NH — New Hampshire</option>
+              <option value="NJ">NJ — New Jersey</option>
+              <option value="NM">NM — New Mexico</option>
+              <option value="NY">NY — New York</option>
+              <option value="NC">NC — North Carolina</option>
+              <option value="ND">ND — North Dakota</option>
+              <option value="OH">OH — Ohio</option>
+              <option value="OK">OK — Oklahoma</option>
+              <option value="OR">OR — Oregon</option>
+              <option value="PA">PA — Pennsylvania</option>
+              <option value="RI">RI — Rhode Island</option>
+              <option value="SC">SC — South Carolina</option>
+              <option value="SD">SD — South Dakota</option>
+              <option value="TN">TN — Tennessee</option>
+              <option value="TX">TX — Texas</option>
+              <option value="UT">UT — Utah</option>
+              <option value="VT">VT — Vermont</option>
+              <option value="VA">VA — Virginia</option>
+              <option value="WA">WA — Washington</option>
+              <option value="WV">WV — West Virginia</option>
+              <option value="WI">WI — Wisconsin</option>
+              <option value="WY">WY — Wyoming</option>
+            </select>
           </div>
-          <div class="form-group">
-            <label>ZIP</label>
-            <input type="text" name="zip">
+          <div class="form-group required">
+            <label>ZIP code</label>
+            <input type="text" name="zip" required pattern="[0-9]{5}" maxlength="5" inputmode="numeric" placeholder="5 digits">
           </div>
-          <div class="form-group">
+          <div class="form-group required">
             <label>Phone</label>
-            <input type="tel" name="phone">
+            <input type="tel" name="phone" required pattern="\(\d{3}\) \d{3}-\d{4}" maxlength="14" placeholder="(555) 555-5555" data-phone-mask>
           </div>
-          <div class="form-group span-2">
+          <div class="form-group required span-2">
+            <label>Country</label>
+            <select name="country" required>
+              <option value="US" selected>United States of America</option>
+            </select>
+          </div>
+          <div class="form-group required span-2">
             <label>NPI</label>
-            <input type="text" name="npi" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier">
-            <div class="help">10 digits, no dashes.</div>
+            <input type="text" name="npi" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier">
+            <div class="help">10 digits, no dashes. Required for activation.</div>
           </div>
         </div>
       </div>
     </div>
 
     <div class="card mt-3">
-      <div class="card-header"><h2>Group admin invite</h2></div>
+      <div class="card-header"><h2>Group Admin Invite <span class="small muted">— required for activation</span></h2></div>
       <div class="card-body">
-        <div class="small muted mb-2">
-          The first admin you invite becomes the customer's group admin
-          (main-organization admin). They'll receive an invite link to set up
-          their portal access.
-        </div>
         <div class="form-grid">
           <div class="form-group required">
             <label>First name</label>
@@ -81,27 +134,14 @@
     <div class="card mt-3">
       <div class="card-header"><h2>Business Associate Agreement <span class="small muted">— required for activation</span></h2></div>
       <div class="card-body">
-        <div class="small muted mb-2">
-          A signed BAA can be uploaded later. ABMRC's super-admin access to
-          the customer's PHI is gated by this document's effective period,
-          and the account cannot be activated until a signed BAA is on file.
-        </div>
         <div class="form-grid">
           <div class="form-group span-2">
             <label>Signed BAA (PDF)</label>
             <input type="file" name="baa_document" accept=".pdf,application/pdf">
           </div>
-          <div class="form-group">
+          <div class="form-group required">
             <label>Signed date</label>
-            <input type="date" name="signed_date">
-          </div>
-          <div class="form-group">
-            <label>Signed by — name</label>
-            <input type="text" name="signed_by_name" placeholder="e.g., Jane Doe">
-          </div>
-          <div class="form-group">
-            <label>Signed by — title</label>
-            <input type="text" name="signed_by_title" placeholder="e.g., CCO">
+            <input type="date" name="signed_date" required>
           </div>
         </div>
       </div>
@@ -111,11 +151,11 @@
       <div class="card-header"><h2>Account verification <span class="small muted">— required for activation</span></h2></div>
       <div class="card-body">
         <div class="form-grid">
-          <div class="form-group">
+          <div class="form-group required">
             <label>Verification date</label>
-            <input type="date" name="verification_date">
+            <input type="date" name="verification_date" required>
           </div>
-          <div class="form-group">
+          <div class="form-group required">
             <label>Verified by</label>
             <input type="text" value="{{ current_user.first_name }} {{ current_user.last_name }}" disabled>
             <div class="help">Recorded automatically when you press Save.</div>
@@ -134,4 +174,18 @@
     </div>
   </form>
 </div>
+
+<script>
+  document.querySelectorAll('input[data-phone-mask]').forEach(function(el) {
+    function format(v) {
+      var d = (v || '').replace(/\D/g, '').slice(0, 10);
+      if (d.length >= 7)      return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+      if (d.length >= 4)      return '(' + d.slice(0,3) + ') ' + d.slice(3);
+      if (d.length >= 1)      return '(' + d;
+      return '';
+    }
+    el.addEventListener('input', function(e) { e.target.value = format(e.target.value); });
+    el.addEventListener('blur',  function(e) { e.target.value = format(e.target.value); });
+  });
+</script>
 {% endblock %}

@@ -77,7 +77,7 @@
                 {% if o.baa_state == 'revoked' %}
                   <span class="status-red">✗ Revoked</span>
                 {% elif o.baa_state in ('active', 'expiring', 'expired') %}
-                  <span class="status-green">✓ On file</span>
+                  <span class="status-green">✓ {{ o.baa.signed_date | date_only }}</span>
                 {% else %}
                   <span class="muted">— none on file —</span>
                 {% endif %}
@@ -94,6 +94,7 @@
               <td class="num-col num">{{ o.active_alerts }}</td>
               <td>
                 <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                  <a href="{{ url_for('super_org_update', org_id=o.id) }}" class="btn btn-sm">View ▸</a>
                   {% if o.status == 'active' and o.baa_state in ('active','expiring') %}
                     <form method="POST" action="{{ url_for('super_set_acting_org', org_id=o.id) }}" style="display: inline;">
                       <button type="submit" class="btn btn-sm btn-primary">Open ▸</button>
@@ -104,6 +105,7 @@
                       <button type="submit" class="btn btn-sm">Suspend</button>
                     </form>
                   {% elif o.status == 'suspended' %}
+                    <a href="{{ url_for('super_org_update', org_id=o.id) }}" class="btn btn-sm">Update ▸</a>
                     <form method="POST" action="{{ url_for('super_org_activate', org_id=o.id) }}" style="display: inline;">
                       <button type="submit" class="btn btn-sm btn-primary">Reactivate</button>
                     </form>

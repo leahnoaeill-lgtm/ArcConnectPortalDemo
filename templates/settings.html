@@ -7,7 +7,6 @@
   <div class="page-header">
     <div>
       <h1>Settings</h1>
-      <div class="subtitle">{{ scope_label }} · manage details, branding, and alert rules</div>
     </div>
   </div>
 
@@ -25,39 +24,70 @@
         <img src="{{ url_for('static', filename=org.logo_path) }}" class="location-logo" alt="Logo">
       {% endif %}
     </div>
+    {% set us_states = [
+      ('AL','Alabama'),('AK','Alaska'),('AZ','Arizona'),('AR','Arkansas'),
+      ('CA','California'),('CO','Colorado'),('CT','Connecticut'),
+      ('DE','Delaware'),('DC','District of Columbia'),('FL','Florida'),
+      ('GA','Georgia'),('HI','Hawaii'),('ID','Idaho'),('IL','Illinois'),
+      ('IN','Indiana'),('IA','Iowa'),('KS','Kansas'),('KY','Kentucky'),
+      ('LA','Louisiana'),('ME','Maine'),('MD','Maryland'),
+      ('MA','Massachusetts'),('MI','Michigan'),('MN','Minnesota'),
+      ('MS','Mississippi'),('MO','Missouri'),('MT','Montana'),
+      ('NE','Nebraska'),('NV','Nevada'),('NH','New Hampshire'),
+      ('NJ','New Jersey'),('NM','New Mexico'),('NY','New York'),
+      ('NC','North Carolina'),('ND','North Dakota'),('OH','Ohio'),
+      ('OK','Oklahoma'),('OR','Oregon'),('PA','Pennsylvania'),
+      ('RI','Rhode Island'),('SC','South Carolina'),('SD','South Dakota'),
+      ('TN','Tennessee'),('TX','Texas'),('UT','Utah'),('VT','Vermont'),
+      ('VA','Virginia'),('WA','Washington'),('WV','West Virginia'),
+      ('WI','Wisconsin'),('WY','Wyoming')
+    ] %}
+    {% set cur_state = org.state or '' %}
     <form method="POST" enctype="multipart/form-data" class="card-body">
       <div class="form-grid">
         <div class="form-group required span-2">
           <label>Organization name</label>
           <input type="text" name="name" value="{{ org.name }}" required>
         </div>
-        <div class="form-group">
-          <label>Phone</label>
-          <input type="tel" name="phone" value="{{ org.phone or '' }}">
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="email" value="{{ org.email or '' }}">
-        </div>
-        <div class="form-group span-2">
+        <div class="form-group required span-2">
           <label>Address line 1</label>
-          <input type="text" name="address_line1" value="{{ org.address_line1 or '' }}">
+          <input type="text" name="address_line1" value="{{ org.address_line1 or '' }}" required>
         </div>
         <div class="form-group span-2">
           <label>Address line 2</label>
           <input type="text" name="address_line2" value="{{ org.address_line2 or '' }}">
         </div>
-        <div class="form-group">
+        <div class="form-group required">
           <label>City</label>
-          <input type="text" name="city" value="{{ org.city or '' }}">
+          <input type="text" name="city" value="{{ org.city or '' }}" required>
         </div>
-        <div class="form-group">
+        <div class="form-group required">
           <label>State</label>
-          <input type="text" name="state" value="{{ org.state or '' }}" maxlength="2">
+          <select name="state" required>
+            <option value="" disabled {% if not cur_state %}selected{% endif %}>Select…</option>
+            {% for code, name in us_states %}
+              <option value="{{ code }}" {% if cur_state == code %}selected{% endif %}>{{ code }} — {{ name }}</option>
+            {% endfor %}
+          </select>
         </div>
-        <div class="form-group">
-          <label>ZIP</label>
-          <input type="text" name="zip" value="{{ org.zip or '' }}" maxlength="10">
+        <div class="form-group required">
+          <label>ZIP code</label>
+          <input type="text" name="zip" required pattern="[0-9]{5}" maxlength="5" inputmode="numeric" placeholder="5 digits" value="{{ org.zip or '' }}">
+        </div>
+        <div class="form-group required">
+          <label>Phone</label>
+          <input type="tel" name="phone" required pattern="\(\d{3}\) \d{3}-\d{4}" maxlength="14" placeholder="(555) 555-5555" data-phone-mask value="{{ org.phone or '' }}">
+        </div>
+        <div class="form-group required span-2">
+          <label>Country</label>
+          <select name="country" required>
+            <option value="US" selected>United States of America</option>
+          </select>
+        </div>
+        <div class="form-group required span-2">
+          <label>NPI Number</label>
+          <input type="text" name="npi" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier" value="{{ org.npi or '' }}">
+          <div class="help">10 digits, no dashes.</div>
         </div>
         <div class="form-group">
           <label>Timezone</label>
@@ -84,11 +114,13 @@
           </select>
           <div class="help">Patient messages and mood-note tasks are assigned to this user by default. Reassignable per item.</div>
         </div>
+        {% if is_parent_org %}
         <div class="form-group span-2">
           <label>Logo</label>
           <input type="file" name="logo" accept="image/*">
           <div class="help">PNG, JPG, GIF or SVG. Shown on the dashboard header.</div>
         </div>
+        {% endif %}
       </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Save changes</button>
@@ -102,13 +134,6 @@
     <div class="card-header">
       <h2>Satellite locations</h2>
       <a href="{{ url_for('parent_location_new') }}" class="btn btn-sm btn-primary">+ Add Satellite location</a>
-    </div>
-    <div class="card-body">
-      <div class="small muted">
-        Manage the satellite locations under your organization and add admins to each.
-        The full list (with stats + edit / add-admin actions) lives on your
-        <a href="{{ url_for('parent_overview') }}">rollup overview</a>.
-      </div>
     </div>
   </div>
   {% endif %}
@@ -237,4 +262,18 @@
   </div>
   {% endif %}
 </div>
+
+<script>
+  document.querySelectorAll('input[data-phone-mask]').forEach(function(el) {
+    function format(v) {
+      var d = (v || '').replace(/\D/g, '').slice(0, 10);
+      if (d.length >= 7)      return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+      if (d.length >= 4)      return '(' + d.slice(0,3) + ') ' + d.slice(3);
+      if (d.length >= 1)      return '(' + d;
+      return '';
+    }
+    el.addEventListener('input', function(e) { e.target.value = format(e.target.value); });
+    el.addEventListener('blur',  function(e) { e.target.value = format(e.target.value); });
+  });
+</script>
 {% endblock %}

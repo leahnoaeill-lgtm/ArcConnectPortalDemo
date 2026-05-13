@@ -10,6 +10,25 @@
     </div>
   </div>
 
+  {% set us_states = [
+    ('AL','Alabama'),('AK','Alaska'),('AZ','Arizona'),('AR','Arkansas'),
+    ('CA','California'),('CO','Colorado'),('CT','Connecticut'),
+    ('DE','Delaware'),('DC','District of Columbia'),('FL','Florida'),
+    ('GA','Georgia'),('HI','Hawaii'),('ID','Idaho'),('IL','Illinois'),
+    ('IN','Indiana'),('IA','Iowa'),('KS','Kansas'),('KY','Kentucky'),
+    ('LA','Louisiana'),('ME','Maine'),('MD','Maryland'),
+    ('MA','Massachusetts'),('MI','Michigan'),('MN','Minnesota'),
+    ('MS','Mississippi'),('MO','Missouri'),('MT','Montana'),
+    ('NE','Nebraska'),('NV','Nevada'),('NH','New Hampshire'),
+    ('NJ','New Jersey'),('NM','New Mexico'),('NY','New York'),
+    ('NC','North Carolina'),('ND','North Dakota'),('OH','Ohio'),
+    ('OK','Oklahoma'),('OR','Oregon'),('PA','Pennsylvania'),
+    ('RI','Rhode Island'),('SC','South Carolina'),('SD','South Dakota'),
+    ('TN','Tennessee'),('TX','Texas'),('UT','Utah'),('VT','Vermont'),
+    ('VA','Virginia'),('WA','Washington'),('WV','West Virginia'),
+    ('WI','Wisconsin'),('WY','Wyoming')
+  ] %}
+  {% set cur_state = (location.state if is_edit else '') or '' %}
   <div class="card">
     <form method="POST" class="card-body"
           action="{{ url_for('parent_location_edit', org_id=location.id) if is_edit else url_for('parent_location_new') }}">
@@ -19,33 +38,45 @@
           <input type="text" name="name" required value="{{ location.name if is_edit else '' }}">
           <div class="help">Shown in the location switcher and on patient lists.</div>
         </div>
-        <div class="form-group span-2">
+        <div class="form-group required span-2">
           <label>Address line 1</label>
-          <input type="text" name="address_line1" value="{{ location.address_line1 or '' if is_edit else '' }}">
+          <input type="text" name="address_line1" required value="{{ location.address_line1 or '' if is_edit else '' }}">
         </div>
         <div class="form-group span-2">
           <label>Address line 2</label>
           <input type="text" name="address_line2" value="{{ location.address_line2 or '' if is_edit else '' }}">
         </div>
-        <div class="form-group">
+        <div class="form-group required">
           <label>City</label>
-          <input type="text" name="city" value="{{ location.city or '' if is_edit else '' }}">
+          <input type="text" name="city" required value="{{ location.city or '' if is_edit else '' }}">
         </div>
-        <div class="form-group">
+        <div class="form-group required">
           <label>State</label>
-          <input type="text" name="state" value="{{ location.state or '' if is_edit else '' }}">
+          <select name="state" required>
+            <option value="" disabled {% if not cur_state %}selected{% endif %}>Select…</option>
+            {% for code, name in us_states %}
+              <option value="{{ code }}" {% if cur_state == code %}selected{% endif %}>{{ code }} — {{ name }}</option>
+            {% endfor %}
+          </select>
         </div>
-        <div class="form-group">
-          <label>ZIP</label>
-          <input type="text" name="zip" value="{{ location.zip or '' if is_edit else '' }}">
+        <div class="form-group required">
+          <label>ZIP code</label>
+          <input type="text" name="zip" required pattern="[0-9]{5}" maxlength="5" inputmode="numeric" placeholder="5 digits" value="{{ location.zip or '' if is_edit else '' }}">
         </div>
-        <div class="form-group">
+        <div class="form-group required">
           <label>Phone</label>
-          <input type="tel" name="phone" value="{{ location.phone or '' if is_edit else '' }}">
+          <input type="tel" name="phone" required pattern="\(\d{3}\) \d{3}-\d{4}" maxlength="14" placeholder="(555) 555-5555" data-phone-mask value="{{ location.phone or '' if is_edit else '' }}">
         </div>
-        <div class="form-group span-2">
-          <label>Email</label>
-          <input type="email" name="email" value="{{ location.email or '' if is_edit else '' }}">
+        <div class="form-group required span-2">
+          <label>Country</label>
+          <select name="country" required>
+            <option value="US" selected>United States of America</option>
+          </select>
+        </div>
+        <div class="form-group required span-2">
+          <label>NPI Number</label>
+          <input type="text" name="npi" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier" value="{{ location.npi or '' if is_edit else '' }}">
+          <div class="help">10 digits, no dashes.</div>
         </div>
         <div class="form-group">
           <label>Timezone</label>
@@ -58,6 +89,25 @@
           </select>
         </div>
       </div>
+
+      {% if not is_edit %}
+      <h3 class="mt-3">Satellite-Location Admin</h3>
+      <div class="form-grid">
+        <div class="form-group required">
+          <label>First name</label>
+          <input type="text" name="invite_first_name" required>
+        </div>
+        <div class="form-group required">
+          <label>Last name</label>
+          <input type="text" name="invite_last_name" required>
+        </div>
+        <div class="form-group required span-2">
+          <label>Email</label>
+          <input type="email" name="invite_email" required>
+        </div>
+      </div>
+      {% endif %}
+
       <div class="form-actions">
         <a href="{{ url_for('parent_overview') }}" class="btn">Cancel</a>
         <button type="submit" class="btn btn-primary">{{ 'Save changes' if is_edit else 'Add location' }}</button>
@@ -65,4 +115,18 @@
     </form>
   </div>
 </div>
+
+<script>
+  document.querySelectorAll('input[data-phone-mask]').forEach(function(el) {
+    function format(v) {
+      var d = (v || '').replace(/\D/g, '').slice(0, 10);
+      if (d.length >= 7)      return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+      if (d.length >= 4)      return '(' + d.slice(0,3) + ') ' + d.slice(3);
+      if (d.length >= 1)      return '(' + d;
+      return '';
+    }
+    el.addEventListener('input', function(e) { e.target.value = format(e.target.value); });
+    el.addEventListener('blur',  function(e) { e.target.value = format(e.target.value); });
+  });
+</script>
 {% endblock %}

@@ -39,12 +39,6 @@
             <option value="admin" {% if is_edit and user.role == 'admin' %}selected{% endif %}>Admin</option>
             <option value="user"  {% if is_edit and user.role == 'user' %}selected{% endif %}>User</option>
           </select>
-          <div class="form-hint">
-            Per LD-8, Release 1 has only two customer-tier roles: <strong>Admin</strong>
-            (manages org settings, users, alert rules, engagement features) and
-            <strong>User</strong> (clinical and operational workflows; no settings).
-            Granular role types deferred to Release 2.
-          </div>
         </div>
         <div class="form-group">
           <label>Phone</label>

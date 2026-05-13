@@ -17,7 +17,12 @@
     <div class="actions">
       {% set active = assignments | selectattr('returned_date','none') | list %}
       {% if not active %}
-        <a href="{{ url_for('device_assign', device_id=device.id) }}" class="btn btn-primary">Assign to patient</a>
+        {% if device.status != 'retired' %}
+          <a href="{{ url_for('device_assign', device_id=device.id) }}" class="btn btn-primary">Assign to patient</a>
+          <form method="POST" action="{{ url_for('device_retire', device_id=device.id) }}" onsubmit="return confirm('Retire device {{ device.serial_number }}? It will be excluded from dashboards and the map. This action is not undoable from the UI.');" style="display:inline;">
+            <button type="submit" class="btn btn-danger">Retire</button>
+          </form>
+        {% endif %}
       {% else %}
         <a href="{{ url_for('device_assign', device_id=device.id) }}" class="btn btn-primary">Reassign</a>
         <form method="POST" action="{{ url_for('device_unassign', device_id=device.id, assignment_id=active[0].id) }}" onsubmit="return confirm('Unassign this device from {{ active[0].first_name }} {{ active[0].last_name }} and return to inventory?');" style="display:inline;">

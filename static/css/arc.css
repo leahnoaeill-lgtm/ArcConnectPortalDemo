@@ -95,27 +95,9 @@ a:hover { text-decoration: underline; }
 .topbar-brand:hover { text-decoration: none; }
 
 .topbar-brand .logo-img {
-  height: 34px;
+  height: 44px;
   width: auto;
   display: block;
-}
-
-.topbar-brand .wordmark {
-  font-family: var(--font-head);
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--ac-slate-deep);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  line-height: 1.1;
-}
-.topbar-brand .wordmark small {
-  display: block;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--ac-gray);
-  letter-spacing: 0;
-  margin-top: 2px;
 }
 
 .topbar-nav {
@@ -374,7 +356,6 @@ a:hover { text-decoration: underline; }
 }
 @media (max-width: 1280px) {
   .topbar-user-role { display: none; }
-  .topbar-brand .wordmark small { display: none; }
   .topbar-nav a { padding: 0 10px; font-size: 12px; }
   .topbar-loc-secondary { font-size: 9px; }
   .topbar-doodle { width: 48px; }
@@ -1183,8 +1164,8 @@ a.kpi-link:hover .sub {
 .badge.priority-low    { background: var(--ac-bg); color: var(--ac-gray); border: 1px solid var(--ac-border); }
 
 /* Overdue rows in task list */
-tr.row-overdue { background: var(--ac-red-light) !important; }
-tr.row-overdue:hover { background: #F9CFCF !important; }
+tr.row-overdue { background: var(--ac-slate-light) !important; }
+tr.row-overdue:hover { background: var(--ac-border) !important; }
 
 /* Task activity log */
 .activity-item {
@@ -1944,6 +1925,19 @@ body.super-readonly .super-admin-banner button {
 .btn-danger:hover {
   background: #9a0000;
   color: white;
+}
+
+.btn.is-armed {
+  background: #9a0000;
+  color: white;
+  border-color: #9a0000;
+  animation: two-step-pulse 1.1s ease-in-out infinite;
+}
+.btn.is-armed:hover { background: #7a0000; }
+.two-step-cancel { margin-left: 6px; }
+@keyframes two-step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(192, 0, 0, 0.55); }
+  50%      { box-shadow: 0 0 0 6px rgba(192, 0, 0, 0); }
 }
 
 .btn-sm {

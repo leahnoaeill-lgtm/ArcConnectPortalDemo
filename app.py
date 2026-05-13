@@ -50,7 +50,31 @@ def _ensure_heatmap_schema():
         conn.close()
 
 
+def _ensure_org_verification_columns():
+    """Lightweight migration: add NPI + super-admin verification columns to
+    organizations on an existing DB that pre-dates them. Idempotent."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(organizations)").fetchall()}
+        wanted = [
+            ('npi',                   'TEXT'),
+            ('verification_complete', 'INTEGER DEFAULT 0'),
+            ('verification_date',     'TEXT'),
+            ('verification_notes',    'TEXT'),
+            ('verified_by_user_id',   'INTEGER REFERENCES users(id) ON DELETE SET NULL'),
+        ]
+        for name, decl in wanted:
+            if name not in cols:
+                conn.execute(f"ALTER TABLE organizations ADD COLUMN {name} {decl}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 _ensure_heatmap_schema()
+_ensure_org_verification_columns()
 
 
 # ── Optional HTTP Basic Auth gate (set AUTH_USERNAME + AUTH_PASSWORD env vars to enable) ──
@@ -835,9 +859,22 @@ def parent_location_new():
         if not name:
             flash('Location name is required.', 'error')
             return redirect(url_for('parent_location_new'))
+
+        # Satellite-location admin invite fields (mirrors super_signup_approve /
+        # super_org_new pattern — create org + invitation atomically).
+        invite_email = (request.form.get('invite_email') or '').strip().lower()
+        invite_first = (request.form.get('invite_first_name') or '').strip()
+        invite_last  = (request.form.get('invite_last_name')  or '').strip()
+        if '@' not in invite_email or '.' not in invite_email.split('@')[-1]:
+            flash('A valid satellite-location admin email is required.', 'error')
+            return redirect(url_for('parent_location_new'))
+        if not invite_first or not invite_last:
+            flash('Satellite-location admin first and last name are required.', 'error')
+            return redirect(url_for('parent_location_new'))
+
         q_exec("""INSERT INTO organizations
                   (name, parent_id, type, address_line1, address_line2, city, state,
-                   zip, phone, email, timezone)
+                   zip, phone, npi, timezone)
                   VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?)""",
                (name, parent_id,
                 request.form.get('address_line1') or None,
@@ -846,12 +883,24 @@ def parent_location_new():
                 request.form.get('state') or None,
                 request.form.get('zip') or None,
                 request.form.get('phone') or None,
-                request.form.get('email') or None,
+                request.form.get('npi') or None,
                 request.form.get('timezone') or 'America/New_York'))
         new_id = q_one('SELECT last_insert_rowid() AS id')['id']
+
+        import secrets
+        from datetime import timedelta as _td
+        token = secrets.token_urlsafe(24)
+        expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
+        q_exec("""INSERT INTO org_invitations
+                  (organization_id, email, first_name, last_name, token,
+                   invited_by_user_id, expires_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (new_id, invite_email, invite_first, invite_last, token,
+                u['id'], expires_at))
+
         _log_access('location_create', ref_type='organization', ref_id=new_id,
-                    detail=f'Created location: {name}')
-        flash(f'Location "{name}" added.', 'success')
+                    detail=f'Created location: {name}; invited {invite_email}')
+        flash(f'Location "{name}" added. Satellite-admin invite sent to {invite_email}.', 'success')
         return redirect(url_for('parent_overview'))
     return render_template('parent_location_form.html', location=None)
 
@@ -873,7 +922,7 @@ def parent_location_edit(org_id):
             return redirect(url_for('parent_location_edit', org_id=org_id))
         q_exec("""UPDATE organizations SET name = ?, address_line1 = ?,
                   address_line2 = ?, city = ?, state = ?, zip = ?, phone = ?,
-                  email = ?, timezone = ? WHERE id = ?""",
+                  npi = ?, timezone = ? WHERE id = ?""",
                (name,
                 request.form.get('address_line1') or None,
                 request.form.get('address_line2') or None,
@@ -881,7 +930,7 @@ def parent_location_edit(org_id):
                 request.form.get('state') or None,
                 request.form.get('zip') or None,
                 request.form.get('phone') or None,
-                request.form.get('email') or None,
+                request.form.get('npi') or None,
                 request.form.get('timezone') or 'America/New_York',
                 org_id))
         _log_access('location_update', ref_type='organization', ref_id=org_id,
@@ -1065,27 +1114,27 @@ def super_signup_approve(signup_id):
         flash('This signup request is already finalized; cannot approve.', 'error')
         return redirect(url_for('super_signup_detail', signup_id=signup_id))
 
-    # Read group-admin invite fields. Operator may have overridden the submitter's
-    # email/name (e.g., the submitter was a sales/IT contact, not the actual admin).
-    # Empty form values fall back to the submitter's original info.
+    # Group-admin invite goes to the submitter as-is. Operator override was removed
+    # so the submitter (who self-registered via the public signup form) remains the
+    # group admin of record.
     parts = (sr['submitter_name'] or '').strip().split(None, 1)
-    default_first = parts[0] if parts else ''
-    default_last  = parts[1] if len(parts) > 1 else ''
-    invite_email = (request.form.get('invite_email') or sr['submitter_email'] or '').strip().lower()
-    invite_first = (request.form.get('invite_first_name') or default_first or '').strip()
-    invite_last  = (request.form.get('invite_last_name')  or default_last  or '').strip()
+    invite_first = parts[0] if parts else ''
+    invite_last  = parts[1] if len(parts) > 1 else ''
+    invite_email = (sr['submitter_email'] or '').strip().lower()
 
     # Validate
     if '@' not in invite_email or '.' not in invite_email.split('@')[-1]:
-        flash('A valid group-admin email is required.', 'error')
+        flash('Submitter email on this request is invalid; cannot send invite.', 'error')
         return redirect(url_for('super_signup_detail', signup_id=signup_id))
     if not invite_first or not invite_last:
-        flash('Group-admin first and last name are required.', 'error')
+        flash('Submitter name on this request is missing first/last; cannot send invite.', 'error')
         return redirect(url_for('super_signup_detail', signup_id=signup_id))
 
-    # Create the customer main organization with submitted fields prefilled (REQ-3.2 path b).
-    # NPI is preserved on the signup_request row (linked via approved_org_id) since the
-    # prototype `organizations` table doesn't have an NPI column.
+    # Create the customer main organization with submitted fields prefilled.
+    # NB: the portal invite (org_invitations row + token) is NOT created here. It
+    # is deferred to super_org_activate, so the submitter cannot reach /login
+    # until BAA + verification are on file. The acknowledgment email below tells
+    # them they've passed review; the real invite arrives at activation.
     db = get_db()
     cur = db.execute("""INSERT INTO organizations
                         (name, type, status, address_line1, city, state, zip)
@@ -1094,37 +1143,21 @@ def super_signup_approve(signup_id):
                       sr['address_state'], sr['address_zip']))
     org_id = cur.lastrowid
 
-    # Auto-generate the group-admin invitation per REQ-3.2 AC-4. This mirrors
-    # the direct-create path (super_org_new) — same token format, same 14-day expiry.
-    import secrets
-    from datetime import timedelta as _td
-    token = secrets.token_urlsafe(24)
-    expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
     user = current_user()
-    db.execute("""INSERT INTO org_invitations
-                  (organization_id, email, first_name, last_name, token,
-                   invited_by_user_id, expires_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)""",
-               (org_id, invite_email, invite_first, invite_last, token,
-                user['id'], expires_at))
-
-    # Mark the signup as approved
     db.execute("""UPDATE signup_requests
                   SET status = 'approved', reviewed_by_user_id = ?, reviewed_at = CURRENT_TIMESTAMP,
                       approved_org_id = ?
                   WHERE id = ?""", (user['id'], org_id, signup_id))
     db.commit()
 
-    edited_note = ''
-    if invite_email != (sr['submitter_email'] or '').strip().lower():
-        edited_note = f' (group-admin email overridden: {sr["submitter_email"]} → {invite_email})'
     _signup_audit(user['id'], signup_id, sr['status'], 'approved',
-                  f'approved → org_id={org_id} ({sr["org_name"]}); invited {invite_email}{edited_note}')
-    print(f'[SIGNUP NOTIFY] approval email to {invite_email} — '
-          f'next step: accept invite + BAA upload for org_id={org_id}', flush=True)
+                  f'approved → org_id={org_id} ({sr["org_name"]}); acknowledgment to {invite_email}; invite deferred to activation')
+    print(f'[SIGNUP NOTIFY] approval acknowledgment to {invite_email} — '
+          f'org "{sr["org_name"]}" is in pending setup; BAA execution next; '
+          f'portal invite will follow once activated. org_id={org_id}', flush=True)
 
-    flash(f'Approved. Customer organization "{sr["org_name"]}" created (pending BAA + invite acceptance). '
-          f'Group-admin invite sent to {invite_email}.', 'success')
+    flash(f'Approved. Customer organization "{sr["org_name"]}" created in pending setup. '
+          f'Acknowledgment email sent to {invite_email}; portal invite will go out at activation.', 'success')
     return redirect(url_for('super_signups'))
 
 
@@ -1143,8 +1176,7 @@ def super_signup_reject(signup_id):
 
     reason = (request.form.get('reason_category') or '').strip()
     notes = (request.form.get('reason_notes') or '').strip() or None
-    valid_reasons = {'missing_or_invalid_npi', 'existing_customer', 'suspicious_source',
-                     'commercial_terms_not_aligned', 'other'}
+    valid_reasons = {'existing_customer', 'only_available_usa', 'other'}
     if reason not in valid_reasons:
         flash('Please choose a rejection reason category.', 'error')
         return redirect(url_for('super_signup_detail', signup_id=signup_id))
@@ -1439,6 +1471,39 @@ def super_org_activate(org_id):
     q_exec("UPDATE organizations SET status = 'active' WHERE id = ?", (org_id,))
     _log_access('location_update', ref_type='organization', ref_id=org_id,
                 detail='Org activated by super admin')
+
+    # Signup-approval flow: the portal invite was deferred at approval. If this
+    # org has no invitation yet AND has a linked signup_request, issue the
+    # invite now using the submitter's info on that request. Direct-create orgs
+    # already have an invitation from super_org_new and are left alone.
+    existing_invite = q_one(
+        'SELECT id FROM org_invitations WHERE organization_id = ? LIMIT 1',
+        (org_id,))
+    if not existing_invite:
+        sr = q_one('SELECT * FROM signup_requests WHERE approved_org_id = ?', (org_id,))
+        if sr:
+            parts = (sr['submitter_name'] or '').strip().split(None, 1)
+            invite_first = parts[0] if parts else ''
+            invite_last  = parts[1] if len(parts) > 1 else ''
+            invite_email = (sr['submitter_email'] or '').strip().lower()
+            import secrets
+            from datetime import timedelta as _td
+            token = secrets.token_urlsafe(24)
+            expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
+            u = current_user()
+            org_row = q_one('SELECT name FROM organizations WHERE id = ?', (org_id,))
+            q_exec("""INSERT INTO org_invitations
+                      (organization_id, email, first_name, last_name, token,
+                       invited_by_user_id, expires_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (org_id, invite_email, invite_first, invite_last, token,
+                    u['id'], expires_at))
+            print(f'[ACTIVATION NOTIFY] portal invite to {invite_email} — '
+                  f'org "{org_row["name"]}" is now active; 14-day token issued. '
+                  f'org_id={org_id}', flush=True)
+            flash(f'Organization activated. Group-admin invite sent to {invite_email}.', 'success')
+            return redirect(url_for('super_dashboard'))
+
     flash('Organization activated.', 'success')
     return redirect(url_for('super_dashboard'))
 
@@ -1457,14 +1522,18 @@ def super_org_update(org_id):
            ORDER BY id DESC LIMIT 1""", (org_id,))
 
     if request.method == 'POST':
-        org_name = (request.form.get('name') or '').strip()
-        if not org_name:
-            flash('Organization name is required.', 'error')
-            return redirect(url_for('super_org_update', org_id=org_id))
-
+        # Suspended orgs allow full edit of details + verification; pending/active
+        # orgs are view-only except for BAA upload. Status is checked server-side
+        # to enforce, not just rely on the disabled inputs on the client.
+        is_suspended = (org['status'] == 'suspended')
         baa_file = request.files.get('baa_document')
         baa_provided = bool(baa_file and baa_file.filename)
         signed_date = request.form.get('signed_date')
+
+        if not is_suspended and not baa_provided:
+            flash('Nothing to save — upload a new BAA to update this organization.', 'info')
+            return redirect(url_for('super_org_update', org_id=org_id))
+
         if baa_provided:
             ext = baa_file.filename.rsplit('.', 1)[-1].lower() if '.' in baa_file.filename else ''
             if ext not in ALLOWED_BAA_EXT:
@@ -1475,27 +1544,34 @@ def super_org_update(org_id):
                 return redirect(url_for('super_org_update', org_id=org_id))
 
         u = current_user()
-        verification_date = request.form.get('verification_date') or None
-        verification_complete = 1 if verification_date else 0
 
-        q_exec("""UPDATE organizations SET
-                  name = ?, address_line1 = ?, address_line2 = ?,
-                  city = ?, state = ?, zip = ?, phone = ?, npi = ?,
-                  verification_complete = ?, verification_date = ?,
-                  verification_notes = ?, verified_by_user_id = ?
-                  WHERE id = ?""",
-               (org_name,
-                request.form.get('address_line1') or None,
-                request.form.get('address_line2') or None,
-                request.form.get('city') or None,
-                request.form.get('state') or None,
-                request.form.get('zip') or None,
-                request.form.get('phone') or None,
-                request.form.get('npi') or None,
-                verification_complete,
-                verification_date,
-                request.form.get('verification_notes') or None,
-                u['id'], org_id))
+        if is_suspended:
+            org_name = (request.form.get('name') or '').strip()
+            if not org_name:
+                flash('Organization name is required.', 'error')
+                return redirect(url_for('super_org_update', org_id=org_id))
+            verification_date = request.form.get('verification_date') or None
+            verification_complete = 1 if verification_date else 0
+            q_exec("""UPDATE organizations SET
+                      name = ?, address_line1 = ?, address_line2 = ?,
+                      city = ?, state = ?, zip = ?, phone = ?,
+                      timezone = ?, npi = ?,
+                      verification_complete = ?, verification_date = ?,
+                      verification_notes = ?, verified_by_user_id = ?
+                      WHERE id = ?""",
+                   (org_name,
+                    request.form.get('address_line1') or None,
+                    request.form.get('address_line2') or None,
+                    request.form.get('city') or None,
+                    request.form.get('state') or None,
+                    request.form.get('zip') or None,
+                    request.form.get('phone') or None,
+                    request.form.get('timezone') or 'America/New_York',
+                    request.form.get('npi') or None,
+                    verification_complete,
+                    verification_date,
+                    request.form.get('verification_notes') or None,
+                    u['id'], org_id))
 
         if baa_provided:
             BAA_DIR.mkdir(parents=True, exist_ok=True)
@@ -1509,12 +1585,19 @@ def super_org_update(org_id):
                    (org_id, f'uploads/baas/{safe_name}',
                     secure_filename(baa_file.filename),
                     signed_date, signed_date, None,
-                    request.form.get('signed_by_name') or None,
-                    request.form.get('signed_by_title') or None, u['id']))
+                    None, None, u['id']))
 
+        if is_suspended and baa_provided:
+            msg_action = 'updated details + uploaded new BAA'
+            flash(f'"{org["name"]}" updated and new BAA uploaded.', 'success')
+        elif is_suspended:
+            msg_action = 'updated details'
+            flash(f'"{org["name"]}" updated.', 'success')
+        else:
+            msg_action = 'uploaded new BAA'
+            flash(f'New BAA uploaded for "{org["name"]}".', 'success')
         _log_access('location_update', ref_type='organization', ref_id=org_id,
-                    detail=f'Super admin updated org "{org_name}"; BAA={"new upload" if baa_provided else "unchanged"}')
-        flash(f'"{org_name}" updated.', 'success')
+                    detail=f'Super admin {msg_action} for "{org["name"]}"')
         return redirect(url_for('super_dashboard'))
 
     verified_by_name = None
@@ -3712,6 +3795,30 @@ def device_unassign(device_id, assignment_id):
     return redirect(url_for('device_detail', device_id=device_id))
 
 
+@app.route('/devices/<int:device_id>/retire', methods=['POST'])
+@require_login
+def device_retire(device_id):
+    oid = current_org_id()
+    d = q_one('SELECT * FROM devices WHERE id = ? AND organization_id = ?',
+              (device_id, oid))
+    if not d:
+        abort(404)
+    if d['status'] == 'retired':
+        flash(f'Device {d["serial_number"]} is already retired.', 'info')
+        return redirect(url_for('device_detail', device_id=device_id))
+    active = q_one("""SELECT 1 AS x FROM device_assignments
+                      WHERE device_id = ? AND returned_date IS NULL LIMIT 1""",
+                   (device_id,))
+    if active:
+        flash(f'Cannot retire {d["serial_number"]} while it is assigned to a patient. Unassign first.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+    q_exec("UPDATE devices SET status = 'retired' WHERE id = ?", (device_id,))
+    _log_access('device_retire', ref_type='device', ref_id=device_id,
+                detail=f'Device {d["serial_number"]} retired')
+    flash(f'Device {d["serial_number"]} retired.', 'success')
+    return redirect(url_for('device_detail', device_id=device_id))
+
+
 # ── Alerts ───────────────────────────────────────────────────────────────────
 
 @app.route('/alerts')
@@ -3875,19 +3982,20 @@ def settings():
             if not assignee: default_assignee = None
         # Timezone falls back to the existing org value (not a hard-coded default)
         # so a missing form field never silently clobbers a previously-set timezone.
-        existing_org = q_one('SELECT timezone FROM organizations WHERE id = ?', (oid,))
+        existing_org = q_one('SELECT timezone, type FROM organizations WHERE id = ?', (oid,))
         new_tz = request.form.get('timezone') or (existing_org['timezone'] if existing_org else 'America/New_York')
-        q_exec("""UPDATE organizations SET name = ?, phone = ?, email = ?,
+        q_exec("""UPDATE organizations SET name = ?, phone = ?, npi = ?,
                   address_line1 = ?, address_line2 = ?, city = ?, state = ?, zip = ?,
                   timezone = ?, default_assignee_user_id = ? WHERE id = ?""",
                (request.form.get('name'), request.form.get('phone'),
-                request.form.get('email'), request.form.get('address_line1'),
+                request.form.get('npi') or None, request.form.get('address_line1'),
                 request.form.get('address_line2'), request.form.get('city'),
                 request.form.get('state'), request.form.get('zip'),
                 new_tz, default_assignee, oid))
-        # Logo upload (optional)
+        # Logo upload (optional) — only group admins (parent orgs) can upload.
+        # Satellite admins POSTing a logo are silently ignored.
         logo_file = request.files.get('logo')
-        if logo_file and logo_file.filename:
+        if logo_file and logo_file.filename and existing_org and existing_org['type'] == 'parent':
             ext = logo_file.filename.rsplit('.', 1)[-1].lower() if '.' in logo_file.filename else ''
             if ext in ALLOWED_LOGO_EXT:
                 LOGOS_DIR.mkdir(parents=True, exist_ok=True)

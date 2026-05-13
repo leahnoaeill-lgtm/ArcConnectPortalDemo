@@ -165,8 +165,9 @@
                       <button type="submit" class="btn btn-sm">Acknowledge</button>
                     </form>
                     {% endif %}
-                    <form method="POST" action="{{ url_for('alert_resolve', alert_id=a.id) }}" style="display:inline;" onsubmit="return confirm('Resolve this alert? This marks the underlying condition as cleared and closes any linked task. Use Acknowledge instead if you\u2019re only triaging.');">
-                      <button type="submit" class="btn btn-sm btn-danger">Resolve</button>
+                    <form method="POST" action="{{ url_for('alert_resolve', alert_id=a.id) }}" style="display:inline;">
+                      <button type="submit" class="btn btn-sm btn-danger"
+                              data-two-step data-two-step-label="Click again to resolve">Resolve</button>
                     </form>
                   </div>
                 </div>
