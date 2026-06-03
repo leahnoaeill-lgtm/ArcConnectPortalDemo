@@ -123,22 +123,6 @@
     </div>
   </div>
 
-  {% if activity_30d %}
-  {% set act_max = (activity_30d | map(attribute='count') | max) or 1 %}
-  {% set act_n = activity_30d | length %}
-  <div class="sparkline-card">
-    <div class="sparkline-head">
-      <span class="label">Therapy activity · last 30 days</span>
-      <span class="sparkline-total">{{ activity_30d | sum(attribute='count') }} sessions</span>
-    </div>
-    <svg class="sparkline" viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true">
-      <polygon fill="var(--ac-cyan-light)" stroke="none"
-        points="0,48 {% for a in activity_30d %}{{ (loop.index0 / (act_n - 1) * 300) | round(1) }},{{ (44 - (a.count / act_max * 40)) | round(1) }} {% endfor %}300,48"></polygon>
-      <polyline fill="none" stroke="var(--ac-cyan-dark)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
-        points="{% for a in activity_30d %}{{ (loop.index0 / (act_n - 1) * 300) | round(1) }},{{ (44 - (a.count / act_max * 40)) | round(1) }} {% endfor %}"></polyline>
-    </svg>
-  </div>
-  {% endif %}
 
   {% set open_alerts = alerts | selectattr('resolved_at','none') | list %}
 

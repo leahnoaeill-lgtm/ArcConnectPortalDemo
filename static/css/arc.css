@@ -994,20 +994,9 @@ tr.filter-hidden { display: none !important; }
 }
 .kpi-ring-label span { font-size: 11px; font-weight: 600; margin-left: 1px; }
 
-/* Therapy-activity sparkline card (patient detail) */
-.sparkline-card {
-  background: white; border: 1px solid var(--ac-border);
-  border-radius: var(--radius-lg); padding: 12px 16px;
-  box-shadow: var(--shadow); margin-bottom: 24px;
-}
-.sparkline-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
-.sparkline-total { font-size: 12px; font-weight: 600; color: var(--ac-gray); }
-.sparkline { display: block; width: 100%; height: 48px; }
-
 /* ── Soft Clinical look — scoped to the patient detail page (.pd-soft) ── */
 .pd-soft .kpi,
-.pd-soft .card,
-.pd-soft .sparkline-card {
+.pd-soft .card {
   border: 0;
   border-radius: 18px;
   box-shadow: 0 6px 22px rgba(45, 139, 173, 0.08);
@@ -1026,6 +1015,53 @@ tr.filter-hidden { display: none !important; }
 /* "Last session" two-line value — bold date over a lighter time */
 .kpi-date { font-size: 19px; font-weight: 700; line-height: 1.2; color: var(--ac-slate-deep); }
 .kpi-time { font-size: 13px; font-weight: 600; color: var(--ac-slate); margin-top: 3px; }
+
+/* Soft Clinical — sidebar nav as a soft card with pill links */
+.pd-soft .patient-sidebar nav {
+  background: #fff;
+  border-radius: 16px;
+  padding: 8px;
+  box-shadow: 0 6px 22px rgba(45, 139, 173, 0.08);
+}
+.pd-soft .patient-nav-link {
+  border-left: 0;
+  border-radius: 10px;
+  margin: 2px 0;
+  padding: 9px 12px;
+}
+.pd-soft .patient-nav-link:hover { background: var(--ac-slate-light); }
+.pd-soft .patient-nav-link.active { background: var(--ac-cyan-light); color: var(--ac-cyan-dark); }
+.pd-soft .patient-nav-link::before { margin-right: 8px; font-size: 14px; line-height: 1; }
+.pd-soft .patient-nav-link[data-section="therapy"]::before     { content: "🫁"; }
+.pd-soft .patient-nav-link[data-section="alerts"]::before       { content: "⚠️"; }
+.pd-soft .patient-nav-link[data-section="prescription"]::before { content: "💊"; }
+.pd-soft .patient-nav-link[data-section="device"]::before       { content: "🔧"; }
+.pd-soft .patient-nav-link[data-section="journey"]::before      { content: "🧭"; }
+.pd-soft .patient-nav-link[data-section="clinical"]::before     { content: "🩺"; }
+.pd-soft .patient-nav-link[data-section="goals"]::before        { content: "🎯"; }
+.pd-soft .patient-nav-link[data-section="mood"]::before         { content: "🙂"; }
+.pd-soft .patient-nav-link[data-section="surveys"]::before      { content: "📝"; }
+.pd-soft .patient-nav-link[data-section="insurance"]::before    { content: "🛡️"; }
+.pd-soft .patient-nav-link[data-section="referring"]::before    { content: "🏥"; }
+
+/* Soft Clinical — section titles get a matching icon + a bit more breathing room */
+.pd-soft .patient-section { margin-bottom: 30px; }
+.pd-soft .patient-section-header h2 { font-size: 17px; }
+.pd-soft .patient-section-header h2::before { margin-right: 8px; }
+.pd-soft #therapy      .patient-section-header h2::before { content: "🫁"; }
+.pd-soft #alerts       .patient-section-header h2::before { content: "⚠️"; }
+.pd-soft #prescription .patient-section-header h2::before { content: "💊"; }
+.pd-soft #device       .patient-section-header h2::before { content: "🔧"; }
+.pd-soft #journey      .patient-section-header h2::before { content: "🧭"; }
+.pd-soft #clinical     .patient-section-header h2::before { content: "🩺"; }
+.pd-soft #goals        .patient-section-header h2::before { content: "🎯"; }
+.pd-soft #mood         .patient-section-header h2::before { content: "🙂"; }
+.pd-soft #surveys      .patient-section-header h2::before { content: "📝"; }
+.pd-soft #insurance    .patient-section-header h2::before { content: "🛡️"; }
+.pd-soft #referring    .patient-section-header h2::before { content: "🏥"; }
+
+/* Softer card-header divider to match the borderless, rounded cards */
+.pd-soft .card-header { border-bottom-color: var(--ac-slate-light); }
 
 .kpi.kpi-red::before    { background: var(--ac-red); }
 .kpi.kpi-yellow::before { background: var(--ac-yellow); }

@@ -2980,18 +2980,8 @@ def patient_detail(patient_id):
                                 WHERE rh.patient_id = ?
                                 ORDER BY rh.assigned_at DESC""", (patient_id,))
 
-    # Combined daily therapy-session counts across modalities (last 30 days) for
-    # the detail-page activity sparkline. Grids are date-aligned (same N days).
-    activity_30d = []
-    _grids = [therapy[m]['grid'] for m in therapy]
-    if _grids:
-        for i in range(len(_grids[0])):
-            activity_30d.append({'date': _grids[0][i]['date'],
-                                 'count': sum(g[i]['count'] for g in _grids)})
-
     return render_template('patient_detail.html', patient=p, assignments=assignments,
                            alerts=alerts, rx_modalities=rx_modalities,
-                           activity_30d=activity_30d,
                            therapy=therapy, therapy_goal_per_day=THERAPY_GOAL_PER_DAY,
                            insurance=insurance,
                            clinical_recent=clinical_recent,
