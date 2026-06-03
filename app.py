@@ -3738,9 +3738,10 @@ def device_new():
             flash(f'Device with serial {serial} already exists.', 'error')
             return redirect(url_for('device_new'))
         q_exec("""INSERT INTO devices (organization_id, serial_number, model, firmware_version,
-                  upload_date, warranty_end, status, notes)
-                  VALUES (?, ?, ?, ?, ?, ?, 'in_stock', ?)""",
+                  software_version, upload_date, warranty_end, status, notes)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, 'in_stock', ?)""",
                (oid, serial, model, request.form.get('firmware_version'),
+                request.form.get('software_version'),
                 request.form.get('upload_date') or date.today().isoformat(),
                 request.form.get('warranty_end') or None,
                 request.form.get('notes')))
@@ -3775,6 +3776,13 @@ def device_assign(device_id):
               (device_id, oid))
     if not d:
         abort(404)
+    # A device under maintenance (or retired) cannot be assigned.
+    if d['status'] == 'maintenance':
+        flash(f'Device {d["serial_number"]} is under maintenance and can\'t be assigned. Return it to In Stock first.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+    if d['status'] == 'retired':
+        flash(f'Device {d["serial_number"]} is retired and can\'t be assigned.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
     # Current assignment (if any) — presence means this is a REASSIGNMENT
     active = q_one("""SELECT da.*, p.first_name, p.last_name, p.mrn, p.id AS patient_id
                       FROM device_assignments da
@@ -3884,6 +3892,37 @@ def device_retire(device_id):
     _log_access('device_retire', ref_type='device', ref_id=device_id,
                 detail=f'Device {d["serial_number"]} retired')
     flash(f'Device {d["serial_number"]} retired.', 'success')
+    return redirect(url_for('device_detail', device_id=device_id))
+
+
+@app.route('/devices/<int:device_id>/set-status', methods=['POST'])
+@require_login
+def device_set_status(device_id):
+    """Toggle a device between In Stock and Maintenance. Only valid for an
+    unassigned device that is currently in_stock or maintenance."""
+    oid = current_org_id()
+    d = q_one('SELECT * FROM devices WHERE id = ? AND organization_id = ?',
+              (device_id, oid))
+    if not d:
+        abort(404)
+    target = request.form.get('status', '')
+    if target not in ('in_stock', 'maintenance'):
+        flash('Invalid status.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+    if d['status'] not in ('in_stock', 'maintenance'):
+        flash(f'Cannot change the maintenance status of a device that is {d["status"].replace("_", " ")}.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+    active = q_one("""SELECT 1 AS x FROM device_assignments
+                      WHERE device_id = ? AND returned_date IS NULL LIMIT 1""",
+                   (device_id,))
+    if active:
+        flash('Unassign the device before changing its maintenance status.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+    q_exec("UPDATE devices SET status = ? WHERE id = ?", (target, device_id))
+    _log_access('device_status', ref_type='device', ref_id=device_id,
+                detail=f'Device {d["serial_number"]} status set to {target}')
+    label = 'In Stock' if target == 'in_stock' else 'Maintenance'
+    flash(f'Device {d["serial_number"]} moved to {label}.', 'success')
     return redirect(url_for('device_detail', device_id=device_id))
 
 

@@ -406,7 +406,7 @@
                   <div class="small muted">Rx: {{ therapy_goal_per_day }} sessions/day · {{ t.completed_30d }} of {{ t.goal_30d }} completed in last 30 days</div>
                 </div>
                 <div class="adherence">
-                  <span class="{{ t.pct_30d | adherence_class }}" style="font-size: 28px; font-family: var(--font-head); font-weight: 300;">{{ t.pct_30d }}%</span>
+                  <span class="{{ t.pct_30d | adherence_class }}" style="font-size: 28px; font-weight: 700;">{{ t.pct_30d }}%</span>
                 </div>
               </div>
               <div class="card-body">
@@ -423,7 +423,7 @@
                 <div class="mt-3">
                   <div class="flex-between">
                     <strong style="font-size: 13px;">Recent sessions</strong>
-                    <a href="{{ url_for('patient_sessions', patient_id=patient.id, modality=modality) }}" class="btn btn-sm btn-link">View all &amp; print →</a>
+                    <a href="{{ url_for('patient_sessions', patient_id=patient.id, modality=modality) }}" class="btn btn-sm btn-link">View Therapies &amp; Print →</a>
                   </div>
                   {% if t.recent %}
                     <table class="table session-list mt-1">

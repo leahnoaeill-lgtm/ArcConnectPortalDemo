@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 {% endblock %}
 {% block body %}
-<div class="page">
+<div class="page pd-soft">
 
   <div class="page-header">
     <div>
@@ -17,21 +17,25 @@
   </div>
 
   <div class="kpis">
-    <a href="{{ url_for('patients') }}" class="kpi kpi-link">
+    <a href="{{ url_for('patients') }}" class="kpi kpi-link cat-last">
+      <div class="kpi-icon">👥</div>
       <div class="label">Total patients</div>
       <div class="value">{{ kpis.total_patients }}</div>
     </a>
-    <a href="{{ url_for('patients', sort='cough_adh', dir='asc') }}" class="kpi kpi-red kpi-link">
+    <a href="{{ url_for('patients', sort='cough_adh', dir='asc') }}" class="kpi kpi-link cat-alert">
+      <div class="kpi-icon">⚠️</div>
       <div class="label">At risk</div>
       <div class="value">{{ kpis.at_risk }}</div>
       <div class="sub">{{ kpis.critical }} critical</div>
     </a>
-    <a href="{{ url_for('patients', sort='cough_adh', dir='desc') }}" class="kpi kpi-green kpi-link">
+    <a href="{{ url_for('patients', sort='cough_adh', dir='desc') }}" class="kpi kpi-link cat-adh">
+      <div class="kpi-icon">✅</div>
       <div class="label">On track</div>
       <div class="value">{{ kpis.on_track }}</div>
       <div class="sub">≥ 80% adherence</div>
     </a>
-    <a href="{{ url_for('devices', tab='assigned') }}" class="kpi kpi-slate kpi-link">
+    <a href="{{ url_for('devices', tab='assigned') }}" class="kpi kpi-link cat-dev">
+      <div class="kpi-icon">🔧</div>
       <div class="label">Devices in use</div>
       <div class="value">{{ device_kpis.in_use }}/{{ device_kpis.total }}</div>
       <div class="sub">{{ device_kpis.in_stock }} in stock · {{ device_kpis.maintenance }} maintenance</div>
@@ -476,8 +480,8 @@
           <div style="font-size: 14px; font-weight: 600; margin-top: 3px;">${esc(c.name)}</div>
           <div style="font-size: 11px; color: #888;">${esc(c.city || '')}${c.state ? ', ' + esc(c.state) : ''}</div>
           <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-            <div><div style="font-size: 18px; font-weight: 300;">${c.patient_count}</div><div style="font-size: 9px; text-transform: uppercase; color: #888;">Patients</div></div>
-            <div><div style="font-size: 18px; font-weight: 300; color: ${color};">${c.avg_adh !== null ? c.avg_adh + '%' : '—'}</div><div style="font-size: 9px; text-transform: uppercase; color: #888;">Avg adherence</div></div>
+            <div><div style="font-size: 18px; font-weight: 700;">${c.patient_count}</div><div style="font-size: 9px; text-transform: uppercase; color: #888;">Patients</div></div>
+            <div><div style="font-size: 18px; font-weight: 700; color: ${color};">${c.avg_adh !== null ? c.avg_adh + '%' : '—'}</div><div style="font-size: 9px; text-transform: uppercase; color: #888;">Avg adherence</div></div>
           </div>
         </div>`;
       marker.bindPopup(popup);

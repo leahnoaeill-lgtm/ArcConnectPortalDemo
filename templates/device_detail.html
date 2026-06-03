@@ -11,14 +11,27 @@
       <div class="subtitle">
         {{ device.model | model_label }} ·
         Firmware {{ device.firmware_version or '—' }} ·
+        Software {{ device.software_version or '—' }} ·
         Added {{ device.upload_date | date_only }}
       </div>
     </div>
     <div class="actions">
       {% set active = assignments | selectattr('returned_date','none') | list %}
       {% if not active %}
-        {% if device.status != 'retired' %}
+        {% if device.status == 'maintenance' %}
+          <form method="POST" action="{{ url_for('device_set_status', device_id=device.id) }}" style="display:inline;">
+            <input type="hidden" name="status" value="in_stock">
+            <button type="submit" class="btn btn-primary">Return to In Stock</button>
+          </form>
+          <form method="POST" action="{{ url_for('device_retire', device_id=device.id) }}" onsubmit="return confirm('Retire device {{ device.serial_number }}? It will be excluded from dashboards and the map. This action is not undoable from the UI.');" style="display:inline;">
+            <button type="submit" class="btn btn-danger">Retire</button>
+          </form>
+        {% elif device.status != 'retired' %}
           <a href="{{ url_for('device_assign', device_id=device.id) }}" class="btn btn-primary">Assign to patient</a>
+          <form method="POST" action="{{ url_for('device_set_status', device_id=device.id) }}" style="display:inline;">
+            <input type="hidden" name="status" value="maintenance">
+            <button type="submit" class="btn">Send to maintenance</button>
+          </form>
           <form method="POST" action="{{ url_for('device_retire', device_id=device.id) }}" onsubmit="return confirm('Retire device {{ device.serial_number }}? It will be excluded from dashboards and the map. This action is not undoable from the UI.');" style="display:inline;">
             <button type="submit" class="btn btn-danger">Retire</button>
           </form>
@@ -101,6 +114,10 @@
           <div class="form-group mb-2">
             <label>Firmware version</label>
             <div>{{ device.firmware_version or '—' }}</div>
+          </div>
+          <div class="form-group mb-2">
+            <label>Software version</label>
+            <div>{{ device.software_version or '—' }}</div>
           </div>
           <div class="form-group mb-2">
             <label>Upload date</label>

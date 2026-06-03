@@ -95,7 +95,7 @@
                   <a href="{{ url_for('referring_provider_edit', provider_id=p.id) }}" class="btn btn-sm">Edit</a>
                   {% if p.is_active %}
                     <form method="POST" action="{{ url_for('referring_provider_deactivate', provider_id=p.id) }}" style="display:inline;">
-                      <button type="submit" class="btn btn-sm">Deactivate</button>
+                      <button type="submit" class="btn btn-sm btn-warn">Deactivate</button>
                     </form>
                   {% else %}
                     <form method="POST" action="{{ url_for('referring_provider_activate', provider_id=p.id) }}" style="display:inline;">

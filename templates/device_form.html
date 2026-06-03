@@ -34,6 +34,11 @@
           <div class="help">As shown on the device setup screen.</div>
         </div>
         <div class="form-group">
+          <label>Software version</label>
+          <input type="text" name="software_version" placeholder="e.g. 2.6.0">
+          <div class="help">Arc Connect app/software version on the device.</div>
+        </div>
+        <div class="form-group">
           <label>Upload date</label>
           <input type="date" name="upload_date" value="{{ today if today else '' }}">
           <div class="help">When the device was added to your inventory. Defaults to today.</div>

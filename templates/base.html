@@ -383,6 +383,77 @@ document.querySelectorAll('.card-linked[data-href]').forEach(function(card) {
   document.querySelectorAll('table.sortable').forEach(initTable);
 })();
 
+// ── Generic client-side sort for ANY plain <table class="table"> ─────
+// Makes every labeled column clickable, sorting by the column's cell text
+// (numeric and DD-MMM-YYYY date aware). Skips tables that already sort:
+// the data-driven `.sortable` tables and server-side sort-link tables.
+(function() {
+  const MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+  function parseVal(text) {
+    const t = (text || '').replace(/\s+/g, ' ').trim();
+    if (t === '' || t === '—' || t === '-') return {empty: true};
+    const d = t.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})/);   // DD-MMM-YYYY[ time]
+    if (d && MONTHS[d[2].toLowerCase()] !== undefined) {
+      return {num: new Date(+d[3], MONTHS[d[2].toLowerCase()], +d[1]).getTime()};
+    }
+    if (/^[^A-Za-z]*-?\d/.test(t)) {                          // leading number (counts, %, pressures)
+      const n = parseFloat(t.replace(/[^0-9.\-]/g, ''));
+      if (!isNaN(n)) return {num: n};
+    }
+    return {str: t.toLowerCase()};
+  }
+  function sortBy(table, idx, dir) {
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.children).filter(r => r.tagName === 'TR');
+    rows.sort((a, b) => {
+      const ac = a.children[idx], bc = b.children[idx];
+      const av = parseVal(ac ? ac.textContent : ''), bv = parseVal(bc ? bc.textContent : '');
+      if (av.empty && bv.empty) return 0;
+      if (av.empty) return 1;
+      if (bv.empty) return -1;
+      let cmp;
+      if ('num' in av && 'num' in bv) cmp = av.num - bv.num;
+      else cmp = String('str' in av ? av.str : av.num)
+                  .localeCompare(String('str' in bv ? bv.str : bv.num), undefined, {numeric: true, sensitivity: 'base'});
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    rows.forEach(r => tbody.appendChild(r));
+  }
+  function initGeneric(table) {
+    const headRow = table.querySelector('thead tr');
+    if (!headRow) return;
+    const ths = Array.from(headRow.children).filter(c => c.tagName === 'TH');
+    ths.forEach((th, idx) => {
+      if (th.textContent.trim() === '' || th.hasAttribute('data-no-sort')) return; // skip icon/action cols
+      const span = document.createElement('span');
+      span.className = 'sort-arrow sort-arrow-both';
+      span.textContent = '⇅';
+      th.appendChild(span);
+      th.classList.add('sortable-th');
+      th.addEventListener('click', () => {
+        const dir = (table.dataset.gsortIdx === String(idx) && table.dataset.gsortDir === 'asc') ? 'desc' : 'asc';
+        sortBy(table, idx, dir);
+        table.dataset.gsortIdx = idx; table.dataset.gsortDir = dir;
+        ths.forEach((o, i) => {
+          const ar = o.querySelector('.sort-arrow'); if (!ar) return;
+          const active = i === idx;
+          o.classList.toggle('sort-active', active);
+          ar.textContent = active ? (dir === 'asc' ? '▲' : '▼') : '⇅';
+          ar.classList.toggle('sort-arrow-asc',  active && dir === 'asc');
+          ar.classList.toggle('sort-arrow-desc', active && dir === 'desc');
+          ar.classList.toggle('sort-arrow-both', !active);
+        });
+      });
+    });
+  }
+  document.querySelectorAll('table.table').forEach(function(table) {
+    if (table.classList.contains('sortable')) return;        // data-driven sort already handles it
+    if (table.querySelector('thead a.sort-link')) return;    // server-side sort already handles it
+    initGeneric(table);
+  });
+})();
+
 // ── Chip popover logic ─────────────────────────────────────────────
 function openChipPopover(e, patientId, modality) {
   e.preventDefault();

@@ -323,6 +323,7 @@ CREATE TABLE IF NOT EXISTS devices (
     serial_number TEXT UNIQUE NOT NULL,
     model TEXT NOT NULL CHECK(model IN ('biwaze_cough', 'biwaze_clear')),
     firmware_version TEXT,
+    software_version TEXT,
     upload_date DATE,
     last_communication TIMESTAMP,
     warranty_end DATE,

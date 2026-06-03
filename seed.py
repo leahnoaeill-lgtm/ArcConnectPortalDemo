@@ -1434,6 +1434,11 @@ def seed():
             c.executemany("""INSERT INTO patient_goal_log (goal_id, log_date, actual_value)
                              VALUES (?,?,?)""", logs)
 
+    # Demo software (app) version per model — distinct from device firmware.
+    c.execute("""UPDATE devices SET software_version =
+                   CASE model WHEN 'biwaze_cough' THEN '2.6.0' ELSE '1.8.2' END
+                 WHERE software_version IS NULL""")
+
     conn.commit()
     conn.close()
     print(f'Seeded {DB_PATH}')
