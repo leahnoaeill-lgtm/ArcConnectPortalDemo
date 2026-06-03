@@ -16,14 +16,13 @@
   <div class="page-header">
     <div>
       <h1>{{ 'Edit' if editing else 'Add' }} patient</h1>
-      {% if editing %}<div class="subtitle">{{ patient.first_name }} {{ patient.last_name }} · Patient ID {{ patient.mrn }}</div>{% endif %}
     </div>
     <a href="{{ url_for('patient_detail', patient_id=patient.id) if editing else url_for('patients') }}" class="btn">← Back</a>
   </div>
 
   <div class="card">
     <form method="POST" action="{{ url_for('patient_edit', patient_id=patient.id) if editing else url_for('patient_new') }}" class="card-body">
-      <div class="form-grid">
+      <div class="form-grid" style="max-width: none;">
         <div class="form-group required">
           <label>First name</label>
           <input type="text" name="first_name" required value="{{ patient.first_name if editing else '' }}">
@@ -40,6 +39,14 @@
           <label>Date of birth</label>
           <input type="date" name="dob" value="{{ patient.dob if editing else '' }}">
         </div>
+        <div class="form-group">
+          <label>Preferred language</label>
+          <select name="preferred_language">
+            {% for lang, label in [('en-US','English (US)'),('es-US','Spanish (US)'),('zh','Chinese'),('other','Other')] %}
+              <option value="{{ lang }}" {% if editing and patient.preferred_language == lang %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
         <div class="form-group required">
           <label>HME relationship status</label>
           <select name="status" required>
@@ -49,7 +56,7 @@
           <div class="help">Active or inactive for this HME location. Inactive patients stay visible for historical purposes.</div>
         </div>
         {% if editing %}
-        <div class="form-group">
+        <div class="form-group span-2">
           <label>Mobile app pairing</label>
           <div style="padding-top:6px;">
             {% if patient.mobile_app_enabled %}
@@ -163,20 +170,11 @@
                  pattern="[0-9]{5}" placeholder="5 digits"
                  value="{{ patient.zip if editing else '' }}">
         </div>
-        <div class="form-group">&nbsp;</div>
-        <div class="form-group">
-          <label>Preferred language</label>
-          <select name="preferred_language">
-            {% for lang, label in [('en-US','English (US)'),('es-US','Spanish (US)'),('zh','Chinese'),('other','Other')] %}
-              <option value="{{ lang }}" {% if editing and patient.preferred_language == lang %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
         <div class="form-group span-2">
           <label>Diagnoses</label>
-          <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
             {% for i in range(4) %}
-            <select name="diagnosis{{ '' if i == 0 else i + 1 }}" style="flex:1 1 180px;">
+            <select name="diagnosis{{ '' if i == 0 else i + 1 }}" style="width:100%;">
               <option value="">{{ '— Primary diagnosis —' if i == 0 else '— Additional diagnosis —' }}</option>
               {% for dx in diagnosis_options %}
                 <option value="{{ dx }}" {% if dx_values[i] == dx %}selected{% endif %}>{{ dx }}</option>
