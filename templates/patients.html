@@ -20,7 +20,7 @@
   {% if patients %}
   <div class="filter-bar" id="patientFilterBar">
     <div class="filter-search">
-      <input type="search" id="patientSearch" placeholder="Search name, PT ID, diagnosis, city, or state…" autocomplete="off" autofocus>
+      <input type="search" id="patientSearch" placeholder="Search name, PT ID, diagnosis, city, state, or app status…" autocomplete="off" autofocus>
     </div>
     <select class="filter-select" id="patientModalityFilter">
       <option value="">All devices</option>
@@ -85,7 +85,7 @@
             {% set risk_bucket = 'critical' if pct < 50 else ('at_risk' if pct < 80 else 'on_track') %}
             {% set modality_tag = 'both' if (p.has_cough and p.has_clear) else ('cough' if p.has_cough else ('clear' if p.has_clear else 'none')) %}
             <tr class="clickable patient-row"
-                data-search="{{ (p.first_name ~ ' ' ~ p.last_name ~ ' ' ~ (p.mrn or '') ~ ' ' ~ (p.diagnosis or '') ~ ' ' ~ (p.city or '') ~ ' ' ~ (p.state or '')) | lower }}"
+                data-search="{{ (p.first_name ~ ' ' ~ p.last_name ~ ' ' ~ (p.mrn or '') ~ ' ' ~ (p.diagnosis or '') ~ ' ' ~ (p.city or '') ~ ' ' ~ (p.state or '') ~ ' ' ~ ('app paired' if p.mobile_app_enabled else 'app not paired')) | lower }}"
                 data-modality="{{ modality_tag }}"
                 data-risk="{{ risk_bucket }}"
                 onclick="window.location='{{ url_for('patient_detail', patient_id=p.id) }}'">

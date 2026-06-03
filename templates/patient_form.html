@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set editing = patient is defined and patient %}
-{% block title %}{{ 'Edit' if editing else 'Add' }} patient · Arc Connect Portal{% endblock %}
+{% block title %}{{ 'Edit Patient Profile' if editing else 'Add patient' }} · Arc Connect Portal{% endblock %}
 {% block body %}
 {% set diagnosis_options = [
   'ALS (Amyotrophic Lateral Sclerosis)', 'Bronchiectasis', 'Cerebral Palsy',
@@ -15,7 +15,7 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <h1>{{ 'Edit' if editing else 'Add' }} patient</h1>
+      <h1>{{ 'Edit Patient Profile' if editing else 'Add patient' }}</h1>
     </div>
     <a href="{{ url_for('patient_detail', patient_id=patient.id) if editing else url_for('patients') }}" class="btn">← Back</a>
   </div>

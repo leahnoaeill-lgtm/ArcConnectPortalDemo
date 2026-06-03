@@ -67,7 +67,7 @@
           </form>
         </div>
       </details>
-      <a href="{{ url_for('patient_edit', patient_id=patient.id) }}" class="btn">Edit patient</a>
+      <a href="{{ url_for('patient_edit', patient_id=patient.id) }}" class="btn">Edit Patient Profile</a>
       {% if patient.status == 'active' %}
       <form method="POST" action="{{ url_for('patient_set_status', patient_id=patient.id) }}" style="display:inline;"
             onsubmit="return confirm('Mark {{ patient.first_name }} {{ patient.last_name }} inactive for this HME location?\n\nTheir data stays visible for historical purposes.');">
@@ -83,10 +83,22 @@
     </div>
   </div>
 
+  {% set adh = patient.adherence_pct_30d %}
+  {% set adh_tier = 'red' if (adh is not none and adh < 50) else ('yellow' if (adh is not none and adh < 80) else 'green') %}
   <div class="kpis">
-    <div class="kpi kpi-{% if patient.adherence_pct_30d is not none and patient.adherence_pct_30d < 50 %}red{% elif patient.adherence_pct_30d is not none and patient.adherence_pct_30d < 80 %}yellow{% else %}green{% endif %}">
+    <div class="kpi kpi-{{ adh_tier }}">
       <div class="label">Adherence (30d)</div>
-      <div class="value">{{ patient.adherence_pct_30d if patient.adherence_pct_30d is not none else '—' }}%</div>
+      <div class="kpi-ring">
+        <svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+          <circle cx="32" cy="32" r="26" fill="none" stroke="var(--ac-border)" stroke-width="7"></circle>
+          <circle cx="32" cy="32" r="26" fill="none" stroke-width="7" stroke-linecap="round"
+                  style="stroke: var(--ac-{{ adh_tier }});"
+                  stroke-dasharray="163.4"
+                  stroke-dashoffset="{{ (163.4 * (1 - (adh or 0) / 100)) | round(1) }}"
+                  transform="rotate(-90 32 32)"></circle>
+        </svg>
+        <div class="kpi-ring-label">{{ adh if adh is not none else '—' }}{% if adh is not none %}<span>%</span>{% endif %}</div>
+      </div>
     </div>
     <div class="kpi kpi-slate">
       <div class="label">Last session</div>
@@ -101,6 +113,23 @@
       <div class="value">{{ alerts | selectattr('resolved_at','none') | list | length }}</div>
     </div>
   </div>
+
+  {% if activity_30d %}
+  {% set act_max = (activity_30d | map(attribute='count') | max) or 1 %}
+  {% set act_n = activity_30d | length %}
+  <div class="sparkline-card">
+    <div class="sparkline-head">
+      <span class="label">Therapy activity · last 30 days</span>
+      <span class="sparkline-total">{{ activity_30d | sum(attribute='count') }} sessions</span>
+    </div>
+    <svg class="sparkline" viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true">
+      <polygon fill="var(--ac-cyan-light)" stroke="none"
+        points="0,48 {% for a in activity_30d %}{{ (loop.index0 / (act_n - 1) * 300) | round(1) }},{{ (44 - (a.count / act_max * 40)) | round(1) }} {% endfor %}300,48"></polygon>
+      <polyline fill="none" stroke="var(--ac-cyan-dark)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+        points="{% for a in activity_30d %}{{ (loop.index0 / (act_n - 1) * 300) | round(1) }},{{ (44 - (a.count / act_max * 40)) | round(1) }} {% endfor %}"></polyline>
+    </svg>
+  </div>
+  {% endif %}
 
   {% set open_alerts = alerts | selectattr('resolved_at','none') | list %}
 
