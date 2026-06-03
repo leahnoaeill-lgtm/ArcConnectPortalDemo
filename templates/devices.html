@@ -108,7 +108,7 @@
               <td>
                 {% if d.first_name %}
                   <a href="{{ url_for('device_assign', device_id=d.id) }}"
-                     class="btn btn-sm"
+                     class="btn btn-sm btn-amber"
                      onclick="event.stopPropagation();">Reassign</a>
                 {% else %}
                   <a href="{{ url_for('device_assign', device_id=d.id) }}"

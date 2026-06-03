@@ -37,7 +37,7 @@
           </form>
         {% endif %}
       {% else %}
-        <a href="{{ url_for('device_assign', device_id=device.id) }}" class="btn btn-primary">Reassign</a>
+        <a href="{{ url_for('device_assign', device_id=device.id) }}" class="btn btn-amber">Reassign</a>
         <form method="POST" action="{{ url_for('device_unassign', device_id=device.id, assignment_id=active[0].id) }}" onsubmit="return confirm('Unassign this device from {{ active[0].first_name }} {{ active[0].last_name }} and return to inventory?');" style="display:inline;">
           <button type="submit" class="btn btn-danger">Unassign</button>
         </form>
@@ -75,7 +75,7 @@
                     {% if a.returned_date %}
                       {{ a.returned_date | date_only }}
                     {% else %}
-                      <span class="badge status-in_use">Active</span>
+                      <span class="badge status-assigned">Active</span>
                     {% endif %}
                   </td>
                   <td class="small muted">

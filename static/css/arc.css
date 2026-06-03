@@ -17,7 +17,9 @@
   --ac-dark: #21272B;
   --ac-green: #00B050;
   --ac-green-light: #E0F2E4;
-  --ac-teal: #0E9C95;   /* blue-green accent (avatars, count badges) */
+  --ac-teal: #0E9C95;   /* blue-green accent (avatars, count badges, Active) */
+  --ac-teal-deep: #115E59;  /* deeper teal — device "In Use" */
+  --ac-teal-light: #D5EFEC; /* light teal tint */
   --ac-yellow: #FCBE03;
   --ac-yellow-light: #FFF5D6;
   --ac-red: #C00000;
@@ -1218,9 +1220,21 @@ a.kpi-link:hover .sub {
 /* Email glyph: sized to match the phone icon, dark grey (not link-blue) */
 .email-ico { font-size: 1.6em; line-height: 1; vertical-align: -0.18em; color: var(--ac-slate-deep); }
 
-/* Patient record header: teal Active badge + a little space after the name */
+/* Patient record header: a little space after the name */
 .pd-soft .page-header h1 .badge { margin-left: 10px; }
-.pd-soft .page-header h1 .badge.status-active { background: var(--ac-teal); }
+/* Teal (not kelly green) status pills + percentages throughout the patient record
+   — Active, Current, Primary badges and green % values. */
+.pd-soft .badge.status-active { background: var(--ac-teal); }
+.pd-soft .status-green { color: var(--ac-teal); }
+.pd-soft .dot.status-green { background: var(--ac-teal); }
+.pd-soft .adh-chip-pct.status-green { background: var(--ac-teal); }
+.pd-soft .survey-score-pill.status-green { background: var(--ac-teal); }
+
+/* Referring menu (clinics + providers tables): teal Active label */
+.ref-area .badge.status-active { background: var(--ac-teal); }
+
+/* Settings (Users, Alert rules): teal Active label */
+.settings-area .badge.status-active { background: var(--ac-teal); }
 
 /* Soft, low-emphasis informational tag (NOT a status fill, NOT a button) —
    tinted background + colored text + hairline border, normal case. */
@@ -1237,7 +1251,8 @@ a.kpi-link:hover .sub {
 .badge.severity-warning  { background: var(--ac-yellow); color: var(--ac-dark); }
 .badge.severity-info     { background: var(--ac-slate); color: white; }
 
-.badge.status-in_use      { background: var(--ac-green); color: white; }
+.badge.status-in_use      { background: var(--ac-teal-deep); color: white; }
+.badge.status-assigned    { background: var(--ac-teal); color: white; }
 .badge.status-in_stock    { background: var(--ac-cyan); color: white; }
 .badge.status-maintenance { background: var(--ac-yellow); color: var(--ac-dark); }
 .badge.status-retired     { background: var(--ac-gray); color: white; }
@@ -1688,7 +1703,7 @@ body.super-readonly .super-admin-banner button {
 }
 
 /* Audit-log event badges */
-.badge.audit-event-patient_view    { background: var(--ac-cyan-light); color: var(--ac-cyan-dark); }
+.badge.audit-event-patient_view    { background: var(--ac-teal-light); color: var(--ac-teal-deep); }
 .badge.audit-event-session_view    { background: var(--ac-slate-light); color: var(--ac-slate-deep); }
 .badge.audit-event-report_generate { background: #EADFFB; color: #5F3AA8; }
 .badge.audit-event-data_export     { background: var(--ac-yellow-light); color: #8A6200; }
@@ -2098,6 +2113,30 @@ body.super-readonly .super-admin-banner button {
   color: white;
   border-color: var(--ac-green);
 }
+
+/* Teal filled button (e.g. Inbox "Send reply") */
+.btn-teal {
+  background: var(--ac-teal);
+  color: white;
+  border-color: var(--ac-teal);
+}
+.btn-teal:hover {
+  background: var(--ac-teal-deep);
+  border-color: var(--ac-teal-deep);
+  color: white;
+}
+
+/* "Change status" buttons — outlined in each status's portal color, fill on hover */
+.task-status-btn-todo            { color: var(--ac-cyan-dark); border-color: var(--ac-cyan); }
+.task-status-btn-todo:hover      { background: var(--ac-cyan); color: #fff; border-color: var(--ac-cyan); }
+.task-status-btn-in_progress     { color: #1E7A45; border-color: var(--ac-green); }
+.task-status-btn-in_progress:hover { background: var(--ac-green); color: #fff; border-color: var(--ac-green); }
+.task-status-btn-pending_external      { color: #6D4CA6; border-color: #8B6CC6; }
+.task-status-btn-pending_external:hover { background: #8B6CC6; color: #fff; border-color: #8B6CC6; }
+.task-status-btn-completed       { color: #1E7A45; border-color: var(--ac-green); }
+.task-status-btn-completed:hover { background: var(--ac-green); color: #fff; border-color: var(--ac-green); }
+.task-status-btn-cancelled       { color: var(--ac-red); border-color: var(--ac-red); }
+.task-status-btn-cancelled:hover { background: var(--ac-red); color: #fff; border-color: var(--ac-red); }
 
 .btn.is-armed {
   background: #9a0000;

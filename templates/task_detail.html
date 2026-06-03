@@ -151,7 +151,7 @@
                 {% endfor %}
               </select>
             </div>
-            <button type="submit" class="btn btn-sm btn-primary">Reassign</button>
+            <button type="submit" class="btn btn-sm btn-amber">Reassign</button>
           </form>
         </div>
       </div>
@@ -162,7 +162,7 @@
           <form method="POST" action="{{ url_for('task_status', task_id=task.id) }}" class="flex gap-1" style="flex-wrap: wrap;">
             {% for key, label in status_labels.items() %}
               <button type="submit" name="status" value="{{ key }}"
-                      class="btn btn-sm task-status-btn {{ 'btn-primary' if task.status == key else '' }}"
+                      class="btn btn-sm task-status-btn task-status-btn-{{ key }}"
                       {% if task.status == key %}disabled{% endif %}>{{ label }}</button>
             {% endfor %}
           </form>

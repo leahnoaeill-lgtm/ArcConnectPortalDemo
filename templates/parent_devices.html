@@ -100,7 +100,7 @@
                 <td>
                   {% set assign_href = url_for('switch_location', org_id=d.loc_id, next='/devices/' + (d.id | string) + '/assign') %}
                   {% if d.first_name %}
-                    <a href="{{ assign_href }}" class="btn btn-sm" onclick="event.stopPropagation();">Reassign</a>
+                    <a href="{{ assign_href }}" class="btn btn-sm btn-amber" onclick="event.stopPropagation();">Reassign</a>
                   {% else %}
                     <a href="{{ assign_href }}" class="btn btn-sm btn-primary" onclick="event.stopPropagation();">Assign</a>
                   {% endif %}

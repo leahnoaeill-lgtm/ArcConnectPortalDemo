@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Alert rules · Arc Connect Portal{% endblock %}
 {% block body %}
-<div class="page">
+<div class="page settings-area">
   <div class="page-header">
     <div>
       <h1>Alert rules</h1>
@@ -54,9 +54,9 @@
               <td class="num">{{ r.threshold_value }}</td>
               <td><span class="badge severity-{{ r.severity }}">{{ r.severity | upper }}</span></td>
               <td class="small">
-                {% if r.notify_email %}<span class="email-ico">✉</span> Email{% endif %}
-                {% if r.notify_in_app %} · 🔔 In-app{% endif %}
-                {% if r.notify_sms %} · 📱 Text{% endif %}
+                {% if r.notify_email %}<div><span class="email-ico">✉</span> Email</div>{% endif %}
+                {% if r.notify_in_app %}<div>🔔 In-app</div>{% endif %}
+                {% if r.notify_sms %}<div>📱 Text</div>{% endif %}
               </td>
               <td>
                 {% if r.is_active %}
