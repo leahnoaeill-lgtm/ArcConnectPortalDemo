@@ -52,7 +52,7 @@
         <div class="form-group span-2 mt-2">
           <label>Notification channels</label>
           <div class="check-group" style="flex-direction: row; gap: 24px;">
-            <label><input type="checkbox" name="notify_email" {% if not rule or rule.notify_email %}checked{% endif %}> ✉ Email</label>
+            <label><input type="checkbox" name="notify_email" {% if not rule or rule.notify_email %}checked{% endif %}> <span class="email-ico">✉</span> Email</label>
             <label><input type="checkbox" name="notify_in_app" {% if not rule or rule.notify_in_app %}checked{% endif %}> 🔔 In-app</label>
             <label><input type="checkbox" name="notify_sms" {% if rule and rule.notify_sms %}checked{% endif %}> 📱 Text</label>
           </div>

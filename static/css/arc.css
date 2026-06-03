@@ -1215,6 +1215,13 @@ a.kpi-link:hover .sub {
   white-space: nowrap;
 }
 
+/* Email glyph: sized to match the phone icon, dark grey (not link-blue) */
+.email-ico { font-size: 1.6em; line-height: 1; vertical-align: -0.18em; color: var(--ac-slate-deep); }
+
+/* Patient record header: teal Active badge + a little space after the name */
+.pd-soft .page-header h1 .badge { margin-left: 10px; }
+.pd-soft .page-header h1 .badge.status-active { background: var(--ac-teal); }
+
 /* Soft, low-emphasis informational tag (NOT a status fill, NOT a button) —
    tinted background + colored text + hairline border, normal case. */
 .badge.badge-soft {
@@ -1832,6 +1839,7 @@ body.super-readonly .super-admin-banner button {
 .check-row input[type="checkbox"] {
   margin-top: 4px;
   width: 16px; height: 16px;
+  accent-color: var(--ac-teal);
 }
 
 /* Print-report chooser dropdown (patient detail) */
@@ -1977,10 +1985,10 @@ body.super-readonly .super-admin-banner button {
   justify-content: center;
   gap: 6px;
   padding: 8px 16px;
-  border: 1px solid var(--ac-cyan);
+  border: 1px solid var(--ac-border-strong);
   border-radius: 8px;
   background: white;
-  color: var(--ac-cyan-dark);
+  color: var(--ac-slate-deep);
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 500;
@@ -1990,15 +1998,16 @@ body.super-readonly .super-admin-banner button {
   transition: all 0.15s ease;
   line-height: 1;
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 .btn:hover {
-  background: var(--ac-cyan);
+  background: var(--ac-slate-light);
   text-decoration: none;
-  border-color: var(--ac-cyan);
-  color: white;
+  border-color: var(--ac-gray);
+  color: var(--ac-slate-deep);
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.10);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
 }
 
 .btn:active { transform: translateY(0); box-shadow: none; }
@@ -2020,13 +2029,13 @@ body.super-readonly .super-admin-banner button {
    with the filled primary. */
 .btn-outline {
   background: white;
-  color: var(--ac-cyan-dark);
-  border-color: var(--ac-cyan);
+  color: var(--ac-slate-deep);
+  border-color: var(--ac-border-strong);
 }
 .btn-outline:hover {
-  background: var(--ac-cyan);
-  border-color: var(--ac-cyan);
-  color: white;
+  background: var(--ac-slate-light);
+  border-color: var(--ac-gray);
+  color: var(--ac-slate-deep);
 }
 
 /* Light-yellow caution button (e.g. Deactivate) */

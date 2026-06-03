@@ -82,7 +82,7 @@
               <td class="mono small">{{ c.npi or '—' }}</td>
               <td class="small">
                 {% if c.phone %}<div><a href="tel:{{ c.phone }}" onclick="event.stopPropagation();">📞 {{ c.phone }}</a></div>{% endif %}
-                {% if c.email %}<div class="muted"><a href="mailto:{{ c.email }}" onclick="event.stopPropagation();">✉ {{ c.email }}</a></div>{% endif %}
+                {% if c.email %}<div class="muted"><a href="mailto:{{ c.email }}" onclick="event.stopPropagation();"><span class="email-ico">✉</span> {{ c.email }}</a></div>{% endif %}
               </td>
               <td class="small">
                 {% if c.city %}

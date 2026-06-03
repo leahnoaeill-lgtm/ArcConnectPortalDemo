@@ -36,8 +36,8 @@
       {% if patient.country and patient.country != 'US' %}{% set _ = _addr_parts.append(patient.country | country_name) %}{% endif %}
       {% set _full_addr = _addr_parts | join(', ') %}
       <div class="patient-contact small muted mt-1">
-        {% if patient.phone %}<a href="tel:{{ patient.phone }}">📞 {{ patient.phone }}</a>{% if patient.mobile_app_enabled %} <span class="badge badge-soft" title="Used for the patient's mobile-app login.">Login</span>{% endif %}{% endif %}
-        {% if patient.email %} · <a href="mailto:{{ patient.email }}">✉ {{ patient.email }}</a>{% if patient.mobile_app_enabled %} <span class="badge badge-soft" title="Used for the patient's mobile-app login.">Login</span>{% endif %}{% endif %}
+        {% if patient.phone %}<a href="tel:{{ patient.phone }}">📞 {{ patient.phone }}</a>{% endif %}
+        {% if patient.email %} · <a href="mailto:{{ patient.email }}"><span class="email-ico">✉</span> {{ patient.email }}</a>{% endif %}
         {% if _full_addr %} · <a href="https://www.google.com/maps/search/?api=1&query={{ _full_addr | urlencode }}" target="_blank" rel="noopener">📍 {{ _full_addr }}</a>{% endif %}
       </div>
     </div>
@@ -817,7 +817,7 @@
                     {% if patient.prov_specialty %}<div class="small muted">{{ patient.prov_specialty }}</div>{% endif %}
                     <div class="small mt-1">
                       {% if patient.prov_phone %}<a href="tel:{{ patient.prov_phone }}">📞 {{ patient.prov_phone }}</a>{% endif %}
-                      {% if patient.prov_email %}<br><a href="mailto:{{ patient.prov_email }}">✉ {{ patient.prov_email }}</a>{% endif %}
+                      {% if patient.prov_email %}<br><a href="mailto:{{ patient.prov_email }}"><span class="email-ico">✉</span> {{ patient.prov_email }}</a>{% endif %}
                       {% if patient.prov_npi %}<br><span class="mono muted">NPI {{ patient.prov_npi }}</span>{% endif %}
                     </div>
                   </div>
@@ -838,7 +838,7 @@
                     {% endif %}
                     <div class="small mt-1">
                       {% if patient.clinic_phone %}<a href="tel:{{ patient.clinic_phone }}">📞 {{ patient.clinic_phone }}</a>{% endif %}
-                      {% if patient.clinic_email %}<br><a href="mailto:{{ patient.clinic_email }}">✉ {{ patient.clinic_email }}</a>{% endif %}
+                      {% if patient.clinic_email %}<br><a href="mailto:{{ patient.clinic_email }}"><span class="email-ico">✉</span> {{ patient.clinic_email }}</a>{% endif %}
                       {% if patient.clinic_url %}<br><a href="{{ patient.clinic_url }}" target="_blank" rel="noopener">{{ patient.clinic_url }}</a>{% endif %}
                       {% if patient.clinic_npi %}<br><span class="mono muted">NPI {{ patient.clinic_npi }}</span>{% endif %}
                     </div>

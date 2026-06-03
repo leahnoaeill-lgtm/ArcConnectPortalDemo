@@ -39,10 +39,10 @@
           <div class="form-group span-2">
             <label>Preferred notification channel</label>
             <div class="check-group">
-              {% for key, label in [('email','✉ Email only'),('sms','📱 Text only'),('both','✉ Email + 📱 Text'),('none','🔕 None (in-app only)')] %}
+              {% for key, label in [('email','<span class="email-ico">✉</span> Email only'),('sms','📱 Text only'),('both','<span class="email-ico">✉</span> Email + 📱 Text'),('none','🔕 None (in-app only)')] %}
                 <label>
                   <input type="radio" name="notify_channel" value="{{ key }}" {% if user.notify_channel == key %}checked{% endif %}>
-                  {{ label }}
+                  {{ label | safe }}
                 </label>
               {% endfor %}
             </div>
