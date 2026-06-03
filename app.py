@@ -4207,7 +4207,7 @@ def audit_log():
     filter_user  = request.args.get('user', type=int) or 0
     filter_patient = request.args.get('patient', type=int) or 0
     filter_location = request.args.get('location', type=int) or 0
-    show_external = request.args.get('source') == 'abmrc'   # ABMRC accesses tab
+    show_external = False   # ABMRC access view removed
 
     # Scope: parent admins see every child location + themselves; location
     # admins only their own org.

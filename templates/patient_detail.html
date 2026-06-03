@@ -197,11 +197,11 @@
                   <div class="alert-actions">
                     {% if not a.acknowledged_at %}
                     <form method="POST" action="{{ url_for('alert_acknowledge', alert_id=a.id) }}" style="display:inline;">
-                      <button type="submit" class="btn btn-sm">Acknowledge</button>
+                      <button type="submit" class="btn btn-sm btn-amber">Acknowledge</button>
                     </form>
                     {% endif %}
                     <form method="POST" action="{{ url_for('alert_resolve', alert_id=a.id) }}" style="display:inline;">
-                      <button type="submit" class="btn btn-sm btn-danger"
+                      <button type="submit" class="btn btn-sm btn-success"
                               data-two-step data-two-step-label="Click again to resolve">Resolve</button>
                     </form>
                   </div>

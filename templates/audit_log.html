@@ -21,21 +21,6 @@
     </div>
   {% endif %}
 
-  {# Two top-level tabs: internal portal events vs ABMRC support access. #}
-  <div class="tabs" style="margin-bottom: 8px;">
-    <a href="{{ url_for('audit_log') }}" class="{{ '' if show_external else 'active' }}">
-      Portal events <span class="tab-count">{{ audit_counts.internal or 0 }}</span>
-    </a>
-    <a href="{{ url_for('audit_log', source='abmrc') }}" class="{{ 'active' if show_external else '' }}">
-      ABMRC access <span class="tab-count">{{ audit_counts.external or 0 }}</span>
-    </a>
-  </div>
-
-  {% if show_external %}
-    <div class="flash info" style="margin-bottom: 12px;">
-      Read-only access events from ABMRC support staff working under your signed BAA.
-    </div>
-  {% endif %}
 
   <div class="filter-bar">
     {% if is_parent and locations %}

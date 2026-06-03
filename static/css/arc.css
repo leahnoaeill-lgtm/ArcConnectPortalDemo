@@ -878,6 +878,10 @@ tr.filter-hidden { display: none !important; }
 /* Tables inside card bodies scroll horizontally instead of overflowing
    when a narrow viewport can't fit every column. */
 .card .card-body.no-pad { overflow-x: auto; }
+/* Keep multi-column data tables usable as the viewport narrows: maintain a
+   sensible minimum width and let the card body scroll horizontally instead of
+   squishing/wrapping cells. */
+.card .card-body.no-pad > .table { min-width: 720px; }
 
 /* ── Cards ────────────────────────────────────────────────────────── */
 
@@ -1208,6 +1212,7 @@ a.kpi-link:hover .sub {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   line-height: 1.4;
+  white-space: nowrap;
 }
 
 /* Soft, low-emphasis informational tag (NOT a status fill, NOT a button) —
@@ -1988,12 +1993,12 @@ body.super-readonly .super-admin-banner button {
 }
 
 .btn:hover {
-  background: var(--ac-cyan-light);
+  background: var(--ac-cyan);
   text-decoration: none;
   border-color: var(--ac-cyan);
-  color: var(--ac-cyan-dark);
+  color: white;
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.10);
 }
 
 .btn:active { transform: translateY(0); box-shadow: none; }
@@ -2019,9 +2024,9 @@ body.super-readonly .super-admin-banner button {
   border-color: var(--ac-cyan);
 }
 .btn-outline:hover {
-  background: var(--ac-cyan-light);
+  background: var(--ac-cyan);
   border-color: var(--ac-cyan);
-  color: var(--ac-cyan-dark);
+  color: white;
 }
 
 /* Light-yellow caution button (e.g. Deactivate) */
@@ -2037,8 +2042,8 @@ body.super-readonly .super-admin-banner button {
 }
 
 .btn-danger {
-  background: var(--ac-red);
-  color: white;
+  background: white;
+  color: var(--ac-red);
   border-color: var(--ac-red);
 }
 
@@ -2056,8 +2061,33 @@ body.super-readonly .super-admin-banner button {
 }
 
 .btn-danger:hover {
-  background: #9a0000;
+  background: var(--ac-red);
   color: white;
+  border-color: var(--ac-red);
+}
+
+/* Acknowledge action — outlined amber/gold ("noted, being worked"), fills on hover */
+.btn-amber {
+  background: white;
+  color: #8A6200;
+  border-color: var(--ac-yellow);
+}
+.btn-amber:hover {
+  background: var(--ac-yellow);
+  color: var(--ac-slate-deep);
+  border-color: var(--ac-yellow);
+}
+
+/* Positive action (e.g. Resolve) — outlined green, fills solid on hover */
+.btn-success {
+  background: white;
+  color: #1E7A45;
+  border-color: var(--ac-green);
+}
+.btn-success:hover {
+  background: var(--ac-green);
+  color: white;
+  border-color: var(--ac-green);
 }
 
 .btn.is-armed {
