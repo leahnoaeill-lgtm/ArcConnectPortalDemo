@@ -688,10 +688,13 @@ def parent_patients():
     if bounce: return bounce
     if not ids:
         return render_template('parent_patients.html', patients=[], status='active',
-                               locations=[], filter_location=0)
+                               locations=[], filter_location=0,
+                               cities=[], states=[], filter_city='', filter_state='')
     status = request.args.get('status', 'active')
     sort = request.args.get('sort', 'cough_adh')
     direction = request.args.get('dir', 'asc')
+    filter_city = (request.args.get('city') or '').strip()
+    filter_state = (request.args.get('state') or '').strip()
     # Optional single-location filter — reject ids outside the admin's scope.
     filter_location = request.args.get('location', type=int) or 0
     if filter_location and filter_location in ids:
@@ -700,24 +703,40 @@ def parent_patients():
         filter_location = 0
         query_ids = ids
     ph = ','.join('?' * len(query_ids))
+    conds = [f"p.organization_id IN ({ph})", "p.status = ?"]
+    params = list(query_ids) + [status]
+    if filter_city:
+        conds.append("p.city = ?"); params.append(filter_city)
+    if filter_state:
+        conds.append("p.state = ?"); params.append(filter_state)
     rows = q_all(f"""SELECT p.*, o.id AS loc_id, o.name AS loc_name,
                      u.first_name AS clinician_first, u.last_name AS clinician_last,
                      (SELECT COUNT(*) FROM alerts a WHERE a.patient_id = p.id AND a.resolved_at IS NULL) AS open_alerts
                      FROM patients p
                      JOIN organizations o ON o.id = p.organization_id
                      LEFT JOIN users u ON u.id = p.assigned_clinician_user_id
-                     WHERE p.organization_id IN ({ph}) AND p.status = ?""",
-                 tuple(query_ids) + (status,))
+                     WHERE {' AND '.join(conds)}""",
+                 tuple(params))
     augmented = _attach_modality_adherence(rows)
     # Flat, global sort across the whole list (no per-location grouping).
     sorted_rows = _sort_patients(list(augmented), sort, direction)
     # Location picker list — always show all locations in the admin's scope.
+    all_ph = ','.join('?' * len(ids))
     locations = q_all(
-        f"SELECT id, name FROM organizations WHERE id IN ({','.join('?' * len(ids))}) ORDER BY name",
+        f"SELECT id, name FROM organizations WHERE id IN ({all_ph}) ORDER BY name",
         tuple(ids))
+    # City / State picker options — distinct across the full scope (independent of
+    # the active filters) so the dropdowns always offer every value.
+    cs_rows = q_all(
+        f"SELECT DISTINCT city, state FROM patients WHERE organization_id IN ({all_ph})",
+        tuple(ids))
+    cities = sorted({r['city'] for r in cs_rows if r['city']})
+    states = sorted({r['state'] for r in cs_rows if r['state']})
     return render_template('parent_patients.html', patients=sorted_rows,
                            status=status, sort=sort, direction=direction,
-                           locations=locations, filter_location=filter_location)
+                           locations=locations, filter_location=filter_location,
+                           cities=cities, states=states,
+                           filter_city=filter_city, filter_state=filter_state)
 
 
 @app.route('/parent/devices')
@@ -2443,6 +2462,10 @@ _PATIENT_SORT_CONFIG = {
                      'filter_fn': None},
     'disease':      {'key': lambda p: (p.get('diagnosis') or '').lower(),
                      'filter_fn': None},
+    'city':         {'key': lambda p: (p.get('city') or '').lower(),
+                     'filter_fn': None},
+    'state':        {'key': lambda p: (p.get('state') or '').lower(),
+                     'filter_fn': None},
     'cough_adh':    {'key': lambda p: p.get('cough_pct') or 0,
                      'filter_fn': lambda p: p.get('has_cough')},
     'clear_adh':    {'key': lambda p: p.get('clear_pct') or 0,
@@ -3430,6 +3453,8 @@ def patient_edit(patient_id):
     if not patient: abort(404)
     if request.method == 'POST':
         mods = request.form.getlist('rx_modalities')
+        status = request.form.get('status', 'active')
+        if status not in ('active', 'inactive'): status = 'active'
         clinician_id = request.form.get('assigned_clinician_user_id', type=int) or None
         clinic_id = request.form.get('referring_clinic_id', type=int) or None
         provider_id = request.form.get('referring_provider_id', type=int) or None
@@ -3439,20 +3464,26 @@ def patient_edit(patient_id):
             if prov: clinic_id = prov['clinic_id']
         q_exec("""UPDATE patients SET mrn = ?, first_name = ?, last_name = ?, dob = ?,
                   phone = ?, email = ?, address_line1 = ?, address_line2 = ?,
-                  city = ?, state = ?, zip = ?,
+                  city = ?, state = ?, zip = ?, country = ?,
                   preferred_language = ?, rx_frequency_per_day = ?, rx_modalities = ?,
                   assigned_clinician_user_id = ?, referring_clinic_id = ?,
-                  referring_provider_id = ?, diagnosis = ?
+                  referring_provider_id = ?, diagnosis = ?, diagnosis2 = ?, diagnosis3 = ?, diagnosis4 = ?,
+                  status = ?
                   WHERE id = ? AND organization_id = ?""",
                (request.form.get('mrn'), request.form.get('first_name'),
                 request.form.get('last_name'), request.form.get('dob') or None,
                 request.form.get('phone'), request.form.get('email'),
                 request.form.get('address_line1'), request.form.get('address_line2'),
                 request.form.get('city'), request.form.get('state'), request.form.get('zip'),
+                request.form.get('country') or 'US',
                 request.form.get('preferred_language', 'en-US'),
                 request.form.get('rx_frequency_per_day', type=int),
                 json.dumps(mods), clinician_id, clinic_id, provider_id,
-                request.form.get('diagnosis'),
+                request.form.get('diagnosis') or None,
+                request.form.get('diagnosis2') or None,
+                request.form.get('diagnosis3') or None,
+                request.form.get('diagnosis4') or None,
+                status,
                 patient_id, oid))
         flash('Patient updated.', 'success')
         return redirect(url_for('patient_detail', patient_id=patient_id))
@@ -3468,6 +3499,26 @@ def patient_edit(patient_id):
     return render_template('patient_form.html', clinicians=clinicians,
                            clinics=clinics, providers=providers,
                            patient=patient, patient_mods=p_mods)
+
+
+@app.route('/patients/<int:patient_id>/set-status', methods=['POST'])
+@require_login
+def patient_set_status(patient_id):
+    """Quick toggle of a patient's HME-relationship status (active/inactive)
+    without opening the full edit form. Inactive patients stay visible for
+    historical purposes."""
+    oid = current_org_id()
+    patient = q_one('SELECT * FROM patients WHERE id = ? AND organization_id = ?',
+                    (patient_id, oid))
+    if not patient: abort(404)
+    status = request.form.get('status', '')
+    if status not in ('active', 'inactive'):
+        flash('Invalid status.', 'error')
+        return redirect(url_for('patient_detail', patient_id=patient_id))
+    q_exec('UPDATE patients SET status = ? WHERE id = ? AND organization_id = ?',
+           (status, patient_id, oid))
+    flash('Patient marked ' + ('inactive' if status == 'inactive' else 'active') + '.', 'success')
+    return redirect(url_for('patient_detail', patient_id=patient_id))
 
 
 # Clinical history
@@ -3576,6 +3627,8 @@ def patient_new():
     oid = current_org_id()
     if request.method == 'POST':
         mods = request.form.getlist('rx_modalities')
+        status = request.form.get('status', 'active')
+        if status not in ('active', 'inactive'): status = 'active'
         clinician_id = request.form.get('assigned_clinician_user_id', type=int) or None
         clinic_id = request.form.get('referring_clinic_id', type=int) or None
         provider_id = request.form.get('referring_provider_id', type=int) or None
@@ -3586,20 +3639,25 @@ def patient_new():
             if prov:
                 clinic_id = prov['clinic_id']
         q_exec("""INSERT INTO patients (organization_id, mrn, first_name, last_name, dob,
-                  phone, email, address_line1, address_line2, city, state, zip,
+                  phone, email, address_line1, address_line2, city, state, zip, country,
                   preferred_language, rx_frequency_per_day, rx_modalities,
                   assigned_clinician_user_id, referring_clinic_id, referring_provider_id,
-                  diagnosis, status)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')""",
+                  diagnosis, diagnosis2, diagnosis3, diagnosis4, status)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                (oid, request.form.get('mrn'), request.form.get('first_name'),
                 request.form.get('last_name'), request.form.get('dob') or None,
                 request.form.get('phone'), request.form.get('email'),
                 request.form.get('address_line1'), request.form.get('address_line2'),
                 request.form.get('city'), request.form.get('state'), request.form.get('zip'),
+                request.form.get('country') or 'US',
                 request.form.get('preferred_language', 'en-US'),
                 request.form.get('rx_frequency_per_day', type=int),
                 json.dumps(mods), clinician_id, clinic_id, provider_id,
-                request.form.get('diagnosis')))
+                request.form.get('diagnosis') or None,
+                request.form.get('diagnosis2') or None,
+                request.form.get('diagnosis3') or None,
+                request.form.get('diagnosis4') or None,
+                status))
         flash('Patient added.', 'success')
         return redirect(url_for('patients'))
     clinicians = q_all("""SELECT * FROM users WHERE organization_id = ? AND is_active = 1
@@ -4774,6 +4832,23 @@ def adherence_class(pct):
 def model_label(m):
     return {'biwaze_cough': 'BiWaze Cough',
             'biwaze_clear': 'BiWaze Clear'}.get(m, m or '—')
+
+
+# ISO 3166-1 alpha-2 → display name, matching the patient form's country list.
+COUNTRY_NAMES = {
+    'US': 'United States', 'CA': 'Canada', 'GB': 'United Kingdom', 'IE': 'Ireland',
+    'AU': 'Australia', 'NZ': 'New Zealand', 'MX': 'Mexico', 'BR': 'Brazil',
+    'DE': 'Germany', 'FR': 'France', 'ES': 'Spain', 'PT': 'Portugal', 'IT': 'Italy',
+    'NL': 'Netherlands', 'BE': 'Belgium', 'CH': 'Switzerland', 'AT': 'Austria',
+    'SE': 'Sweden', 'NO': 'Norway', 'DK': 'Denmark', 'FI': 'Finland', 'PL': 'Poland',
+    'IN': 'India', 'SG': 'Singapore', 'JP': 'Japan', 'KR': 'South Korea',
+    'CN': 'China', 'AE': 'United Arab Emirates', 'SA': 'Saudi Arabia', 'ZA': 'South Africa',
+}
+
+
+@app.template_filter('country_name')
+def country_name(code):
+    return COUNTRY_NAMES.get(code, code or '')
 
 
 # ── Run ──────────────────────────────────────────────────────────────────────

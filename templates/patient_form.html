@@ -2,14 +2,21 @@
 {% set editing = patient is defined and patient %}
 {% block title %}{{ 'Edit' if editing else 'Add' }} patient · Arc Connect Portal{% endblock %}
 {% block body %}
-{% set rx_mods = patient_mods if patient_mods is defined else [] %}
+{% set diagnosis_options = [
+  'ALS (Amyotrophic Lateral Sclerosis)', 'Bronchiectasis', 'Cerebral Palsy',
+  'Chronic Respiratory Failure', 'COPD', 'Cystic Fibrosis',
+  'Duchenne Muscular Dystrophy', 'Guillain-Barré Syndrome', 'Multiple Sclerosis',
+  'Muscular Dystrophy (other)', 'Myasthenia Gravis', 'Neuromuscular Disease (other)',
+  "Parkinson's Disease", 'Post-Polio Syndrome', 'Primary Ciliary Dyskinesia',
+  'Pulmonary Fibrosis', 'Recurrent Pneumonia', 'Spinal Cord Injury',
+  'Spinal Muscular Atrophy (SMA)', 'Other'
+] %}
+{% set dx_values = [patient.diagnosis, patient.diagnosis2, patient.diagnosis3, patient.diagnosis4] if editing else ['', '', '', ''] %}
 <div class="page">
   <div class="page-header">
     <div>
       <h1>{{ 'Edit' if editing else 'Add' }} patient</h1>
-      <div class="subtitle">
-        {% if editing %}{{ patient.first_name }} {{ patient.last_name }} · Patient ID {{ patient.mrn }}{% else %}Create a new patient record{% endif %}
-      </div>
+      {% if editing %}<div class="subtitle">{{ patient.first_name }} {{ patient.last_name }} · Patient ID {{ patient.mrn }}</div>{% endif %}
     </div>
     <a href="{{ url_for('patient_detail', patient_id=patient.id) if editing else url_for('patients') }}" class="btn">← Back</a>
   </div>
@@ -28,19 +35,51 @@
         <div class="form-group required">
           <label>Patient ID</label>
           <input type="text" name="mrn" required value="{{ patient.mrn if editing else '' }}">
-          <div class="help">Your patient identifier — e.g. MRN from Brightree (unique within your organization).</div>
         </div>
         <div class="form-group">
           <label>Date of birth</label>
           <input type="date" name="dob" value="{{ patient.dob if editing else '' }}">
         </div>
+        <div class="form-group required">
+          <label>HME relationship status</label>
+          <select name="status" required>
+            <option value="active" {% if not editing or patient.status == 'active' %}selected{% endif %}>Active</option>
+            <option value="inactive" {% if editing and patient.status == 'inactive' %}selected{% endif %}>Inactive</option>
+          </select>
+          <div class="help">Active or inactive for this HME location. Inactive patients stay visible for historical purposes.</div>
+        </div>
+        {% if editing %}
         <div class="form-group">
-          <label>Phone</label>
-          <input type="tel" name="phone" value="{{ patient.phone if editing else '' }}">
+          <label>Mobile app pairing</label>
+          <div style="padding-top:6px;">
+            {% if patient.mobile_app_enabled %}
+              <span class="badge status-active">Paired</span>
+              {% if patient.mobile_app_last_sync %}<span class="muted" style="margin-left:6px;">last sync {{ patient.mobile_app_last_sync | dt }}</span>{% endif %}
+            {% else %}
+              <span class="badge status-inactive">Not paired</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+        <div class="form-group">
+          <label>Phone{% if editing and patient.mobile_app_enabled and patient.phone %} <span class="badge" style="background:var(--ac-cyan);color:#fff;">Used for sign-in</span>{% endif %}</label>
+          <div style="display:flex; gap:8px;">
+            <select id="phoneCC" aria-label="Phone country code" style="flex:0 0 auto; max-width:150px;"></select>
+            <input type="tel" id="phoneNational" inputmode="tel" autocomplete="off"
+                   placeholder="(555) 555-5555" style="flex:1 1 auto;">
+          </div>
+          <input type="hidden" name="phone" id="phoneHidden" value="{{ patient.phone if editing else '' }}">
         </div>
         <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="email" value="{{ patient.email if editing else '' }}">
+          <label>Email{% if editing and patient.mobile_app_enabled and patient.email %} <span class="badge" style="background:var(--ac-cyan);color:#fff;">Used for sign-in</span>{% endif %}</label>
+          <input type="email" name="email" autocomplete="email"
+                 pattern="[^@\s]+@[^@\s]+\.[^@\s]+"
+                 title="Enter a valid email address, e.g. name@example.com"
+                 value="{{ patient.email if editing else '' }}">
+        </div>
+        <div class="form-group span-2">
+          <label>Country</label>
+          <select name="country" id="countrySelect"></select>
         </div>
         <div class="form-group span-2">
           <label>Address — line 1</label>
@@ -55,12 +94,74 @@
           <input type="text" name="city" value="{{ patient.city if editing else '' }}">
         </div>
         <div class="form-group">
-          <label>State</label>
-          <input type="text" name="state" maxlength="2" value="{{ patient.state if editing else '' }}">
+          <label id="stateLabel">State</label>
+          <select name="state" id="stateSelect">
+            <option value="" disabled selected>Select…</option>
+            <option value="AL">AL — Alabama</option>
+            <option value="AK">AK — Alaska</option>
+            <option value="AZ">AZ — Arizona</option>
+            <option value="AR">AR — Arkansas</option>
+            <option value="CA">CA — California</option>
+            <option value="CO">CO — Colorado</option>
+            <option value="CT">CT — Connecticut</option>
+            <option value="DE">DE — Delaware</option>
+            <option value="DC">DC — District of Columbia</option>
+            <option value="FL">FL — Florida</option>
+            <option value="GA">GA — Georgia</option>
+            <option value="HI">HI — Hawaii</option>
+            <option value="ID">ID — Idaho</option>
+            <option value="IL">IL — Illinois</option>
+            <option value="IN">IN — Indiana</option>
+            <option value="IA">IA — Iowa</option>
+            <option value="KS">KS — Kansas</option>
+            <option value="KY">KY — Kentucky</option>
+            <option value="LA">LA — Louisiana</option>
+            <option value="ME">ME — Maine</option>
+            <option value="MD">MD — Maryland</option>
+            <option value="MA">MA — Massachusetts</option>
+            <option value="MI">MI — Michigan</option>
+            <option value="MN">MN — Minnesota</option>
+            <option value="MS">MS — Mississippi</option>
+            <option value="MO">MO — Missouri</option>
+            <option value="MT">MT — Montana</option>
+            <option value="NE">NE — Nebraska</option>
+            <option value="NV">NV — Nevada</option>
+            <option value="NH">NH — New Hampshire</option>
+            <option value="NJ">NJ — New Jersey</option>
+            <option value="NM">NM — New Mexico</option>
+            <option value="NY">NY — New York</option>
+            <option value="NC">NC — North Carolina</option>
+            <option value="ND">ND — North Dakota</option>
+            <option value="OH">OH — Ohio</option>
+            <option value="OK">OK — Oklahoma</option>
+            <option value="OR">OR — Oregon</option>
+            <option value="PA">PA — Pennsylvania</option>
+            <option value="RI">RI — Rhode Island</option>
+            <option value="SC">SC — South Carolina</option>
+            <option value="SD">SD — South Dakota</option>
+            <option value="TN">TN — Tennessee</option>
+            <option value="TX">TX — Texas</option>
+            <option value="UT">UT — Utah</option>
+            <option value="VT">VT — Vermont</option>
+            <option value="VA">VA — Virginia</option>
+            <option value="WA">WA — Washington</option>
+            <option value="WV">WV — West Virginia</option>
+            <option value="WI">WI — Wisconsin</option>
+            <option value="WY">WY — Wyoming</option>
+            <option value="AS">AS — American Samoa</option>
+            <option value="GU">GU — Guam</option>
+            <option value="MP">MP — Northern Mariana Islands</option>
+            <option value="PR">PR — Puerto Rico</option>
+            <option value="VI">VI — U.S. Virgin Islands</option>
+          </select>
+          <input type="text" name="state" id="stateText" placeholder="State / province / region"
+                 value="{{ patient.state if editing else '' }}" disabled>
         </div>
         <div class="form-group">
-          <label>ZIP</label>
-          <input type="text" name="zip" maxlength="10" value="{{ patient.zip if editing else '' }}">
+          <label id="zipLabel">ZIP</label>
+          <input type="text" name="zip" id="zipInput" maxlength="5" inputmode="numeric"
+                 pattern="[0-9]{5}" placeholder="5 digits"
+                 value="{{ patient.zip if editing else '' }}">
         </div>
         <div class="form-group">&nbsp;</div>
         <div class="form-group">
@@ -72,50 +173,24 @@
           </select>
         </div>
         <div class="form-group span-2">
-          <label>Diagnosis</label>
-          <input type="text" name="diagnosis" value="{{ patient.diagnosis if editing else '' }}"
-                 placeholder="e.g., ALS, COPD, Bronchiectasis">
-          <div class="help">Primary respiratory diagnosis driving the BiWaze prescription.</div>
-        </div>
-        <div class="form-group">
-          <label>Rx frequency (per day)</label>
-          <input type="number" name="rx_frequency_per_day" min="1" max="6" step="1"
-                 value="{{ patient.rx_frequency_per_day if editing else '' }}">
-          <div class="help">Prescribed therapies per day (drives adherence math).</div>
-        </div>
-        <div class="form-group span-2">
-          <label>Prescribed modalities</label>
-          <div class="check-group" style="flex-direction: row; gap: 20px;">
-            <label><input type="checkbox" name="rx_modalities" value="cough" {% if 'cough' in rx_mods %}checked{% endif %}> BiWaze Cough</label>
-            <label><input type="checkbox" name="rx_modalities" value="clear" {% if 'clear' in rx_mods %}checked{% endif %}> BiWaze Clear</label>
-          </div>
-        </div>
-        <div class="form-group span-2">
-          <label>Assigned user (internal)</label>
-          <select name="assigned_clinician_user_id">
-            <option value="">— none —</option>
-            {% for c in clinicians %}
-              <option value="{{ c.id }}" {% if editing and patient.assigned_clinician_user_id == c.id %}selected{% endif %}>{{ c.first_name }} {{ c.last_name }} ({{ c.role | replace('_',' ') | title }})</option>
+          <label>Diagnoses</label>
+          <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            {% for i in range(4) %}
+            <select name="diagnosis{{ '' if i == 0 else i + 1 }}" style="flex:1 1 180px;">
+              <option value="">{{ '— Primary diagnosis —' if i == 0 else '— Additional diagnosis —' }}</option>
+              {% for dx in diagnosis_options %}
+                <option value="{{ dx }}" {% if dx_values[i] == dx %}selected{% endif %}>{{ dx }}</option>
+              {% endfor %}
+            </select>
             {% endfor %}
-          </select>
+          </div>
+          <div class="help">Select up to four diagnoses. The first is the primary respiratory diagnosis.</div>
         </div>
 
-        <div class="form-group">
-          <label>Referring clinic</label>
-          <select name="referring_clinic_id" id="clinicSelect" onchange="filterProviders()">
-            <option value="">— none (self-referred) —</option>
-            {% for c in clinics or [] %}
-              <option value="{{ c.id }}" {% if editing and patient.referring_clinic_id == c.id %}selected{% endif %}>{{ c.name }}</option>
-            {% endfor %}
-          </select>
-          <div class="help">
-            {% if not clinics %}<a href="{{ url_for('referring_clinic_new') }}" target="_blank">Add a clinic →</a>{% endif %}
-          </div>
-        </div>
-        <div class="form-group">
+        <div class="form-group span-2">
           <label>Referring provider</label>
           <select name="referring_provider_id" id="providerSelect">
-            <option value="">— none —</option>
+            <option value="">— none (self-referred) —</option>
             {% for p in providers or [] %}
               <option value="{{ p.id }}" data-clinic="{{ p.clinic_id }}"
                 {% if editing and patient.referring_provider_id == p.id %}selected{% endif %}>
@@ -123,7 +198,7 @@
               </option>
             {% endfor %}
           </select>
-          <div class="help">Picking a provider auto-sets the clinic.</div>
+          <div class="help">The provider's clinic is recorded automatically.</div>
         </div>
       </div>
       <div class="form-actions">
@@ -134,21 +209,140 @@
   </div>
 </div>
 <script>
-function filterProviders() {
-  var clinicId = document.getElementById('clinicSelect').value;
-  var providerSel = document.getElementById('providerSelect');
-  var selectedProvider = providerSel.value;
-  Array.from(providerSel.options).forEach(function(opt) {
-    if (!opt.value) { opt.hidden = false; return; }
-    var matches = !clinicId || opt.dataset.clinic === clinicId;
-    opt.hidden = !matches;
-    if (opt.value === selectedProvider && !matches) providerSel.value = '';
+// ── Country / phone / address dynamic behavior ──────────────────────────────
+const PT_INIT = {
+  country: {{ (patient.country if editing and patient.country else 'US') | tojson }},
+  state:   {{ (patient.state if editing and patient.state else '') | tojson }},
+  phone:   {{ (patient.phone if editing and patient.phone else '') | tojson }},
+};
+const COUNTRIES = [
+  {iso:'US', name:'United States', dial:'1'},
+  {iso:'CA', name:'Canada', dial:'1'},
+  {iso:'GB', name:'United Kingdom', dial:'44'},
+  {iso:'IE', name:'Ireland', dial:'353'},
+  {iso:'AU', name:'Australia', dial:'61'},
+  {iso:'NZ', name:'New Zealand', dial:'64'},
+  {iso:'MX', name:'Mexico', dial:'52'},
+  {iso:'BR', name:'Brazil', dial:'55'},
+  {iso:'DE', name:'Germany', dial:'49'},
+  {iso:'FR', name:'France', dial:'33'},
+  {iso:'ES', name:'Spain', dial:'34'},
+  {iso:'PT', name:'Portugal', dial:'351'},
+  {iso:'IT', name:'Italy', dial:'39'},
+  {iso:'NL', name:'Netherlands', dial:'31'},
+  {iso:'BE', name:'Belgium', dial:'32'},
+  {iso:'CH', name:'Switzerland', dial:'41'},
+  {iso:'AT', name:'Austria', dial:'43'},
+  {iso:'SE', name:'Sweden', dial:'46'},
+  {iso:'NO', name:'Norway', dial:'47'},
+  {iso:'DK', name:'Denmark', dial:'45'},
+  {iso:'FI', name:'Finland', dial:'358'},
+  {iso:'PL', name:'Poland', dial:'48'},
+  {iso:'IN', name:'India', dial:'91'},
+  {iso:'SG', name:'Singapore', dial:'65'},
+  {iso:'JP', name:'Japan', dial:'81'},
+  {iso:'KR', name:'South Korea', dial:'82'},
+  {iso:'CN', name:'China', dial:'86'},
+  {iso:'AE', name:'United Arab Emirates', dial:'971'},
+  {iso:'SA', name:'Saudi Arabia', dial:'966'},
+  {iso:'ZA', name:'South Africa', dial:'27'},
+];
+
+(function initPatientLocation(){
+  var countrySel = document.getElementById('countrySelect');
+  var phoneCC    = document.getElementById('phoneCC');
+  var phoneNat   = document.getElementById('phoneNational');
+  var phoneHid   = document.getElementById('phoneHidden');
+  var stateSel   = document.getElementById('stateSelect');
+  var stateTxt   = document.getElementById('stateText');
+  var stateLabel = document.getElementById('stateLabel');
+  var zipLabel   = document.getElementById('zipLabel');
+  var zipInput   = document.getElementById('zipInput');
+
+  function dialFor(iso){ var c = COUNTRIES.find(function(x){ return x.iso === iso; }); return c ? c.dial : '1'; }
+
+  // Populate address-country and phone-country dropdowns from COUNTRIES.
+  COUNTRIES.forEach(function(c){
+    var o1 = document.createElement('option'); o1.value = c.iso; o1.textContent = c.name; countrySel.appendChild(o1);
+    var o2 = document.createElement('option'); o2.value = c.iso; o2.textContent = '+' + c.dial + '  ' + c.iso; phoneCC.appendChild(o2);
   });
-}
-document.getElementById('providerSelect').addEventListener('change', function() {
-  var opt = this.options[this.selectedIndex];
-  var clinicId = opt.dataset.clinic;
-  if (clinicId) document.getElementById('clinicSelect').value = clinicId;
-});
+
+  function formatPhone(dial, raw){
+    var d = (raw || '').replace(/\D/g, '');
+    if (dial === '1') {                       // North American Numbering Plan
+      d = d.slice(0, 10);
+      if (d.length >= 7) return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+      if (d.length >= 4) return '(' + d.slice(0,3) + ') ' + d.slice(3);
+      if (d.length >= 1) return '(' + d;
+      return '';
+    }
+    return d.slice(0, 15);                     // other countries: digits only (E.164 max)
+  }
+
+  function syncHidden(){
+    var nat = phoneNat.value.trim();
+    phoneHid.value = nat ? ('+' + dialFor(phoneCC.value) + ' ' + nat) : '';
+  }
+
+  function applyAddressMode(){
+    var isUS = countrySel.value === 'US';
+    stateSel.disabled = !isUS; stateSel.style.display = isUS ? '' : 'none';
+    stateTxt.disabled =  isUS; stateTxt.style.display = isUS ? 'none' : '';
+    stateLabel.textContent = isUS ? 'State' : 'State / province / region';
+    if (isUS) {
+      zipLabel.textContent = 'ZIP';
+      zipInput.setAttribute('pattern', '[0-9]{5}');
+      zipInput.setAttribute('maxlength', '5');
+      zipInput.setAttribute('inputmode', 'numeric');
+      zipInput.setAttribute('placeholder', '5 digits');
+    } else {
+      zipLabel.textContent = 'Postal code';
+      zipInput.removeAttribute('pattern');
+      zipInput.setAttribute('maxlength', '12');
+      zipInput.setAttribute('inputmode', 'text');
+      zipInput.setAttribute('placeholder', 'Postal code');
+    }
+  }
+
+  // Parse a stored phone like "+1 (303) 555-1234" into {iso, national}.
+  function parsePhone(raw){
+    raw = (raw || '').trim();
+    if (!raw) return {iso: null, national: ''};
+    var m = raw.match(/^\+(\d+)\s+(.*)$/);
+    if (m) {
+      var dial = m[1];
+      var iso = dial === '1' ? 'US' : (COUNTRIES.find(function(c){ return c.dial === dial; }) || {}).iso;
+      return {iso: iso || null, national: m[2]};
+    }
+    return {iso: null, national: raw};         // legacy value with no country code
+  }
+
+  // ── Initial state ──
+  var initCountry = COUNTRIES.some(function(c){ return c.iso === PT_INIT.country; }) ? PT_INIT.country : 'US';
+  countrySel.value = initCountry;
+  applyAddressMode();
+  if (countrySel.value === 'US' && PT_INIT.state) stateSel.value = PT_INIT.state;
+
+  var parsed = parsePhone(PT_INIT.phone);
+  phoneCC.value  = parsed.iso || initCountry;
+  phoneNat.value = formatPhone(dialFor(phoneCC.value), parsed.national);
+  syncHidden();
+
+  // ── Events ──
+  countrySel.addEventListener('change', function(){
+    applyAddressMode();
+    phoneCC.value  = countrySel.value;         // keep phone code aligned (still overridable)
+    phoneNat.value = formatPhone(dialFor(phoneCC.value), phoneNat.value);
+    syncHidden();
+  });
+  phoneCC.addEventListener('change', function(){
+    phoneNat.value = formatPhone(dialFor(phoneCC.value), phoneNat.value);
+    syncHidden();
+  });
+  phoneNat.addEventListener('input', function(){ phoneNat.value = formatPhone(dialFor(phoneCC.value), phoneNat.value); syncHidden(); });
+  phoneNat.addEventListener('blur',  function(){ phoneNat.value = formatPhone(dialFor(phoneCC.value), phoneNat.value); syncHidden(); });
+  var formEl = phoneHid.closest('form');
+  if (formEl) formEl.addEventListener('submit', syncHidden);
+})();
 </script>
 {% endblock %}

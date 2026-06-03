@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS patients (
     city TEXT,
     state TEXT,
     zip TEXT,
+    country TEXT DEFAULT 'US',  -- ISO 3166-1 alpha-2; drives address-field rendering
     preferred_language TEXT DEFAULT 'en-US',
     rx_frequency_per_day INTEGER,
     rx_modalities TEXT,  -- JSON
@@ -174,6 +175,9 @@ CREATE TABLE IF NOT EXISTS patients (
     referring_clinic_id INTEGER REFERENCES referring_clinics(id) ON DELETE SET NULL,
     referring_provider_id INTEGER REFERENCES referring_providers(id) ON DELETE SET NULL,
     diagnosis TEXT,
+    diagnosis2 TEXT,
+    diagnosis3 TEXT,
+    diagnosis4 TEXT,
     adherence_pct_30d INTEGER,
     last_session_at TIMESTAMP,
     status TEXT DEFAULT 'active' CHECK(status IN ('active','inactive')),

@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  portal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: arcconnect_portal
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-arc-connect-portal-demo-key-change-me-2026}
+      AUTH_USERNAME: ${AUTH_USERNAME:-Arc}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-Connect}
+      PYTHONUNBUFFERED: 1
+    ports:
+      - "5005:5005"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5005/').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  default:
+    name: arcconnect_portal_network

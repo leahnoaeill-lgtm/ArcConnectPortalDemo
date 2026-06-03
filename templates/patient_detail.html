@@ -6,7 +6,7 @@
     <div>
       <a href="{{ url_for('patients') }}" class="btn btn-sm">← Back to patients</a>
       <h1 class="mt-2">{{ patient.first_name }} {{ patient.last_name }}
-        <span class="badge status-{{ patient.status }}">{{ patient.status | title }}</span>
+        <span class="badge status-{{ patient.status }}" title="HME relationship status">{{ patient.status | title }}</span>
       </h1>
       <div class="subtitle">
         {% if patient.mrn %}Patient ID: {{ patient.mrn }}{% else %}No Patient ID{% endif %}
@@ -33,10 +33,11 @@
       {% if patient.city %}{% set _ = _city_state.append(patient.city) %}{% endif %}
       {% if patient.state %}{% set _ = _city_state.append(patient.state) %}{% endif %}
       {% if _city_state %}{% set _ = _addr_parts.append(_city_state | join(', ') ~ (' ' ~ patient.zip if patient.zip else '')) %}{% endif %}
+      {% if patient.country and patient.country != 'US' %}{% set _ = _addr_parts.append(patient.country | country_name) %}{% endif %}
       {% set _full_addr = _addr_parts | join(', ') %}
       <div class="patient-contact small muted mt-1">
-        {% if patient.phone %}<a href="tel:{{ patient.phone }}">📞 {{ patient.phone }}</a>{% endif %}
-        {% if patient.email %} · <a href="mailto:{{ patient.email }}">✉ {{ patient.email }}</a>{% endif %}
+        {% if patient.phone %}<a href="tel:{{ patient.phone }}">📞 {{ patient.phone }}</a>{% if patient.mobile_app_enabled %} <span class="badge" style="background:var(--ac-cyan);color:#fff;" title="Used for the patient's mobile-app sign-in.">Sign-in</span>{% endif %}{% endif %}
+        {% if patient.email %} · <a href="mailto:{{ patient.email }}">✉ {{ patient.email }}</a>{% if patient.mobile_app_enabled %} <span class="badge" style="background:var(--ac-cyan);color:#fff;" title="Used for the patient's mobile-app sign-in.">Sign-in</span>{% endif %}{% endif %}
         {% if _full_addr %} · <a href="https://www.google.com/maps/search/?api=1&query={{ _full_addr | urlencode }}" target="_blank" rel="noopener">📍 {{ _full_addr }}</a>{% endif %}
       </div>
     </div>
@@ -67,6 +68,18 @@
         </div>
       </details>
       <a href="{{ url_for('patient_edit', patient_id=patient.id) }}" class="btn">Edit patient</a>
+      {% if patient.status == 'active' %}
+      <form method="POST" action="{{ url_for('patient_set_status', patient_id=patient.id) }}" style="display:inline;"
+            onsubmit="return confirm('Mark {{ patient.first_name }} {{ patient.last_name }} inactive for this HME location?\n\nTheir data stays visible for historical purposes.');">
+        <input type="hidden" name="status" value="inactive">
+        <button type="submit" class="btn btn-danger">Mark inactive</button>
+      </form>
+      {% else %}
+      <form method="POST" action="{{ url_for('patient_set_status', patient_id=patient.id) }}" style="display:inline;">
+        <input type="hidden" name="status" value="active">
+        <button type="submit" class="btn">Mark active</button>
+      </form>
+      {% endif %}
     </div>
   </div>
 
@@ -443,13 +456,15 @@
         </div>
         <div class="card">
           <div class="card-body">
+            {% set _dxs = [patient.diagnosis, patient.diagnosis2, patient.diagnosis3, patient.diagnosis4] | select | list %}
             <div class="form-group">
-              <label>Diagnosis</label>
-              <div>{% if patient.diagnosis %}{{ patient.diagnosis }}{% else %}<span class="muted">Not recorded</span>{% endif %}</div>
-            </div>
-            <div class="form-group mt-2">
-              <label>Assigned user (internal)</label>
-              <div>{% if patient.clinician_first %}{{ patient.clinician_first }} {{ patient.clinician_last or '' }}{% else %}<span class="muted">Not assigned</span>{% endif %}</div>
+              <label>Diagnos{{ 'es' if _dxs | length > 1 else 'is' }}</label>
+              {% if _dxs %}
+                <div>{{ _dxs[0] }} <span class="muted small">(primary)</span></div>
+                {% for dx in _dxs[1:] %}<div class="small">{{ dx }}</div>{% endfor %}
+              {% else %}
+                <div><span class="muted">Not recorded</span></div>
+              {% endif %}
             </div>
             {% if patient.capped_rental_start %}
             <div class="form-group mt-2">

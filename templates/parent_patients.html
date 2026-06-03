@@ -7,7 +7,7 @@
   {% set next_dir = 'desc' if (current_sort == key and current_dir == 'asc') else 'asc' %}
   {% set arrow = ('↑' if current_dir == 'asc' else '↓') if current_sort == key else '↕' %}
   {% set cls = 'sort-active' if current_sort == key else '' %}
-  <a href="?status={{ status }}&location={{ filter_location }}&sort={{ key }}&dir={{ next_dir }}" class="sort-link {{ cls }}">{{ label }} {{ arrow }}</a>
+  <a href="?status={{ status }}&location={{ filter_location }}&city={{ filter_city | urlencode }}&state={{ filter_state | urlencode }}&sort={{ key }}&dir={{ next_dir }}" class="sort-link {{ cls }}">{{ label }} {{ arrow }}</a>
 {% endmacro %}
 
 {# Stable location chip color: pick from a small brand-aligned palette by id. #}
@@ -44,7 +44,17 @@
         <option value="{{ l.id }}" {% if filter_location == l.id %}selected{% endif %}>{{ l.name }}</option>
       {% endfor %}
     </select>
-    {% if filter_location or status != 'active' %}
+    <label class="small muted">City</label>
+    <select class="filter-select" onchange="location = updateQuery({city: this.value})">
+      <option value="">All cities</option>
+      {% for c in cities %}<option value="{{ c }}" {% if filter_city == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+    <label class="small muted">State</label>
+    <select class="filter-select" onchange="location = updateQuery({state: this.value})">
+      <option value="">All states</option>
+      {% for s in states %}<option value="{{ s }}" {% if filter_state == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+    {% if filter_location or status != 'active' or filter_city or filter_state %}
       <a href="{{ url_for('parent_patients') }}" class="filter-clear">Reset</a>
     {% endif %}
   </div>
@@ -58,6 +68,8 @@
               <th></th>
               <th>{{ sort_link('name', 'Patient', sort, direction) }}</th>
               <th>{{ sort_link('location', 'Location', sort, direction) }}</th>
+              <th>{{ sort_link('city', 'City', sort, direction) }}</th>
+              <th>{{ sort_link('state', 'State', sort, direction) }}</th>
               <th>{{ sort_link('disease', 'Disease', sort, direction) }}</th>
               <th>BiWaze Cough
                 <div class="sort-sub">
@@ -86,6 +98,8 @@
                   {% if p.mrn %}<div class="mono muted small">ID: {{ p.mrn | replace('MRN-', '') }}</div>{% endif %}
                 </td>
                 <td>{{ loc_chip(p.loc_id, p.loc_name) }}</td>
+                <td class="small">{% if p.city %}{{ p.city }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td class="small">{% if p.state %}{{ p.state }}{% else %}<span class="muted">—</span>{% endif %}</td>
                 <td class="small" style="max-width: 200px;">
                   {% if p.diagnosis %}{{ p.diagnosis }}{% else %}<span class="muted">—</span>{% endif %}
                 </td>
