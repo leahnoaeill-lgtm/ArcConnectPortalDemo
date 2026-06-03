@@ -85,6 +85,10 @@ _BASIC_AUTH_PASS = os.environ.get('AUTH_PASSWORD')
 
 @app.before_request
 def _require_basic_auth():
+    # Liveness probe is intentionally unauthenticated so container/orchestration
+    # healthchecks don't trip the basic-auth gate.
+    if request.path == '/healthz':
+        return None
     if not (_BASIC_AUTH_USER and _BASIC_AUTH_PASS):
         return None
     auth = request.authorization
@@ -94,6 +98,12 @@ def _require_basic_auth():
         'Authentication required.', 401,
         {'WWW-Authenticate': 'Basic realm="Arc Connect Portal"'}
     )
+
+
+@app.route('/healthz')
+def healthz():
+    """Lightweight, unauthenticated liveness probe for Docker healthchecks."""
+    return 'ok', 200
 
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
