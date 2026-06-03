@@ -1128,6 +1128,17 @@ a.kpi-link:hover .sub {
   line-height: 1.4;
 }
 
+/* Soft, low-emphasis informational tag (NOT a status fill, NOT a button) —
+   tinted background + colored text + hairline border, normal case. */
+.badge.badge-soft {
+  background: var(--ac-cyan-light);
+  color: var(--ac-cyan-dark);
+  border: 1px solid var(--ac-border);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
 .badge.severity-critical { background: var(--ac-red); color: white; }
 .badge.severity-warning  { background: var(--ac-yellow); color: var(--ac-dark); }
 .badge.severity-info     { background: var(--ac-slate); color: white; }
@@ -1880,7 +1891,7 @@ body.super-readonly .super-admin-banner button {
   gap: 6px;
   padding: 8px 16px;
   border: 1px solid var(--ac-border-strong);
-  border-radius: 999px;
+  border-radius: 8px;
   background: white;
   color: var(--ac-slate-deep);
   font-family: var(--font-body);
@@ -1920,6 +1931,19 @@ body.super-readonly .super-admin-banner button {
   background: var(--ac-red);
   color: white;
   border-color: var(--ac-red);
+}
+
+/* Quiet destructive action — lower emphasis than a neutral button; caution
+   shown only on hover. For reversible actions like "Mark inactive". */
+.btn-ghost-danger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ac-red);
+}
+.btn-ghost-danger:hover {
+  background: var(--ac-red-light);
+  border-color: var(--ac-red-light);
+  color: var(--ac-red);
 }
 
 .btn-danger:hover {

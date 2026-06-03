@@ -36,8 +36,8 @@
       {% if patient.country and patient.country != 'US' %}{% set _ = _addr_parts.append(patient.country | country_name) %}{% endif %}
       {% set _full_addr = _addr_parts | join(', ') %}
       <div class="patient-contact small muted mt-1">
-        {% if patient.phone %}<a href="tel:{{ patient.phone }}">📞 {{ patient.phone }}</a>{% if patient.mobile_app_enabled %} <span class="badge" style="background:var(--ac-cyan);color:#fff;" title="Used for the patient's mobile-app sign-in.">Sign-in</span>{% endif %}{% endif %}
-        {% if patient.email %} · <a href="mailto:{{ patient.email }}">✉ {{ patient.email }}</a>{% if patient.mobile_app_enabled %} <span class="badge" style="background:var(--ac-cyan);color:#fff;" title="Used for the patient's mobile-app sign-in.">Sign-in</span>{% endif %}{% endif %}
+        {% if patient.phone %}<a href="tel:{{ patient.phone }}">📞 {{ patient.phone }}</a>{% if patient.mobile_app_enabled %} <span class="badge badge-soft" title="Used for the patient's mobile-app login.">Login</span>{% endif %}{% endif %}
+        {% if patient.email %} · <a href="mailto:{{ patient.email }}">✉ {{ patient.email }}</a>{% if patient.mobile_app_enabled %} <span class="badge badge-soft" title="Used for the patient's mobile-app login.">Login</span>{% endif %}{% endif %}
         {% if _full_addr %} · <a href="https://www.google.com/maps/search/?api=1&query={{ _full_addr | urlencode }}" target="_blank" rel="noopener">📍 {{ _full_addr }}</a>{% endif %}
       </div>
     </div>
@@ -72,7 +72,7 @@
       <form method="POST" action="{{ url_for('patient_set_status', patient_id=patient.id) }}" style="display:inline;"
             onsubmit="return confirm('Mark {{ patient.first_name }} {{ patient.last_name }} inactive for this HME location?\n\nTheir data stays visible for historical purposes.');">
         <input type="hidden" name="status" value="inactive">
-        <button type="submit" class="btn btn-danger">Mark inactive</button>
+        <button type="submit" class="btn btn-ghost-danger">Mark inactive</button>
       </form>
       {% else %}
       <form method="POST" action="{{ url_for('patient_set_status', patient_id=patient.id) }}" style="display:inline;">

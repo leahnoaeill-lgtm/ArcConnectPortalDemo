@@ -69,7 +69,7 @@
         </div>
         {% endif %}
         <div class="form-group">
-          <label>Phone{% if editing and patient.mobile_app_enabled and patient.phone %} <span class="badge" style="background:var(--ac-cyan);color:#fff;">Used for sign-in</span>{% endif %}</label>
+          <label>Phone{% if editing and patient.mobile_app_enabled and patient.phone %} <span class="badge badge-soft" title="Used for the patient's mobile-app login.">Login</span>{% endif %}</label>
           <div style="display:flex; gap:8px;">
             <select id="phoneCC" aria-label="Phone country code" style="flex:0 0 auto; max-width:150px;"></select>
             <input type="tel" id="phoneNational" inputmode="tel" autocomplete="off"
@@ -78,7 +78,7 @@
           <input type="hidden" name="phone" id="phoneHidden" value="{{ patient.phone if editing else '' }}">
         </div>
         <div class="form-group">
-          <label>Email{% if editing and patient.mobile_app_enabled and patient.email %} <span class="badge" style="background:var(--ac-cyan);color:#fff;">Used for sign-in</span>{% endif %}</label>
+          <label>Email{% if editing and patient.mobile_app_enabled and patient.email %} <span class="badge badge-soft" title="Used for the patient's mobile-app login.">Login</span>{% endif %}</label>
           <input type="email" name="email" autocomplete="email"
                  pattern="[^@\s]+@[^@\s]+\.[^@\s]+"
                  title="Enter a valid email address, e.g. name@example.com"
