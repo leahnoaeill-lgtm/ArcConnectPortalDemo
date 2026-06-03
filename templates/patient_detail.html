@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ patient.first_name }} {{ patient.last_name }} · Arc Connect Portal{% endblock %}
 {% block body %}
-<div class="page">
+<div class="page pd-soft">
   <div class="page-header">
     <div>
       <a href="{{ url_for('patients') }}" class="btn btn-sm">← Back to patients</a>
@@ -67,7 +67,7 @@
           </form>
         </div>
       </details>
-      <a href="{{ url_for('patient_edit', patient_id=patient.id) }}" class="btn">Edit Patient Profile</a>
+      <a href="{{ url_for('patient_edit', patient_id=patient.id) }}" class="btn btn-outline">Edit Patient Profile</a>
       {% if patient.status == 'active' %}
       <form method="POST" action="{{ url_for('patient_set_status', patient_id=patient.id) }}" style="display:inline;"
             onsubmit="return confirm('Mark {{ patient.first_name }} {{ patient.last_name }} inactive for this HME location?\n\nTheir data stays visible for historical purposes.');">
@@ -85,8 +85,9 @@
 
   {% set adh = patient.adherence_pct_30d %}
   {% set adh_tier = 'red' if (adh is not none and adh < 50) else ('yellow' if (adh is not none and adh < 80) else 'green') %}
+  {% set open_alerts_n = alerts | selectattr('resolved_at','none') | list | length %}
   <div class="kpis">
-    <div class="kpi kpi-{{ adh_tier }}">
+    <div class="kpi cat-adh">
       <div class="label">Adherence (30d)</div>
       <div class="kpi-ring">
         <svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
@@ -100,17 +101,25 @@
         <div class="kpi-ring-label">{{ adh if adh is not none else '—' }}{% if adh is not none %}<span>%</span>{% endif %}</div>
       </div>
     </div>
-    <div class="kpi kpi-slate">
+    <div class="kpi cat-last">
+      <div class="kpi-icon">🕑</div>
       <div class="label">Last session</div>
-      <div class="value" style="font-size: 16px;">{{ patient.last_session_at | dt }}</div>
+      {% if patient.last_session_at %}
+        <div class="kpi-date">{{ patient.last_session_at | date_only }}</div>
+        <div class="kpi-time">{{ patient.last_session_at | time_only }}</div>
+      {% else %}
+        <div class="kpi-date">Never</div>
+      {% endif %}
     </div>
-    <div class="kpi">
+    <div class="kpi cat-dev">
+      <div class="kpi-icon">🔧</div>
       <div class="label">Active devices</div>
-      <div class="value">{{ assignments | selectattr('returned_date','none') | list | length }}</div>
+      <div class="kpi-date">{{ assignments | selectattr('returned_date','none') | list | length }}</div>
     </div>
-    <div class="kpi kpi-red">
+    <div class="kpi cat-alert">
+      <div class="kpi-icon">⚠️</div>
       <div class="label">Open alerts</div>
-      <div class="value">{{ alerts | selectattr('resolved_at','none') | list | length }}</div>
+      <div class="kpi-date">{{ open_alerts_n }}</div>
     </div>
   </div>
 

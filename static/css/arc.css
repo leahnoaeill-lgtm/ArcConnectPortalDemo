@@ -1004,6 +1004,29 @@ tr.filter-hidden { display: none !important; }
 .sparkline-total { font-size: 12px; font-weight: 600; color: var(--ac-gray); }
 .sparkline { display: block; width: 100%; height: 48px; }
 
+/* ── Soft Clinical look — scoped to the patient detail page (.pd-soft) ── */
+.pd-soft .kpi,
+.pd-soft .card,
+.pd-soft .sparkline-card {
+  border: 0;
+  border-radius: 18px;
+  box-shadow: 0 6px 22px rgba(45, 139, 173, 0.08);
+}
+.pd-soft .kpi::before { display: none; }   /* tint conveys category instead of the hard accent bar */
+.pd-soft .kpi { position: relative; }
+/* Fixed category tints, matching the approved Soft Clinical mockup */
+.pd-soft .kpi.cat-adh   { background: var(--ac-green-light); }
+.pd-soft .kpi.cat-last  { background: var(--ac-cyan-light); }
+.pd-soft .kpi.cat-dev   { background: #EFE7F7; }   /* soft lavender */
+.pd-soft .kpi.cat-alert { background: var(--ac-red-light); }
+.pd-soft .kpi-icon {
+  position: absolute; top: 16px; right: 16px;
+  font-size: 24px; line-height: 1; opacity: 0.65;
+}
+/* "Last session" two-line value — bold date over a lighter time */
+.kpi-date { font-size: 19px; font-weight: 700; line-height: 1.2; color: var(--ac-slate-deep); }
+.kpi-time { font-size: 13px; font-weight: 600; color: var(--ac-slate); margin-top: 3px; }
+
 .kpi.kpi-red::before    { background: var(--ac-red); }
 .kpi.kpi-yellow::before { background: var(--ac-yellow); }
 .kpi.kpi-green::before  { background: var(--ac-green); }
@@ -1946,6 +1969,19 @@ body.super-readonly .super-admin-banner button {
   border-color: var(--ac-cyan-dark);
   color: white;
   box-shadow: 0 4px 10px rgba(67, 193, 237, 0.25);
+}
+
+/* Outlined secondary — tinted so it stands out on white without competing
+   with the filled primary. */
+.btn-outline {
+  background: white;
+  color: var(--ac-cyan-dark);
+  border-color: var(--ac-cyan);
+}
+.btn-outline:hover {
+  background: var(--ac-cyan-light);
+  border-color: var(--ac-cyan);
+  color: var(--ac-cyan-dark);
 }
 
 .btn-danger {
