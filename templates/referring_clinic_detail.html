@@ -181,7 +181,7 @@
                   <th>Patient</th>
                   <th>Provider</th>
                   <th>Assigned</th>
-                  <th>Removed</th>
+                  <th>Unassigned</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -199,7 +199,7 @@
                     <td class="small">{% if h.removed_at %}{{ h.removed_at | date_only }}{% else %}<span class="muted">—</span>{% endif %}</td>
                     <td>
                       {% if h.removed_at %}
-                        <span class="badge status-inactive">Past</span>
+                        <span class="badge status-inactive">Unassigned</span>
                       {% else %}
                         <span class="badge status-active">Current</span>
                       {% endif %}

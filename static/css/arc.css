@@ -20,6 +20,8 @@
   --ac-teal: #0E9C95;   /* blue-green accent (avatars, count badges, Active) */
   --ac-teal-deep: #115E59;  /* deeper teal — device "In Use" */
   --ac-teal-light: #D5EFEC; /* light teal tint */
+  --ac-orange: #DD6B20;
+  --ac-orange-light: #FBE7D6;
   --ac-yellow: #FCBE03;
   --ac-yellow-light: #FFF5D6;
   --ac-red: #C00000;
@@ -1220,6 +1222,10 @@ a.kpi-link:hover .sub {
 /* Email glyph: sized to match the phone icon, dark grey (not link-blue) */
 .email-ico { font-size: 1.6em; line-height: 1; vertical-align: -0.18em; color: var(--ac-slate-deep); }
 
+/* Compact section eyebrow + divider (task detail "Manage task" panel, etc.) */
+.td-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ac-slate); }
+.td-section { border-top: 1px solid var(--ac-slate-light); margin-top: 14px; padding-top: 14px; }
+
 /* Patient record header: a little space after the name */
 .pd-soft .page-header h1 .badge { margin-left: 10px; }
 /* Teal (not kelly green) status pills + percentages throughout the patient record
@@ -2060,9 +2066,9 @@ body.super-readonly .super-admin-banner button {
   color: #8A6D00;
 }
 .btn-warn:hover {
-  background: var(--ac-yellow);
+  background: #FBE2A0;
   border-color: var(--ac-yellow);
-  color: var(--ac-slate-deep);
+  color: #8A6D00;
 }
 
 .btn-danger {
@@ -2085,8 +2091,8 @@ body.super-readonly .super-admin-banner button {
 }
 
 .btn-danger:hover {
-  background: var(--ac-red);
-  color: white;
+  background: var(--ac-red-light);
+  color: var(--ac-red);
   border-color: var(--ac-red);
 }
 
@@ -2097,8 +2103,8 @@ body.super-readonly .super-admin-banner button {
   border-color: var(--ac-yellow);
 }
 .btn-amber:hover {
-  background: var(--ac-yellow);
-  color: var(--ac-slate-deep);
+  background: var(--ac-yellow-light);
+  color: #8A6D00;
   border-color: var(--ac-yellow);
 }
 
@@ -2109,8 +2115,8 @@ body.super-readonly .super-admin-banner button {
   border-color: var(--ac-green);
 }
 .btn-success:hover {
-  background: var(--ac-green);
-  color: white;
+  background: var(--ac-green-light);
+  color: #1E7A45;
   border-color: var(--ac-green);
 }
 
@@ -2126,17 +2132,17 @@ body.super-readonly .super-admin-banner button {
   color: white;
 }
 
-/* "Change status" buttons — outlined in each status's portal color, fill on hover */
+/* "Change status" buttons — outlined in each status's portal color, soft tint on hover */
 .task-status-btn-todo            { color: var(--ac-cyan-dark); border-color: var(--ac-cyan); }
-.task-status-btn-todo:hover      { background: var(--ac-cyan); color: #fff; border-color: var(--ac-cyan); }
+.task-status-btn-todo:hover      { background: var(--ac-cyan-light); color: var(--ac-cyan-dark); border-color: var(--ac-cyan); }
 .task-status-btn-in_progress     { color: #1E7A45; border-color: var(--ac-green); }
-.task-status-btn-in_progress:hover { background: var(--ac-green); color: #fff; border-color: var(--ac-green); }
+.task-status-btn-in_progress:hover { background: var(--ac-green-light); color: #1E7A45; border-color: var(--ac-green); }
 .task-status-btn-pending_external      { color: #6D4CA6; border-color: #8B6CC6; }
-.task-status-btn-pending_external:hover { background: #8B6CC6; color: #fff; border-color: #8B6CC6; }
-.task-status-btn-completed       { color: #1E7A45; border-color: var(--ac-green); }
-.task-status-btn-completed:hover { background: var(--ac-green); color: #fff; border-color: var(--ac-green); }
+.task-status-btn-pending_external:hover { background: #EFE7F7; color: #6D4CA6; border-color: #8B6CC6; }
+.task-status-btn-completed       { color: #B45309; border-color: var(--ac-orange); }
+.task-status-btn-completed:hover { background: var(--ac-orange-light); color: #B45309; border-color: var(--ac-orange); }
 .task-status-btn-cancelled       { color: var(--ac-red); border-color: var(--ac-red); }
-.task-status-btn-cancelled:hover { background: var(--ac-red); color: #fff; border-color: var(--ac-red); }
+.task-status-btn-cancelled:hover { background: var(--ac-red-light); color: var(--ac-red); border-color: var(--ac-red); }
 
 .btn.is-armed {
   background: #9a0000;

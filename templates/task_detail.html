@@ -135,31 +135,11 @@
 
     <div>
       <div class="card">
-        <div class="card-header"><h2>Assignment</h2></div>
+        <div class="card-header"><h2>Manage task</h2></div>
         <div class="card-body">
-          <div class="form-group">
-            <label>Currently assigned to</label>
-            <div style="font-weight: 600;">{% if task.assignee_first %}{{ task.assignee_first }} {{ task.assignee_last or '' }}{% else %}Unassigned{% endif %}</div>
-            {% if task.assignee_email %}<div class="small muted">{{ task.assignee_email }}</div>{% endif %}
-          </div>
-          <form method="POST" action="{{ url_for('task_assign', task_id=task.id) }}" class="mt-2">
-            <div class="form-group">
-              <label>Reassign to</label>
-              <select name="assigned_to_user_id">
-                {% for u in users %}
-                  <option value="{{ u.id }}" {% if u.id == task.assigned_to_user_id %}selected{% endif %}>{{ u.last_name }}, {{ u.first_name }} ({{ u.role }}){% if u.id == current_user.id %} — me{% endif %}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <button type="submit" class="btn btn-sm btn-amber">Reassign</button>
-          </form>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><h2>Change status</h2></div>
-        <div class="card-body">
-          <form method="POST" action="{{ url_for('task_status', task_id=task.id) }}" class="flex gap-1" style="flex-wrap: wrap;">
+          {# Change status — primary action #}
+          <div class="td-eyebrow">Status</div>
+          <form method="POST" action="{{ url_for('task_status', task_id=task.id) }}" class="flex gap-1 mt-1" style="flex-wrap: wrap;">
             {% for key, label in status_labels.items() %}
               <button type="submit" name="status" value="{{ key }}"
                       class="btn btn-sm task-status-btn task-status-btn-{{ key }}"
@@ -167,19 +147,28 @@
             {% endfor %}
           </form>
           {% if task.status == 'completed' and task.alert_id %}
-            <div class="small muted mt-2">✓ Linked alert was auto-acknowledged when this task completed.</div>
+            <div class="small muted mt-1">✓ Linked alert was auto-acknowledged when this task completed.</div>
           {% endif %}
-          {% if task.completed_at %}
-            <div class="small muted mt-2">Completed {{ task.completed_at | dt }}{% if task.creator_first %} · created by {{ task.creator_first }} {{ task.creator_last or '' }}{% endif %}</div>
-          {% endif %}
-        </div>
-      </div>
 
-      <div class="card">
-        <div class="card-header"><h2>Metadata</h2></div>
-        <div class="card-body small">
-          <div><strong>Created by:</strong> {{ task.creator_first }} {{ task.creator_last or '' }}</div>
-          <div class="muted">{{ task.created_at | dt }}</div>
+          {# Assignment #}
+          <div class="td-section">
+            <div class="td-eyebrow">Assigned to</div>
+            <div style="font-weight: 600;">{% if task.assignee_first %}{{ task.assignee_first }} {{ task.assignee_last or '' }}{% else %}Unassigned{% endif %}{% if task.assignee_email %} <span class="small muted">· {{ task.assignee_email }}</span>{% endif %}</div>
+            <form method="POST" action="{{ url_for('task_assign', task_id=task.id) }}" class="mt-1" style="display:flex; gap:8px; align-items:center;">
+              <select name="assigned_to_user_id" style="flex:1; min-width:0;">
+                {% for u in users %}
+                  <option value="{{ u.id }}" {% if u.id == task.assigned_to_user_id %}selected{% endif %}>{{ u.last_name }}, {{ u.first_name }} ({{ u.role }}){% if u.id == current_user.id %} — me{% endif %}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-amber">Reassign</button>
+            </form>
+          </div>
+
+          {# Metadata #}
+          <div class="td-section small muted">
+            Created by {{ task.creator_first }} {{ task.creator_last or '' }} · {{ task.created_at | dt }}
+            {% if task.completed_at %}<br>Completed {{ task.completed_at | dt }}{% endif %}
+          </div>
         </div>
       </div>
     </div>
