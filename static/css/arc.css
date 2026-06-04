@@ -1397,9 +1397,9 @@ a.kpi-link:hover .sub {
 .badge.priority-normal { background: var(--ac-slate-light); color: var(--ac-slate-deep); }
 .badge.priority-low    { background: var(--ac-bg); color: var(--ac-gray); border: 1px solid var(--ac-border); }
 
-/* Overdue rows in task list */
-tr.row-overdue { background: var(--ac-slate-light) !important; }
-tr.row-overdue:hover { background: var(--ac-border) !important; }
+/* Overdue rows in task list: keep the row white (only the header is grey) and
+   flag overdue with a thin red left accent rather than a full grey fill. */
+tr.row-overdue td:first-child { box-shadow: inset 3px 0 0 var(--ac-red); }
 
 /* Task activity log */
 .activity-item {
