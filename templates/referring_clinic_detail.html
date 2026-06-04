@@ -32,7 +32,7 @@
       {% endif %}
       {% if can_delete %}
         <form method="POST" action="{{ url_for('referring_clinic_delete', clinic_id=clinic.id) }}" style="display:inline;"
-              onsubmit="return confirm('Delete {{ clinic.name }}?\n\nThis permanently removes the clinic and all {{ providers | length }} of its providers.\n\n{{ clinic.patient_count }} patient(s) currently reference this clinic as their referring clinic and will lose that link (referral history is preserved).\n\nThis cannot be undone.');">
+              onsubmit="return confirm('Delete {{ clinic.name }}?\n\nThis permanently removes the clinic and all {{ providers | length }} of its providers.\n\n{{ clinic.patient_count }} patient(s) currently reference this clinic as their referring clinic and will lose that link. Past referral-history entries are kept, but this clinic name is removed from them (shown as clinic removed).\n\nThis cannot be undone.');">
           <button type="submit" class="btn btn-danger">Delete</button>
         </form>
       {% endif %}

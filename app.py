@@ -4780,8 +4780,11 @@ def referring_provider_edit(provider_id):
     provider = q_one('SELECT * FROM referring_providers WHERE id = ? AND organization_id = ?',
                      (provider_id, oid))
     if not provider: abort(404)
-    clinics = q_all("""SELECT * FROM referring_clinics WHERE organization_id = ? AND is_active = 1
-                       ORDER BY name""", (oid,))
+    # Include the provider's own clinic even if it has since been deactivated,
+    # so editing an unrelated field doesn't force a silent clinic reassignment.
+    clinics = q_all("""SELECT * FROM referring_clinics
+                       WHERE organization_id = ? AND (is_active = 1 OR id = ?)
+                       ORDER BY name""", (oid, provider['clinic_id']))
     if request.method == 'POST':
         clinic_id = request.form.get('clinic_id', type=int)
         clinic = q_one('SELECT id FROM referring_clinics WHERE id = ? AND organization_id = ?',
