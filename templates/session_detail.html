@@ -5,7 +5,8 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="btn btn-sm">← Back to patient</a>
+      <a href="{{ url_for('patient_sessions', patient_id=patient.id, modality=session.session_type) }}" class="btn btn-sm">← Back to sessions</a>
+      <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="btn btn-sm">Patient profile</a>
       <h1 class="mt-2">{{ modality_label }} session</h1>
       <div class="subtitle">
         {{ patient.first_name }} {{ patient.last_name }} ({{ patient.mrn }}) ·

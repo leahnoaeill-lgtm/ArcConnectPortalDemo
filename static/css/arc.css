@@ -1007,19 +1007,7 @@ tr.filter-hidden { display: none !important; }
   background: var(--ac-cyan);
 }
 
-/* Adherence ring gauge (patient detail KPI) */
-.kpi-ring { position: relative; width: 64px; height: 64px; margin-top: 6px; }
-.kpi-ring svg { display: block; }
-.kpi-ring-label {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-body);
-  font-weight: 700; font-size: 18px; color: var(--ac-slate-deep);
-}
-.kpi-ring-label span { font-size: 11px; font-weight: 600; margin-left: 1px; }
-
 /* ── Soft Clinical look — scoped to the patient detail page (.pd-soft) ── */
-.pd-soft .kpi,
 .pd-soft .card {
   border: 0;
   border-radius: 18px;
@@ -1080,7 +1068,6 @@ tr.filter-hidden { display: none !important; }
 .idband-stat .v.warn { color: #B45309; }
 .idband-stat .v.good { color: var(--ac-teal); }
 .idband-stat .v-date { font-size: 15px; font-weight: 700; line-height: 1.15; color: var(--ac-slate-deep); margin-bottom: 5px; }
-.idband-stat .v-time { font-size: 11px; font-weight: 600; color: var(--ac-gray); margin-top: 1px; }
 .idband-stat .l {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--ac-gray); margin-top: 5px; font-weight: 600;
@@ -1106,33 +1093,6 @@ a.idband-stat:hover .l { color: var(--ac-slate-deep); }
   .pd-soft .idband { justify-content: flex-start; }
   .idband-stats { width: 100%; justify-content: space-between; }
 }
-.pd-soft .kpi::before { display: none; }   /* tint conveys category instead of the hard accent bar */
-.pd-soft .kpi { position: relative; }
-/* Fixed category tints, matching the approved Soft Clinical mockup */
-.pd-soft .kpi.cat-adh   { background: var(--ac-green-light); }
-.pd-soft .kpi.cat-last  { background: var(--ac-cyan-light); }
-.pd-soft .kpi.cat-dev   { background: #EFE7F7; }   /* soft lavender */
-.pd-soft .kpi.cat-alert { background: var(--ac-red-light); }
-.pd-soft .kpi-icon {
-  position: absolute; top: 16px; right: 16px;
-  font-size: 24px; line-height: 1; opacity: 0.65;
-}
-/* "Last session" two-line value — bold date over a lighter time */
-.kpi-date { font-size: 19px; font-weight: 700; line-height: 1.2; color: var(--ac-slate-deep); }
-.kpi-time { font-size: 13px; font-weight: 600; color: var(--ac-slate); margin-top: 3px; }
-
-/* Compact the 4 top KPI tiles on the patient detail page (less tall, tighter). */
-.pd-soft .kpis { gap: 10px; margin-bottom: 16px; }
-.pd-soft .kpi { padding: 12px 14px; }
-.pd-soft .kpi .label { margin-bottom: 3px; }
-.pd-soft .kpi-ring { width: 48px; height: 48px; margin-top: 2px; }
-.pd-soft .kpi-ring svg { width: 100%; height: 100%; }
-.pd-soft .kpi-ring-label { font-size: 14px; }
-.pd-soft .kpi-ring-label span { font-size: 9px; }
-.pd-soft .kpi-icon { top: 11px; right: 12px; font-size: 19px; }
-.pd-soft .kpi-date { font-size: 16px; }
-.pd-soft .kpi-time { font-size: 12px; margin-top: 1px; }
-
 /* Soft Clinical — sidebar nav as a soft card with pill links */
 .pd-soft .patient-sidebar nav {
   background: #fff;

@@ -12,6 +12,7 @@
 
   <div class="card">
     <form method="POST" class="card-body">
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
       <div class="form-grid">
         <div class="form-group required span-2">
           <label>Clinic (which practice?)</label>

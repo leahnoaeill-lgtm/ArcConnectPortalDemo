@@ -54,7 +54,7 @@
                   </div>
                 {% endfor %}
               </div>
-              {% if item.status != 'resolved' %}
+              {% if item.status not in ('completed', 'cancelled') %}
                 <form method="POST" action="{{ url_for('inbox_reply', item_id=item.id) }}" class="inbox-reply-form">
                   <textarea name="body" rows="2" placeholder="Reply to {{ item.first_name }}…" required></textarea>
                   <button type="submit" class="btn btn-sm btn-teal">Send reply</button>

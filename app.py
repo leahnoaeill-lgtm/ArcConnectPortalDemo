@@ -4363,6 +4363,9 @@ def user_new():
         if existing:
             flash('A user with that email already exists.', 'error')
             return redirect(url_for('user_new', location=requested_loc or None))
+        if request.form.get('role') not in ('admin', 'user'):
+            flash('Invalid role.', 'error')
+            return redirect(url_for('user_new', location=requested_loc or None))
         q_exec("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, is_active)
                   VALUES (?, ?, ?, ?, ?, ?, 1)""",
                (target_org_id, email, request.form.get('first_name'),
@@ -4448,6 +4451,8 @@ def user_deactivate(user_id):
 @require_admin
 def user_activate(user_id):
     oid = current_org_id()
+    if not q_one('SELECT id FROM users WHERE id = ? AND organization_id = ?', (user_id, oid)):
+        abort(404)
     q_exec('UPDATE users SET is_active = 1 WHERE id = ? AND organization_id = ?',
            (user_id, oid))
     flash('User reactivated.', 'success')
@@ -4594,7 +4599,7 @@ def referring_clinics():
                     (SELECT COUNT(*) FROM referring_providers rp
                        WHERE rp.clinic_id = c.id AND rp.is_active = 1) AS provider_count,
                     (SELECT COUNT(*) FROM patients p
-                       WHERE p.referring_clinic_id = c.id) AS patient_count
+                       WHERE p.referring_clinic_id = c.id AND p.status = 'active') AS patient_count
                     FROM referring_clinics c
                     JOIN organizations o ON o.id = c.organization_id
                     WHERE {' AND '.join(where)}""",
@@ -4616,13 +4621,13 @@ def referring_clinic_detail(clinic_id):
     """Drill-down: clinic info + its providers list."""
     oid = current_org_id()
     clinic = q_one("""SELECT c.*,
-                      (SELECT COUNT(*) FROM patients p WHERE p.referring_clinic_id = c.id) AS patient_count
+                      (SELECT COUNT(*) FROM patients p WHERE p.referring_clinic_id = c.id AND p.status = 'active') AS patient_count
                       FROM referring_clinics c
                       WHERE c.id = ? AND c.organization_id = ?""", (clinic_id, oid))
     if not clinic: abort(404)
     providers = q_all("""SELECT rp.*,
                          (SELECT COUNT(*) FROM patients p
-                            WHERE p.referring_provider_id = rp.id) AS patient_count
+                            WHERE p.referring_provider_id = rp.id AND p.status = 'active') AS patient_count
                          FROM referring_providers rp
                          WHERE rp.clinic_id = ? AND rp.organization_id = ?
                          ORDER BY rp.is_active DESC, rp.last_name, rp.first_name""",
@@ -4687,6 +4692,8 @@ def referring_clinic_edit(clinic_id):
 @require_login
 def referring_clinic_deactivate(clinic_id):
     oid = current_org_id()
+    if not q_one('SELECT id FROM referring_clinics WHERE id = ? AND organization_id = ?', (clinic_id, oid)):
+        abort(404)
     q_exec("UPDATE referring_clinics SET is_active = 0 WHERE id = ? AND organization_id = ?",
            (clinic_id, oid))
     flash('Clinic deactivated.', 'success')
@@ -4697,6 +4704,8 @@ def referring_clinic_deactivate(clinic_id):
 @require_login
 def referring_clinic_activate(clinic_id):
     oid = current_org_id()
+    if not q_one('SELECT id FROM referring_clinics WHERE id = ? AND organization_id = ?', (clinic_id, oid)):
+        abort(404)
     q_exec("UPDATE referring_clinics SET is_active = 1 WHERE id = ? AND organization_id = ?",
            (clinic_id, oid))
     flash('Clinic reactivated.', 'success')
@@ -4726,7 +4735,7 @@ def referring_providers():
     oid = current_org_id()
     rows = q_all("""SELECT rp.*, c.name AS clinic_name,
                     (SELECT COUNT(*) FROM patients p
-                       WHERE p.referring_provider_id = rp.id) AS patient_count
+                       WHERE p.referring_provider_id = rp.id AND p.status = 'active') AS patient_count
                     FROM referring_providers rp
                     JOIN referring_clinics c ON c.id = rp.clinic_id
                     WHERE rp.organization_id = ?
@@ -4787,6 +4796,9 @@ def referring_provider_edit(provider_id):
                 request.form.get('phone'), request.form.get('email'),
                 request.form.get('notes'), provider_id))
         flash('Referring provider updated.', 'success')
+        nxt = request.form.get('next', '')
+        if nxt.startswith('/') and '//' not in nxt:
+            return redirect(nxt)
         return redirect(url_for('referring_clinic_detail', clinic_id=clinic_id))
     return render_template('referring_provider_form.html', provider=provider, clinics=clinics)
 
@@ -4795,6 +4807,8 @@ def referring_provider_edit(provider_id):
 @require_login
 def referring_provider_deactivate(provider_id):
     oid = current_org_id()
+    if not q_one('SELECT id FROM referring_providers WHERE id = ? AND organization_id = ?', (provider_id, oid)):
+        abort(404)
     q_exec("UPDATE referring_providers SET is_active = 0 WHERE id = ? AND organization_id = ?",
            (provider_id, oid))
     flash('Provider deactivated.', 'success')
@@ -4805,6 +4819,8 @@ def referring_provider_deactivate(provider_id):
 @require_login
 def referring_provider_activate(provider_id):
     oid = current_org_id()
+    if not q_one('SELECT id FROM referring_providers WHERE id = ? AND organization_id = ?', (provider_id, oid)):
+        abort(404)
     q_exec("UPDATE referring_providers SET is_active = 1 WHERE id = ? AND organization_id = ?",
            (provider_id, oid))
     flash('Provider reactivated.', 'success')
@@ -5285,13 +5301,17 @@ def task_new():
     oid = current_org_id()
     u = current_user()
     if request.method == 'POST':
+        title = request.form.get('title', '').strip()
+        if not title:
+            flash('Task title is required.', 'error')
+            return redirect(url_for('task_new', patient_id=request.form.get('patient_id') or None))
         due_at = request.form.get('due_at') or None
         assignee = request.form.get('assigned_to_user_id', type=int) or u['id']
         patient_id = request.form.get('patient_id', type=int) or None
         task_id = q_exec("""INSERT INTO tasks (organization_id, patient_id, title, description,
                             status, priority, due_at, assigned_to_user_id, created_by_user_id)
                             VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?)""",
-                         (oid, patient_id, request.form.get('title', '').strip(),
+                         (oid, patient_id, title,
                           request.form.get('description') or None,
                           request.form.get('priority', 'normal'),
                           due_at, assignee, u['id']))
