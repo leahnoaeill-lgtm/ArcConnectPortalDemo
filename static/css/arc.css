@@ -426,8 +426,8 @@ a:hover { text-decoration: underline; }
   width: 28px;
   height: 28px;
   min-width: 28px;
-  background: var(--ac-teal);
-  color: white;
+  background: var(--ac-teal-light);
+  color: var(--ac-teal-deep);
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
@@ -810,7 +810,7 @@ tr.filter-hidden { display: none !important; }
 }
 .patient-section-header h2 {
   font-size: 20px;
-  font-weight: 400;
+  font-weight: 600;
   letter-spacing: -0.015em;
   color: var(--ac-slate-deep);
 }
@@ -925,7 +925,7 @@ tr.filter-hidden { display: none !important; }
 
 .card-header h2 {
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 
@@ -1014,11 +1014,76 @@ tr.filter-hidden { display: none !important; }
   border-radius: 18px;
   box-shadow: 0 4px 16px rgba(45, 139, 173, 0.07);
 }
-/* Content cards: a light, near-white interior framed by a thick brand-tinted
-   border — a crisp, framed look instead of a heavy gradient. */
+/* Content cards: a white interior framed by a thick soft-cyan border —
+   a crisp, framed look. */
 .pd-soft .card {
-  background: #F8FCFE;
+  background: #FFFFFF;
   border: 2px solid #9FD4EC;
+  margin-bottom: 12px;
+}
+/* Tighter interior padding so the cards aren't so roomy. */
+.pd-soft .card-body { padding: 16px; }
+.pd-soft .card-header { padding: 12px 16px; }
+/* Bump the very-small text up one step for readability; keep it consistent. */
+.pd-soft .small { font-size: 12px; }
+.pd-soft .mono.small,
+.pd-soft .small.mono { font-size: 12px; }
+/* Section "View all …" links match the right-side subtitle labels (13px),
+   instead of the tiny 11px button size. */
+.pd-soft .patient-section-header .btn-link { font-size: 13px; }
+
+/* ── Patient identity band: avatar + details (left) · 4 KPI stats (right) ── */
+.idband-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.idband-toolbar .spacer { flex: 1; }
+.pd-soft .idband {
+  background: #FFFFFF;
+  border: 2px solid #9FD4EC;
+  border-radius: 18px;
+  box-shadow: 0 4px 16px rgba(45, 139, 173, 0.07);
+  padding: 16px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.idband-left { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+.idband-avatar {
+  width: 54px; height: 54px; border-radius: 50%;
+  background: var(--ac-teal-light); color: var(--ac-teal-deep); flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 19px;
+}
+.idband-name {
+  font-size: 22px; font-weight: 700; color: var(--ac-slate-deep);
+  letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.idband-meta { font-size: 13px; color: var(--ac-gray); margin-top: 4px; }
+.idband-meta a { color: inherit; }
+.idband-contact { font-size: 12px; color: var(--ac-gray); margin-top: 5px; }
+.idband-contact a { color: inherit; text-decoration: none; }
+.idband-contact a:hover { text-decoration: underline; }
+
+.idband-stats { display: flex; align-items: center; flex: 0 0 auto; }
+.idband-stat { padding: 0 18px; text-align: center; border-left: 1px solid #CFE6F4; }
+.idband-stat:first-child { border-left: 0; }
+.idband-stat .v { font-size: 21px; font-weight: 700; line-height: 1.05; color: var(--ac-slate-deep); }
+.idband-stat .v.warn { color: #B45309; }
+.idband-stat .v-date { font-size: 15px; font-weight: 700; line-height: 1.15; color: var(--ac-slate-deep); margin-bottom: 5px; }
+.idband-stat .v-time { font-size: 11px; font-weight: 600; color: var(--ac-gray); margin-top: 1px; }
+.idband-stat .l {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--ac-gray); margin-top: 5px; font-weight: 600;
+  white-space: nowrap;
+}
+.idband-ring { position: relative; width: 46px; height: 46px; margin: 0 auto; }
+.idband-ring svg { display: block; }
+.idband-ring-label {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; font-size: 13px; font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .pd-soft .idband { justify-content: flex-start; }
+  .idband-stats { width: 100%; justify-content: space-between; }
 }
 .pd-soft .kpi::before { display: none; }   /* tint conveys category instead of the hard accent bar */
 .pd-soft .kpi { position: relative; }
@@ -1076,7 +1141,7 @@ tr.filter-hidden { display: none !important; }
 .pd-soft .patient-nav-link[data-section="referring"]::before    { content: "🏥"; }
 
 /* Soft Clinical — section titles get a matching icon + a bit more breathing room */
-.pd-soft .patient-section { margin-bottom: 30px; }
+.pd-soft .patient-section { margin-bottom: 20px; }
 .pd-soft .patient-section-header h2 { font-size: 17px; }
 .pd-soft .patient-section-header h2::before { margin-right: 8px; }
 .pd-soft #therapy      .patient-section-header h2::before { content: "🫁"; }
@@ -2068,6 +2133,18 @@ body.super-readonly .super-admin-banner button {
   box-shadow: 0 4px 10px rgba(67, 193, 237, 0.25);
 }
 
+/* Soft light-blue action button (e.g. Print Therapy Summary) */
+.btn-lightblue {
+  background: #DFF2FB;
+  color: #1B5E7A;
+  border-color: #C7E9F8;
+}
+.btn-lightblue:hover {
+  background: #9FD4EC;
+  border-color: #7FC4E6;
+  color: #134A61;
+}
+
 /* Outlined secondary — tinted so it stands out on white without competing
    with the filled primary. */
 .btn-outline {
@@ -2461,8 +2538,8 @@ body.super-readonly .super-admin-banner button {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--ac-cyan);
-  color: white;
+  background: var(--ac-cyan-light);
+  color: var(--ac-cyan-dark);
   font-weight: 700;
   display: flex;
   align-items: center;

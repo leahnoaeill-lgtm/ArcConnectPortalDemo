@@ -2,124 +2,121 @@
 {% block title %}{{ patient.first_name }} {{ patient.last_name }} · Arc Connect Portal{% endblock %}
 {% block body %}
 <div class="page pd-soft">
-  <div class="page-header">
-    <div>
-      <a href="{{ url_for('patients') }}" class="btn btn-sm">← Back to patients</a>
-      <h1 class="mt-2">{{ patient.first_name }} {{ patient.last_name }}
-        <span class="badge status-{{ patient.status }}" title="HME relationship status">{{ patient.status | title }}</span>
-      </h1>
-      <div class="subtitle">
-        {% if patient.mrn %}Patient ID: {{ patient.mrn }}{% else %}No Patient ID{% endif %}
-        {% if patient.dob %} · DOB {{ patient.dob | date_only }}{% endif %}
-        {% if patient.diagnosis %} · {{ patient.diagnosis }}{% endif %}
-        ·
-        {% if patient.mobile_app_enabled %}
-          <span class="mobile-app-pill mobile-app-on" title="Patient has paired the Arc Connect mobile app — messaging / surveys / mood check-ins are deliverable.">
-            📱 App paired
-            {% if patient.mobile_app_last_sync %}
-              <span class="mobile-app-sync">· last sync {{ patient.mobile_app_last_sync | dt }}</span>
-            {% else %}
-              <span class="mobile-app-sync">· never synced</span>
-            {% endif %}
-          </span>
-        {% else %}
-          <span class="mobile-app-pill mobile-app-off" title="Patient has not paired the mobile app — engagement features are inactive until they do.">📱 App not paired</span>
-        {% endif %}
-      </div>
-      {% set _addr_parts = [] %}
-      {% if patient.address_line1 %}{% set _ = _addr_parts.append(patient.address_line1) %}{% endif %}
-      {% if patient.address_line2 %}{% set _ = _addr_parts.append(patient.address_line2) %}{% endif %}
-      {% set _city_state = [] %}
-      {% if patient.city %}{% set _ = _city_state.append(patient.city) %}{% endif %}
-      {% if patient.state %}{% set _ = _city_state.append(patient.state) %}{% endif %}
-      {% if _city_state %}{% set _ = _addr_parts.append(_city_state | join(', ') ~ (' ' ~ patient.zip if patient.zip else '')) %}{% endif %}
-      {% if patient.country and patient.country != 'US' %}{% set _ = _addr_parts.append(patient.country | country_name) %}{% endif %}
-      {% set _full_addr = _addr_parts | join(', ') %}
-      <div class="patient-contact small muted mt-1">
-        {% if patient.phone %}<a href="tel:{{ patient.phone }}">📞 {{ patient.phone }}</a>{% endif %}
-        {% if patient.email %} · <a href="mailto:{{ patient.email }}"><span class="email-ico">✉</span> {{ patient.email }}</a>{% endif %}
-        {% if _full_addr %} · <a href="https://www.google.com/maps/search/?api=1&query={{ _full_addr | urlencode }}" target="_blank" rel="noopener">📍 {{ _full_addr }}</a>{% endif %}
-      </div>
-    </div>
-    <div class="actions">
-      <details class="report-chooser">
-        <summary class="btn btn-primary">Print Therapy Summary</summary>
-        <div class="report-chooser-panel">
-          <div class="rc-label">Select range</div>
-          <div class="rc-range-buttons">
-            <a href="{{ url_for('patient_report', patient_id=patient.id, range='30') }}" target="_blank" class="btn btn-sm">30 days</a>
-            <a href="{{ url_for('patient_report', patient_id=patient.id, range='60') }}" target="_blank" class="btn btn-sm">60 days</a>
-            <a href="{{ url_for('patient_report', patient_id=patient.id, range='90') }}" target="_blank" class="btn btn-sm">90 days</a>
-          </div>
-          <div class="rc-divider">or custom</div>
-          <form method="GET" action="{{ url_for('patient_report', patient_id=patient.id) }}" target="_blank">
-            <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
-              <div class="form-group">
-                <label>Start</label>
-                <input type="date" name="start" required>
-              </div>
-              <div class="form-group">
-                <label>End</label>
-                <input type="date" name="end" required>
-              </div>
-            </div>
-            <button type="submit" class="btn btn-sm btn-primary" style="width: 100%;">Generate report</button>
-          </form>
-        </div>
-      </details>
-      <a href="{{ url_for('patient_edit', patient_id=patient.id) }}" class="btn btn-outline">Edit Patient Profile</a>
-      {% if patient.status == 'active' %}
-      <form method="POST" action="{{ url_for('patient_set_status', patient_id=patient.id) }}" style="display:inline;"
-            onsubmit="return confirm('Mark {{ patient.first_name }} {{ patient.last_name }} inactive for this HME location?\n\nTheir data stays visible for historical purposes.');">
-        <input type="hidden" name="status" value="inactive">
-        <button type="submit" class="btn btn-ghost-danger">Mark inactive</button>
-      </form>
-      {% else %}
-      <form method="POST" action="{{ url_for('patient_set_status', patient_id=patient.id) }}" style="display:inline;">
-        <input type="hidden" name="status" value="active">
-        <button type="submit" class="btn">Mark active</button>
-      </form>
-      {% endif %}
-    </div>
-  </div>
-
   {% set adh = patient.adherence_pct_30d %}
   {% set adh_tier = 'red' if (adh is not none and adh < 50) else ('yellow' if (adh is not none and adh < 80) else 'green') %}
   {% set open_alerts_n = alerts | selectattr('resolved_at','none') | list | length %}
-  <div class="kpis">
-    <div class="kpi cat-adh">
-      <div class="label">Adherence (30d)</div>
-      <div class="kpi-ring">
-        <svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
-          <circle cx="32" cy="32" r="26" fill="none" stroke="var(--ac-border)" stroke-width="7"></circle>
-          <circle cx="32" cy="32" r="26" fill="none" stroke-width="7" stroke-linecap="round"
-                  style="stroke: var(--ac-{{ adh_tier }});"
-                  stroke-dasharray="163.4"
-                  stroke-dashoffset="{{ (163.4 * (1 - (adh or 0) / 100)) | round(1) }}"
-                  transform="rotate(-90 32 32)"></circle>
-        </svg>
-        <div class="kpi-ring-label">{{ adh if adh is not none else '—' }}{% if adh is not none %}<span>%</span>{% endif %}</div>
+  {% set ring_color = 'var(--ac-teal)' if adh_tier == 'green' else 'var(--ac-' ~ adh_tier ~ ')' %}
+
+  {# ── Top toolbar: back link (left) + actions (right) ── #}
+  <div class="idband-toolbar">
+    <a href="{{ url_for('patients') }}" class="btn btn-sm">← Back to patients</a>
+    <span class="spacer"></span>
+    <details class="report-chooser">
+      <summary class="btn btn-lightblue">Print Therapy Summary</summary>
+      <div class="report-chooser-panel">
+        <div class="rc-label">Select range</div>
+        <div class="rc-range-buttons">
+          <a href="{{ url_for('patient_report', patient_id=patient.id, range='30') }}" target="_blank" class="btn btn-sm">30 days</a>
+          <a href="{{ url_for('patient_report', patient_id=patient.id, range='60') }}" target="_blank" class="btn btn-sm">60 days</a>
+          <a href="{{ url_for('patient_report', patient_id=patient.id, range='90') }}" target="_blank" class="btn btn-sm">90 days</a>
+        </div>
+        <div class="rc-divider">or custom</div>
+        <form method="GET" action="{{ url_for('patient_report', patient_id=patient.id) }}" target="_blank">
+          <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
+            <div class="form-group">
+              <label>Start</label>
+              <input type="date" name="start" required>
+            </div>
+            <div class="form-group">
+              <label>End</label>
+              <input type="date" name="end" required>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary" style="width: 100%;">Generate report</button>
+        </form>
+      </div>
+    </details>
+    <a href="{{ url_for('patient_edit', patient_id=patient.id) }}" class="btn btn-outline">Edit Patient Profile</a>
+    {% if patient.status == 'active' %}
+    <form method="POST" action="{{ url_for('patient_set_status', patient_id=patient.id) }}" style="display:inline;"
+          onsubmit="return confirm('Mark {{ patient.first_name }} {{ patient.last_name }} inactive for this HME location?\n\nTheir data stays visible for historical purposes.');">
+      <input type="hidden" name="status" value="inactive">
+      <button type="submit" class="btn btn-ghost-danger">Mark inactive</button>
+    </form>
+    {% else %}
+    <form method="POST" action="{{ url_for('patient_set_status', patient_id=patient.id) }}" style="display:inline;">
+      <input type="hidden" name="status" value="active">
+      <button type="submit" class="btn">Mark active</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {# ── Identity band: avatar + details (left) · 4 KPI stats (right) ── #}
+  {% set _addr_parts = [] %}
+  {% if patient.address_line1 %}{% set _ = _addr_parts.append(patient.address_line1) %}{% endif %}
+  {% if patient.address_line2 %}{% set _ = _addr_parts.append(patient.address_line2) %}{% endif %}
+  {% set _city_state = [] %}
+  {% if patient.city %}{% set _ = _city_state.append(patient.city) %}{% endif %}
+  {% if patient.state %}{% set _ = _city_state.append(patient.state) %}{% endif %}
+  {% if _city_state %}{% set _ = _addr_parts.append(_city_state | join(', ') ~ (' ' ~ patient.zip if patient.zip else '')) %}{% endif %}
+  {% if patient.country and patient.country != 'US' %}{% set _ = _addr_parts.append(patient.country | country_name) %}{% endif %}
+  {% set _full_addr = _addr_parts | join(', ') %}
+  <div class="idband">
+    <div class="idband-left">
+      <div class="idband-avatar">{{ patient.first_name[0] | upper if patient.first_name else '?' }}{{ patient.last_name[0] | upper if patient.last_name else '' }}</div>
+      <div>
+        <div class="idband-name">{{ patient.first_name }} {{ patient.last_name }}
+          <span class="badge status-{{ patient.status }}" title="HME relationship status">{{ patient.status | title }}</span>
+        </div>
+        <div class="idband-meta">
+          {% if patient.mrn %}ID: {{ patient.mrn }}{% else %}No Patient ID{% endif %}
+          {% if patient.dob %} · DOB {{ patient.dob | date_only }}{% endif %}
+          {% if patient.diagnosis %} · {{ patient.diagnosis }}{% endif %}
+          ·
+          {% if patient.mobile_app_enabled %}
+            <span class="mobile-app-pill mobile-app-on" title="Patient has paired the Arc Connect mobile app — messaging / surveys / mood check-ins are deliverable.{% if patient.mobile_app_last_sync %} Last sync {{ patient.mobile_app_last_sync | dt }}.{% else %} Never synced.{% endif %}">📱 App paired</span>
+          {% else %}
+            <span class="mobile-app-pill mobile-app-off" title="Patient has not paired the mobile app — engagement features are inactive until they do.">📱 App not paired</span>
+          {% endif %}
+        </div>
+        <div class="idband-contact">
+          {% if patient.phone %}<a href="tel:{{ patient.phone }}">📞 {{ patient.phone }}</a>{% endif %}
+          {% if patient.email %} · <a href="mailto:{{ patient.email }}"><span class="email-ico">✉</span> {{ patient.email }}</a>{% endif %}
+          {% if _full_addr %} · <a href="https://www.google.com/maps/search/?api=1&query={{ _full_addr | urlencode }}" target="_blank" rel="noopener">📍 {{ _full_addr }}</a>{% endif %}
+        </div>
       </div>
     </div>
-    <div class="kpi cat-last">
-      <div class="kpi-icon">🕑</div>
-      <div class="label">Last session</div>
-      {% if patient.last_session_at %}
-        <div class="kpi-date">{{ patient.last_session_at | date_only }}</div>
-        <div class="kpi-time">{{ patient.last_session_at | time_only }}</div>
-      {% else %}
-        <div class="kpi-date">Never</div>
-      {% endif %}
-    </div>
-    <div class="kpi cat-dev">
-      <div class="kpi-icon">🔧</div>
-      <div class="label">Active devices</div>
-      <div class="kpi-date">{{ assignments | selectattr('returned_date','none') | list | length }}</div>
-    </div>
-    <div class="kpi cat-alert">
-      <div class="kpi-icon">⚠️</div>
-      <div class="label">Open alerts</div>
-      <div class="kpi-date">{{ open_alerts_n }}</div>
+    <div class="idband-stats">
+      <div class="idband-stat">
+        <div class="idband-ring">
+          <svg viewBox="0 0 64 64" width="46" height="46" aria-hidden="true">
+            <circle cx="32" cy="32" r="26" fill="none" stroke="var(--ac-border)" stroke-width="7"></circle>
+            <circle cx="32" cy="32" r="26" fill="none" stroke-width="7" stroke-linecap="round"
+                    style="stroke: {{ ring_color }};"
+                    stroke-dasharray="163.4"
+                    stroke-dashoffset="{{ (163.4 * (1 - (adh or 0) / 100)) | round(1) }}"
+                    transform="rotate(-90 32 32)"></circle>
+          </svg>
+          <div class="idband-ring-label" style="color: {{ ring_color }};">{{ adh if adh is not none else '—' }}{% if adh is not none %}%{% endif %}</div>
+        </div>
+        <div class="l">Adherence (30D)</div>
+      </div>
+      <div class="idband-stat">
+        {% if patient.last_session_at %}
+          <div class="v-date">{{ patient.last_session_at | date_only }}</div>
+        {% else %}
+          <div class="v-date">Never</div>
+        {% endif %}
+        <div class="l">Last session</div>
+      </div>
+      <div class="idband-stat">
+        <div class="v">{{ assignments | selectattr('returned_date','none') | list | length }}</div>
+        <div class="l">Devices</div>
+      </div>
+      <div class="idband-stat">
+        <div class="v{% if open_alerts_n %} warn{% endif %}">{{ open_alerts_n }}</div>
+        <div class="l">Open alerts</div>
+      </div>
     </div>
   </div>
 

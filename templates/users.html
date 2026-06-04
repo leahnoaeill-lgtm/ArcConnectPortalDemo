@@ -38,7 +38,7 @@
           {% for u in users %}
             <tr>
               <td>
-                <div class="user-avatar" style="width: 32px; height: 32px; background: var(--ac-teal); color: white; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px;">
+                <div class="user-avatar" style="width: 32px; height: 32px; background: var(--ac-teal-light); color: var(--ac-teal-deep); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px;">
                   {{ u.first_name[0] if u.first_name else '?' }}{{ u.last_name[0] if u.last_name else '' }}
                 </div>
               </td>
