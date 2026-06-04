@@ -109,9 +109,10 @@
         {% endif %}
         <div class="l">Last session</div>
       </div>
+      {% set active_dev = assignments | selectattr('returned_date','none') | list | length %}
       <div class="idband-stat">
-        <div class="v">{{ assignments | selectattr('returned_date','none') | list | length }}</div>
-        <div class="l">Devices</div>
+        <div class="v">{{ active_dev }}</div>
+        <div class="l">Device{{ '' if active_dev == 1 else 's' }}</div>
       </div>
       <div class="idband-stat">
         <div class="v{% if open_alerts_n %} warn{% endif %}">{{ open_alerts_n }}</div>
