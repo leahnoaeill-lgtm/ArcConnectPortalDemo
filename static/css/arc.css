@@ -25,6 +25,7 @@
   --ac-yellow: #FCBE03;
   --ac-yellow-light: #FFF5D6;
   --ac-red: #C00000;
+  --ac-red-soft: #C0392B;   /* warm brick red for solid critical/high pills (softer than --ac-red) */
   --ac-red-light: #FBE1E1;
   /* BiWaze product brand colors. Clear reuses the Arc Connect brand cyan. */
   --biwaze-cough: #F27C1C;            /* Cough = orange */
@@ -77,7 +78,7 @@ a:hover { text-decoration: underline; }
   backdrop-filter: saturate(180%) blur(18px);
   -webkit-backdrop-filter: saturate(180%) blur(18px);
   color: var(--ac-slate-deep);
-  padding: 0 24px;            /* equal edges so the user-pill caret stays visible */
+  padding: 0 24px 0 20px;     /* small left gap so the logo isn't flush to the window edge */
   display: flex;
   align-items: center;
   height: 56px;
@@ -91,7 +92,7 @@ a:hover { text-decoration: underline; }
 .topbar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  align-self: stretch;        /* fill full bar height so the logo can too */
   margin-right: 32px;
   text-decoration: none;
   color: inherit;
@@ -100,7 +101,7 @@ a:hover { text-decoration: underline; }
 .topbar-brand:hover { text-decoration: none; }
 
 .topbar-brand .logo-img {
-  height: 44px;
+  height: 56px;               /* full header-bar height, flush, no padding */
   width: auto;
   display: block;
 }
@@ -890,12 +891,15 @@ tr.filter-hidden { display: none !important; }
 /* ── Cards ────────────────────────────────────────────────────────── */
 
 .card {
-  background: white;
+  /* Subtle top-to-bottom wash (white -> faint brand tint) plus a layered
+     shadow give the cards depth without looking heavy. */
+  background: linear-gradient(180deg, #FFFFFF 0%, #F6FAFC 100%);
   border: 0;
   border-radius: 18px;
   overflow: hidden;
   margin-bottom: 16px;
-  box-shadow: 0 6px 22px rgba(45, 139, 173, 0.08);
+  box-shadow: 0 1px 2px rgba(45, 139, 173, 0.06),
+              0 8px 24px rgba(45, 139, 173, 0.10);
 }
 
 /* Cards that act as a single clickable drill-down target. Interactive
@@ -1008,7 +1012,13 @@ tr.filter-hidden { display: none !important; }
 .pd-soft .card {
   border: 0;
   border-radius: 18px;
-  box-shadow: 0 6px 22px rgba(45, 139, 173, 0.08);
+  box-shadow: 0 4px 16px rgba(45, 139, 173, 0.07);
+}
+/* Content cards: a light, near-white interior framed by a thick brand-tinted
+   border — a crisp, framed look instead of a heavy gradient. */
+.pd-soft .card {
+  background: #F8FCFE;
+  border: 2px solid #9FD4EC;
 }
 .pd-soft .kpi::before { display: none; }   /* tint conveys category instead of the hard accent bar */
 .pd-soft .kpi { position: relative; }
@@ -1024,6 +1034,18 @@ tr.filter-hidden { display: none !important; }
 /* "Last session" two-line value — bold date over a lighter time */
 .kpi-date { font-size: 19px; font-weight: 700; line-height: 1.2; color: var(--ac-slate-deep); }
 .kpi-time { font-size: 13px; font-weight: 600; color: var(--ac-slate); margin-top: 3px; }
+
+/* Compact the 4 top KPI tiles on the patient detail page (less tall, tighter). */
+.pd-soft .kpis { gap: 10px; margin-bottom: 16px; }
+.pd-soft .kpi { padding: 12px 14px; }
+.pd-soft .kpi .label { margin-bottom: 3px; }
+.pd-soft .kpi-ring { width: 48px; height: 48px; margin-top: 2px; }
+.pd-soft .kpi-ring svg { width: 100%; height: 100%; }
+.pd-soft .kpi-ring-label { font-size: 14px; }
+.pd-soft .kpi-ring-label span { font-size: 9px; }
+.pd-soft .kpi-icon { top: 11px; right: 12px; font-size: 19px; }
+.pd-soft .kpi-date { font-size: 16px; }
+.pd-soft .kpi-time { font-size: 12px; margin-top: 1px; }
 
 /* Soft Clinical — sidebar nav as a soft card with pill links */
 .pd-soft .patient-sidebar nav {
@@ -1253,7 +1275,7 @@ a.kpi-link:hover .sub {
   font-weight: 600;
 }
 
-.badge.severity-critical { background: var(--ac-red); color: white; }
+.badge.severity-critical { background: var(--ac-red-soft); color: white; }
 .badge.severity-warning  { background: var(--ac-yellow); color: var(--ac-dark); }
 .badge.severity-info     { background: var(--ac-slate); color: white; }
 
@@ -1285,7 +1307,7 @@ a.kpi-link:hover .sub {
 .badge.task-status-cancelled        { background: var(--ac-gray); color: white; }
 
 /* Task priority badges */
-.badge.priority-high   { background: var(--ac-red); color: white; }
+.badge.priority-high   { background: var(--ac-red-soft); color: white; }
 .badge.priority-normal { background: var(--ac-slate-light); color: var(--ac-slate-deep); }
 .badge.priority-low    { background: var(--ac-bg); color: var(--ac-gray); border: 1px solid var(--ac-border); }
 
@@ -3095,20 +3117,22 @@ th.sortable-th:hover .sort-arrow { opacity: 1; }
   box-shadow: 0 0 0 2px rgba(67, 193, 237, 0.25);
 }
 
-/* Goal fully met — solid green fill */
+/* Goal fully met — solid teal fill */
 .therapy-grid-cell-green {
-  background: var(--ac-green);
-  border-color: var(--ac-green);
+  background: var(--ac-teal);
+  border-color: var(--ac-teal);
 }
 /* Partial — solid amber (matches the app's orange/yellow highlight) */
 .therapy-grid-cell-yellow {
   background: #F59E0B;
   border-color: #F59E0B;
 }
-/* No therapy — hollow outline ring (same look as the mobile app) */
+/* No therapy — grey fill with a diagonal slash to read as "no session" */
 .therapy-grid-cell-red {
-  background: transparent;
-  border-color: var(--ac-border);
+  background-color: var(--ac-slate-light);
+  background-image: linear-gradient(135deg,
+      transparent 44%, var(--ac-gray) 44%, var(--ac-gray) 56%, transparent 56%);
+  border-color: var(--ac-border-strong);
 }
 
 /* Compact session list inside therapy cards */
