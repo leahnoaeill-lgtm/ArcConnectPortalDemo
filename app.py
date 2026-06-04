@@ -3454,6 +3454,31 @@ def patient_goals(patient_id):
                                (patient_id,))])
 
 
+def sync_referral_history(oid, patient_id, old_clinic_id, old_provider_id,
+                          clinic_id, provider_id, reason=None):
+    """Keep the append-only patient_referral_history log in step with a change
+    to a patient's referring clinic/provider snapshot.
+
+    Closes any currently-open row (stamps removed_at) and opens a new row when
+    there's an actual new referral. A bare unassign (clinic and provider both
+    cleared) just closes the open row. No-op when nothing changed. Call this
+    AFTER the patients row is written, from every place that sets the referral:
+    the dedicated referral page, Edit Patient, and Add Patient.
+    """
+    if clinic_id == old_clinic_id and provider_id == old_provider_id:
+        return
+    uid = (current_user() or {})['id']
+    q_exec("""UPDATE patient_referral_history
+              SET removed_at = CURRENT_TIMESTAMP, changed_by_user_id = ?
+              WHERE patient_id = ? AND removed_at IS NULL""",
+           (uid, patient_id))
+    if clinic_id or provider_id:
+        q_exec("""INSERT INTO patient_referral_history
+                  (organization_id, patient_id, clinic_id, provider_id, changed_by_user_id, reason)
+                  VALUES (?, ?, ?, ?, ?, ?)""",
+               (oid, patient_id, clinic_id, provider_id, uid, reason))
+
+
 @app.route('/patients/<int:patient_id>/edit', methods=['GET', 'POST'])
 @require_login
 def patient_edit(patient_id):
@@ -3495,6 +3520,9 @@ def patient_edit(patient_id):
                 request.form.get('diagnosis4') or None,
                 status,
                 patient_id, oid))
+        sync_referral_history(oid, patient_id,
+                              patient['referring_clinic_id'], patient['referring_provider_id'],
+                              clinic_id, provider_id, reason='Updated via patient profile')
         flash('Patient updated.', 'success')
         return redirect(url_for('patient_detail', patient_id=patient_id))
     clinicians = q_all("""SELECT * FROM users WHERE organization_id = ? AND is_active = 1
@@ -3648,7 +3676,7 @@ def patient_new():
                          (provider_id, oid))
             if prov:
                 clinic_id = prov['clinic_id']
-        q_exec("""INSERT INTO patients (organization_id, mrn, first_name, last_name, dob,
+        new_patient_id = q_exec("""INSERT INTO patients (organization_id, mrn, first_name, last_name, dob,
                   phone, email, address_line1, address_line2, city, state, zip, country,
                   preferred_language, rx_frequency_per_day, rx_modalities,
                   assigned_clinician_user_id, referring_clinic_id, referring_provider_id,
@@ -3668,6 +3696,9 @@ def patient_new():
                 request.form.get('diagnosis3') or None,
                 request.form.get('diagnosis4') or None,
                 status))
+        # Record the initial referral in the history log (no prior referral).
+        sync_referral_history(oid, new_patient_id, None, None,
+                              clinic_id, provider_id, reason='Initial assignment')
         flash('Patient added.', 'success')
         return redirect(url_for('patients'))
     clinicians = q_all("""SELECT * FROM users WHERE organization_id = ? AND is_active = 1
@@ -4818,10 +4849,14 @@ def patient_referral_edit(patient_id):
                          (provider_id, oid))
             if not prov: abort(404)
             clinic_id = prov['clinic_id']
+
         q_exec("""UPDATE patients SET referring_clinic_id = ?, referring_provider_id = ?
                   WHERE id = ?""",
                (clinic_id, provider_id, patient_id))
-        flash('Referral updated.', 'success')
+        sync_referral_history(oid, patient_id,
+                              p['referring_clinic_id'], p['referring_provider_id'],
+                              clinic_id, provider_id)
+        flash('Referral updated.' if (clinic_id or provider_id) else 'Referral removed.', 'success')
         return redirect(url_for('patient_detail', patient_id=patient_id))
     return render_template('patient_referral_form.html', patient=p, clinics=clinics,
                            providers=providers)
