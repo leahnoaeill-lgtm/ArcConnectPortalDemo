@@ -487,8 +487,11 @@ a:hover { text-decoration: underline; }
    the left, actions on the right) to match the dashboard/patient identity band. */
 .pd-soft .page-header {
   background: #FFFFFF;
-  border: 2px solid #B9E1F2;
+  /* Raised header: bolder border + deeper shadow so it floats above the
+     flatter supporting tables/cards. */
+  border: 2px solid var(--ac-cyan-dark);
   border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(45, 139, 173, 0.16);
   padding: 14px 20px;
   margin-bottom: 16px;
   align-items: center;
@@ -1008,16 +1011,13 @@ tr.filter-hidden { display: none !important; }
 }
 
 /* ── Soft Clinical look — scoped to the patient detail page (.pd-soft) ── */
-.pd-soft .card {
-  border: 0;
-  border-radius: 18px;
-  box-shadow: 0 4px 16px rgba(45, 139, 173, 0.07);
-}
-/* Content cards: a white interior framed by a thick soft-cyan border —
-   a crisp, framed look. */
+/* Supporting cards/tables stay flat (light border, no shadow) so the raised
+   header band reads as the page header above them. */
 .pd-soft .card {
   background: #FFFFFF;
-  border: 2px solid #B9E1F2;
+  border: 2px solid #D6EBF7;
+  border-radius: 18px;
+  box-shadow: none;
   margin-bottom: 12px;
 }
 /* Tighter interior padding so the cards aren't so roomy. */
@@ -1036,9 +1036,11 @@ tr.filter-hidden { display: none !important; }
 .idband-toolbar .spacer { flex: 1; }
 .pd-soft .idband {
   background: #FFFFFF;
-  border: 2px solid #B9E1F2;
+  /* Raised header: bolder border + deeper shadow so it floats above the
+     flatter supporting tables/cards. */
+  border: 2px solid var(--ac-cyan-dark);
   border-radius: 18px;
-  box-shadow: 0 4px 16px rgba(45, 139, 173, 0.07);
+  box-shadow: 0 8px 24px rgba(45, 139, 173, 0.16);
   padding: 16px 20px;
   display: flex; align-items: center; justify-content: space-between;
   gap: 24px; flex-wrap: wrap;
