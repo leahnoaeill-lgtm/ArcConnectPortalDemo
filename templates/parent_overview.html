@@ -3,39 +3,42 @@
 {# Leaflet CSS removed — the parent dashboard's "Network map" widget was
    replaced with an embedded heat map iframe (see card below). #}
 {% block body %}
-<div class="page">
+<div class="page pd-soft">
 
-  <div class="page-header">
-    <div>
-      <h1>{{ parent_org.name }}</h1>
-      <div class="subtitle">Rollup across all {{ locations|length }} locations</div>
+  {# ── Identity band: network name (left) · rollup KPI stats (right) — mirrors the dashboard ── #}
+  <div class="idband">
+    <div class="idband-left">
+      <div>
+        <div class="idband-name">{{ parent_org.name }}</div>
+        <div class="idband-meta">Network rollup · {{ locations|length }} location{{ 's' if locations|length != 1 }}</div>
+      </div>
     </div>
-    <div class="actions">
-      <a href="{{ url_for('parent_location_new') }}" class="btn btn-primary">+ Add Satellite location</a>
+    <div class="idband-stats">
+      <a class="idband-stat" href="#locations">
+        <div class="v">{{ locations|length }}</div>
+        <div class="l">Locations</div>
+        <div class="sub">satellites</div>
+      </a>
+      <a class="idband-stat" href="{{ url_for('parent_patients') }}">
+        <div class="v">{{ totals.patients }}</div>
+        <div class="l">Patients</div>
+        <div class="sub">all locations</div>
+      </a>
+      <a class="idband-stat" href="{{ url_for('parent_devices') }}">
+        <div class="v">{{ totals.devices }}</div>
+        <div class="l">Devices</div>
+        <div class="sub">{{ totals.devices_in_use }} in use</div>
+      </a>
+      <a class="idband-stat" href="{{ url_for('parent_alerts', severity='critical') }}">
+        <div class="v{% if totals.critical_alerts %} warn{% endif %}">{{ totals.critical_alerts }}</div>
+        <div class="l">Critical alerts</div>
+        <div class="sub">{{ totals.active_alerts }} active</div>
+      </a>
     </div>
   </div>
 
-  <div class="kpis">
-    <a href="#locations" class="kpi kpi-slate kpi-link">
-      <div class="label">Locations</div>
-      <div class="value">{{ locations|length }}</div>
-      <div class="sub">Jump to location cards ↓</div>
-    </a>
-    <a href="{{ url_for('parent_patients') }}" class="kpi kpi-link">
-      <div class="label">Patients</div>
-      <div class="value">{{ totals.patients }}</div>
-      <div class="sub">View all across locations →</div>
-    </a>
-    <a href="{{ url_for('parent_devices') }}" class="kpi kpi-slate kpi-link">
-      <div class="label">Devices</div>
-      <div class="value">{{ totals.devices }}</div>
-      <div class="sub">{{ totals.devices_in_use }} in use · view all →</div>
-    </a>
-    <a href="{{ url_for('parent_alerts', severity='critical') }}" class="kpi kpi-red kpi-link">
-      <div class="label">Critical alerts</div>
-      <div class="value">{{ totals.critical_alerts }}</div>
-      <div class="sub">{{ totals.active_alerts }} total active · view all →</div>
-    </a>
+  <div class="text-right" style="margin: -8px 0 14px;">
+    <a href="{{ url_for('parent_location_new') }}" class="btn btn-primary">+ Add Satellite location</a>
   </div>
 
   <!-- ══════════════════ Chart selector card ══════════════════ -->
