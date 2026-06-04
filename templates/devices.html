@@ -1,21 +1,37 @@
 {% extends "base.html" %}
 {% block title %}Devices · Arc Connect Portal{% endblock %}
 {% block body %}
-<div class="page">
-  <div class="page-header">
-    <div>
-      <h1>Device fleet</h1>
-    </div>
-    <div class="actions">
-      <a href="{{ url_for('device_new') }}" class="btn btn-primary">+ Add device</a>
-    </div>
+<div class="page pd-soft">
+  {# ── Identity band: fleet title (left) · device KPI stats (right) — mirrors the dashboard/patient header ── #}
+  <div class="idband-toolbar">
+    <span class="spacer"></span>
+    <a href="{{ url_for('device_new') }}" class="btn btn-primary">+ Add device</a>
   </div>
-
-  <div class="kpis">
-    <div class="kpi"><div class="label">Total</div><div class="value">{{ kpis.total }}</div></div>
-    <div class="kpi kpi-green"><div class="label">In use</div><div class="value">{{ kpis.in_use }}</div></div>
-    <div class="kpi"><div class="label">In stock</div><div class="value">{{ kpis.in_stock }}</div></div>
-    <div class="kpi kpi-yellow"><div class="label">Maintenance</div><div class="value">{{ kpis.maintenance }}</div></div>
+  <div class="idband idband-dash">
+    <div class="idband-left">
+      <div>
+        <div class="idband-name">Device fleet</div>
+        {% if current_org %}<div class="idband-meta">{{ current_org.name }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="idband-stats">
+      <div class="idband-stat">
+        <div class="v">{{ kpis.total }}</div>
+        <div class="l">Total</div>
+      </div>
+      <div class="idband-stat">
+        <div class="v good">{{ kpis.in_use }}</div>
+        <div class="l">In use</div>
+      </div>
+      <div class="idband-stat">
+        <div class="v">{{ kpis.in_stock }}</div>
+        <div class="l">In stock</div>
+      </div>
+      <div class="idband-stat">
+        <div class="v{% if kpis.maintenance %} warn{% endif %}">{{ kpis.maintenance }}</div>
+        <div class="l">Maintenance</div>
+      </div>
+    </div>
   </div>
 
   <div class="tabs">

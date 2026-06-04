@@ -7,39 +7,40 @@
 {% block body %}
 <div class="page pd-soft">
 
-  <div class="page-header">
-    <div>
-      <h1>{{ current_org.name }}</h1>
+  {# ── Identity band: org logo/name (left) · 4 KPI stats (right) — mirrors the patient detail header ── #}
+  {% set _org_type_label = {'parent': 'Main organization', 'location': 'Satellite location', 'internal': 'ABMRC'}.get(current_org.type, '') %}
+  <div class="idband idband-dash">
+    <div class="idband-left">
+      {% if current_org.logo_path %}
+        <img src="{{ url_for('static', filename=current_org.logo_path) }}" class="idband-orglogo" alt="{{ current_org.name }} logo">
+      {% endif %}
+      <div>
+        <div class="idband-name">{{ current_org.name }}</div>
+        {% if _org_type_label %}<div class="idband-meta">{{ _org_type_label }}</div>{% endif %}
+      </div>
     </div>
-    {% if current_org.logo_path %}
-      <img src="{{ url_for('static', filename=current_org.logo_path) }}" class="location-logo" alt="{{ current_org.name }} logo">
-    {% endif %}
-  </div>
-
-  <div class="kpis">
-    <a href="{{ url_for('patients') }}" class="kpi kpi-link cat-last">
-      <div class="kpi-icon">👥</div>
-      <div class="label">Total patients</div>
-      <div class="value">{{ kpis.total_patients }}</div>
-    </a>
-    <a href="{{ url_for('patients', sort='cough_adh', dir='asc') }}" class="kpi kpi-link cat-alert">
-      <div class="kpi-icon">⚠️</div>
-      <div class="label">At risk</div>
-      <div class="value">{{ kpis.at_risk }}</div>
-      <div class="sub">{{ kpis.critical }} critical</div>
-    </a>
-    <a href="{{ url_for('patients', sort='cough_adh', dir='desc') }}" class="kpi kpi-link cat-adh">
-      <div class="kpi-icon">✅</div>
-      <div class="label">On track</div>
-      <div class="value">{{ kpis.on_track }}</div>
-      <div class="sub">≥ 80% adherence</div>
-    </a>
-    <a href="{{ url_for('devices', tab='assigned') }}" class="kpi kpi-link cat-dev">
-      <div class="kpi-icon">🔧</div>
-      <div class="label">Devices in use</div>
-      <div class="value">{{ device_kpis.in_use }}/{{ device_kpis.total }}</div>
-      <div class="sub">{{ device_kpis.in_stock }} in stock · {{ device_kpis.maintenance }} maintenance</div>
-    </a>
+    <div class="idband-stats">
+      <a class="idband-stat" href="{{ url_for('patients') }}">
+        <div class="v">{{ kpis.total_patients }}</div>
+        <div class="l">Total patients</div>
+        <div class="sub">active</div>
+      </a>
+      <a class="idband-stat" href="{{ url_for('patients', sort='cough_adh', dir='asc') }}">
+        <div class="v{% if kpis.at_risk %} warn{% endif %}">{{ kpis.at_risk }}</div>
+        <div class="l">At risk</div>
+        <div class="sub">{{ kpis.critical }} critical</div>
+      </a>
+      <a class="idband-stat" href="{{ url_for('patients', sort='cough_adh', dir='desc') }}">
+        <div class="v">{{ kpis.on_track }}</div>
+        <div class="l">On track</div>
+        <div class="sub">&ge; 80%</div>
+      </a>
+      <a class="idband-stat" href="{{ url_for('devices', tab='assigned') }}">
+        <div class="v">{{ device_kpis.in_use }}/{{ device_kpis.total }}</div>
+        <div class="l">Devices in use</div>
+        <div class="sub">{{ device_kpis.in_stock }} in stock</div>
+      </a>
+    </div>
   </div>
 
   {# ── My tasks widget ── #}

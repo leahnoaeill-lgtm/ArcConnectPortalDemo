@@ -1067,12 +1067,22 @@ tr.filter-hidden { display: none !important; }
 .idband-stat:first-child { border-left: 0; }
 .idband-stat .v { font-size: 21px; font-weight: 700; line-height: 1.05; color: var(--ac-slate-deep); }
 .idband-stat .v.warn { color: #B45309; }
+.idband-stat .v.good { color: var(--ac-teal); }
 .idband-stat .v-date { font-size: 15px; font-weight: 700; line-height: 1.15; color: var(--ac-slate-deep); margin-bottom: 5px; }
 .idband-stat .v-time { font-size: 11px; font-weight: 600; color: var(--ac-gray); margin-top: 1px; }
 .idband-stat .l {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--ac-gray); margin-top: 5px; font-weight: 600;
   white-space: nowrap;
+}
+/* Dashboard variant: org logo as the left element; clickable stats with subs. */
+.idband-orglogo { height: 42px; width: auto; max-width: 160px; object-fit: contain; flex: 0 0 auto; }
+a.idband-stat { text-decoration: none; color: inherit; cursor: pointer; }
+a.idband-stat:hover .v { color: var(--ac-cyan-dark); }
+a.idband-stat:hover .l { color: var(--ac-slate-deep); }
+.idband-stat .sub {
+  font-size: 10px; color: var(--ac-gray); margin-top: 2px;
+  white-space: nowrap; font-weight: 600;
 }
 .idband-ring { position: relative; width: 46px; height: 46px; margin: 0 auto; }
 .idband-ring svg { display: block; }
@@ -2120,17 +2130,18 @@ body.super-readonly .super-admin-banner button {
 
 .btn:active { transform: translateY(0); box-shadow: none; }
 
+/* Primary buttons use the same soft light-blue as the Print Therapy Summary
+   button: pale fill, dark-blue text, deeper blue on hover. */
 .btn-primary {
-  background: var(--ac-cyan);
-  color: white;
-  border-color: var(--ac-cyan);
+  background: #DFF2FB;
+  color: #1B5E7A;
+  border-color: #C7E9F8;
 }
 
 .btn-primary:hover {
-  background: var(--ac-cyan-dark);
-  border-color: var(--ac-cyan-dark);
-  color: white;
-  box-shadow: 0 4px 10px rgba(67, 193, 237, 0.25);
+  background: #9FD4EC;
+  border-color: #7FC4E6;
+  color: #134A61;
 }
 
 /* Soft light-blue action button (e.g. Print Therapy Summary) */
