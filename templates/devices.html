@@ -9,23 +9,24 @@
         <div class="idband-name">Device fleet</div>
       </div>
     </div>
+    {# The 4 stats are clickable: each opens the device list filtered to that state. #}
     <div class="idband-stats">
-      <div class="idband-stat">
+      <a class="idband-stat" href="{{ url_for('devices') }}">
         <div class="v">{{ kpis.total }}</div>
         <div class="l">Total</div>
-      </div>
-      <div class="idband-stat">
+      </a>
+      <a class="idband-stat" href="{{ url_for('devices', status='in_use') }}">
         <div class="v good">{{ kpis.in_use }}</div>
         <div class="l">In use</div>
-      </div>
-      <div class="idband-stat">
+      </a>
+      <a class="idband-stat" href="{{ url_for('devices', status='in_stock') }}">
         <div class="v">{{ kpis.in_stock }}</div>
         <div class="l">In stock</div>
-      </div>
-      <div class="idband-stat">
+      </a>
+      <a class="idband-stat" href="{{ url_for('devices', status='maintenance') }}">
         <div class="v{% if kpis.maintenance %} warn{% endif %}">{{ kpis.maintenance }}</div>
         <div class="l">Maintenance</div>
-      </div>
+      </a>
     </div>
   </div>
 
@@ -43,7 +44,7 @@
   {% set model_options = devices | map(attribute='model') | reject('none') | unique | list | sort %}
   <div class="filter-bar" id="deviceFilterBar">
     <div class="filter-search">
-      <input type="search" id="deviceSearch" placeholder="Search serial, patient, PT ID…" autocomplete="off" autofocus>
+      <input type="search" id="deviceSearch" placeholder="Search serial, model, patient, PT ID…" autocomplete="off" autofocus>
     </div>
     <select class="filter-select" id="deviceModelFilter">
       <option value="">All models</option>
@@ -184,6 +185,10 @@
   model.addEventListener('change', apply);
   status.addEventListener('change', apply);
   clearBtn.addEventListener('click', reset);
+
+  // Clicking a stat in the header lands here with ?status=… — pre-apply it.
+  const initStatus = new URLSearchParams(window.location.search).get('status');
+  if (initStatus) { status.value = initStatus; apply(); }
 })();
 </script>
 {% endblock %}
