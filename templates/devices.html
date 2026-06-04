@@ -3,10 +3,6 @@
 {% block body %}
 <div class="page pd-soft">
   {# ── Identity band: fleet title (left) · device KPI stats (right) — mirrors the dashboard/patient header ── #}
-  <div class="idband-toolbar">
-    <span class="spacer"></span>
-    <a href="{{ url_for('device_new') }}" class="btn btn-primary">+ Add device</a>
-  </div>
   <div class="idband idband-dash">
     <div class="idband-left">
       <div>
@@ -32,6 +28,10 @@
         <div class="l">Maintenance</div>
       </div>
     </div>
+  </div>
+
+  <div class="text-right" style="margin: -8px 0 14px;">
+    <a href="{{ url_for('device_new') }}" class="btn btn-primary">+ Add device</a>
   </div>
 
   <div class="tabs">

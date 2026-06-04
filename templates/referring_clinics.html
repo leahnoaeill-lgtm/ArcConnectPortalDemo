@@ -26,6 +26,9 @@
   </div>
 
   <div class="filter-bar">
+    <div class="filter-search">
+      <input type="search" id="clinicSearch" placeholder="Search clinic, NPI, city…" autocomplete="off">
+    </div>
     <label class="small muted">Status</label>
     <select class="filter-select" onchange="location = updateQuery({status: this.value})">
       <option value="all"      {% if status_filter == 'all' %}selected{% endif %}>All</option>
@@ -66,7 +69,8 @@
         <tbody>
           {% for c in clinics %}
             {% set _href = url_for('referring_clinic_detail', clinic_id=c.id) %}
-            <tr class="clickable"
+            <tr class="clickable clinic-row"
+                data-search="{{ (c.name ~ ' ' ~ (c.npi or '') ~ ' ' ~ (c.city or '') ~ ' ' ~ (c.state or '') ~ ' ' ~ (c.phone or '') ~ ' ' ~ (c.email or '') ~ ' ' ~ (c.loc_name or '')) | lower }}"
                 data-sort-name="{{ (c.name or '') | lower }}"
                 data-sort-npi="{{ c.npi or '' }}"
                 data-sort-city="{{ (c.city or '') | lower }}"
@@ -117,6 +121,19 @@
 </div>
 
 <script>
+// Client-side search over the clinics table (filters visible rows by text).
+(function() {
+  const input = document.getElementById('clinicSearch');
+  if (!input) return;
+  const rows = document.querySelectorAll('tr.clinic-row');
+  input.addEventListener('input', function() {
+    const q = this.value.trim().toLowerCase();
+    rows.forEach(r => {
+      r.classList.toggle('filter-hidden', !(!q || (r.dataset.search || '').includes(q)));
+    });
+  });
+})();
+
 function updateQuery(overrides) {
   const u = new URL(window.location.href);
   for (const [k, v] of Object.entries(overrides)) {

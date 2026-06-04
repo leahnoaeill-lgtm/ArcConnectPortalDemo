@@ -23,7 +23,7 @@
       <a href="{{ url_for('referring_clinic_edit', clinic_id=clinic.id) }}" class="btn">Edit clinic</a>
       {% if clinic.is_active %}
         <form method="POST" action="{{ url_for('referring_clinic_deactivate', clinic_id=clinic.id) }}" style="display:inline;">
-          <button type="submit" class="btn">Deactivate</button>
+          <button type="submit" class="btn btn-warn">Deactivate</button>
         </form>
       {% else %}
         <form method="POST" action="{{ url_for('referring_clinic_activate', clinic_id=clinic.id) }}" style="display:inline;">
@@ -98,7 +98,7 @@
       <div class="card">
         <div class="card-header">
           <h2>Providers <span class="tab-count">{{ providers | length }}</span></h2>
-          <a href="{{ url_for('referring_provider_new', clinic_id=clinic.id) }}" class="btn btn-sm btn-primary">+ Add provider</a>
+          <a href="{{ url_for('referring_provider_new', clinic_id=clinic.id) }}" class="btn btn-primary">+ Add provider</a>
         </div>
         <div class="card-body no-pad">
           {% if providers %}
