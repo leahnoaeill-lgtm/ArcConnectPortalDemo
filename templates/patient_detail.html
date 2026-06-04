@@ -116,7 +116,7 @@
       </div>
       <div class="idband-stat">
         <div class="v{% if open_alerts_n %} warn{% endif %}">{{ open_alerts_n }}</div>
-        <div class="l">Open alerts</div>
+        <div class="l">Open alert{{ '' if open_alerts_n == 1 else 's' }}</div>
       </div>
     </div>
   </div>
