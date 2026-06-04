@@ -7,7 +7,6 @@
     <div class="idband-left">
       <div>
         <div class="idband-name">Device fleet</div>
-        {% if current_org %}<div class="idband-meta">{{ current_org.name }}</div>{% endif %}
       </div>
     </div>
     <div class="idband-stats">
@@ -30,14 +29,14 @@
     </div>
   </div>
 
-  <div class="text-right" style="margin: -8px 0 14px;">
-    <a href="{{ url_for('device_new') }}" class="btn btn-primary">+ Add device</a>
-  </div>
-
-  <div class="tabs">
-    <a href="?tab=all" class="{{ 'active' if tab == 'all' else '' }}">All <span class="tab-count">{{ kpis.total }}</span></a>
-    <a href="?tab=assigned" class="{{ 'active' if tab == 'assigned' else '' }}">Assigned <span class="tab-count">{{ kpis.in_use }}</span></a>
-    <a href="?tab=unassigned" class="{{ 'active' if tab == 'unassigned' else '' }}">Unassigned <span class="tab-count">{{ kpis.total - kpis.in_use }}</span></a>
+  {# Tabs + Add-device share one line; the underline runs under the whole row. #}
+  <div class="flex" style="justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ac-border); margin-bottom: 18px;">
+    <div class="tabs" style="border-bottom: 0; margin-bottom: 0;">
+      <a href="?tab=all" class="{{ 'active' if tab == 'all' else '' }}">All <span class="tab-count">{{ kpis.total }}</span></a>
+      <a href="?tab=assigned" class="{{ 'active' if tab == 'assigned' else '' }}">Assigned <span class="tab-count">{{ kpis.in_use }}</span></a>
+      <a href="?tab=unassigned" class="{{ 'active' if tab == 'unassigned' else '' }}">Unassigned <span class="tab-count">{{ kpis.total - kpis.in_use }}</span></a>
+    </div>
+    <a href="{{ url_for('device_new') }}" class="btn btn-primary" style="margin-bottom: 6px;">+ Add device</a>
   </div>
 
   {% if devices %}
@@ -152,6 +151,7 @@
   const bar = document.getElementById('deviceFilterBar');
   if (!bar) return;
   const search   = document.getElementById('deviceSearch');
+  if (!search) return;   // no devices: bar holds only the Add-device button
   const model    = document.getElementById('deviceModelFilter');
   const status   = document.getElementById('deviceStatusFilter');
   const clearBtn = document.getElementById('deviceFilterClear');
