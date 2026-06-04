@@ -2589,34 +2589,6 @@ def api_patient_chip(patient_id, modality):
     })
 
 
-@app.route('/patients/viz-compare')
-@require_login
-def patients_viz_compare():
-    """Compare 4 visual concepts for combining adherence + alert count in one cell.
-    Shows the same 5 representative patients in 4 sections, one per option."""
-    oid = current_org_id()
-    # Pick 5 representative patients spanning adherence + alert ranges
-    sample_mrns = ['MRN-448239','MRN-44829','MRN-51022','MRN-50011','MRN-48990']
-    placeholders = ','.join('?' * len(sample_mrns))
-    rows = q_all(f"""SELECT p.*,
-                     (SELECT COUNT(*) FROM alerts a WHERE a.patient_id = p.id
-                        AND a.resolved_at IS NULL) AS open_alerts,
-                     (SELECT COUNT(*) FROM alerts a WHERE a.patient_id = p.id
-                        AND a.resolved_at IS NULL AND a.severity = 'critical') AS critical_alerts,
-                     (SELECT COUNT(*) FROM alerts a WHERE a.patient_id = p.id
-                        AND a.resolved_at IS NULL AND a.severity = 'warning') AS warning_alerts
-                     FROM patients p
-                     WHERE p.organization_id = ? AND p.mrn IN ({placeholders})
-                     ORDER BY p.adherence_pct_30d ASC""",
-                 (oid,) + tuple(sample_mrns))
-    augmented = _attach_modality_adherence(rows)
-    # worst_severity per patient for badge coloring
-    for p in augmented:
-        p['worst'] = ('critical' if p['critical_alerts'] > 0
-                      else ('warning' if p['warning_alerts'] > 0 else None))
-    return render_template('patients_viz_compare.html', patients=augmented)
-
-
 @app.route('/patients')
 @require_login
 def patients():
@@ -3779,6 +3751,33 @@ def device_new():
         flash(f'Device {serial} added to inventory.', 'success')
         return redirect(url_for('devices', tab='unassigned'))
     return render_template('device_form.html', device=None)
+
+
+@app.route('/devices/<int:device_id>/edit', methods=['GET', 'POST'])
+@require_login
+def device_edit(device_id):
+    oid = current_org_id()
+    d = q_one('SELECT * FROM devices WHERE id = ? AND organization_id = ?', (device_id, oid))
+    if not d:
+        abort(404)
+    if request.method == 'POST':
+        serial = request.form.get('serial_number', '').strip()
+        existing = q_one('SELECT id FROM devices WHERE serial_number = ? AND id != ?',
+                         (serial, device_id))
+        if existing:
+            flash(f'Device with serial {serial} already exists.', 'error')
+            return redirect(url_for('device_edit', device_id=device_id))
+        q_exec("""UPDATE devices SET serial_number = ?, model = ?, firmware_version = ?,
+                  software_version = ?, upload_date = ?, warranty_end = ?, notes = ?
+                  WHERE id = ? AND organization_id = ?""",
+               (serial, request.form.get('model'), request.form.get('firmware_version'),
+                request.form.get('software_version'),
+                request.form.get('upload_date') or None,
+                request.form.get('warranty_end') or None,
+                request.form.get('notes'), device_id, oid))
+        flash(f'Device {serial} updated.', 'success')
+        return redirect(url_for('device_detail', device_id=device_id))
+    return render_template('device_form.html', device=d)
 
 
 @app.route('/devices/<int:device_id>')

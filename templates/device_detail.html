@@ -16,6 +16,7 @@
       </div>
     </div>
     <div class="actions">
+      <a href="{{ url_for('device_edit', device_id=device.id) }}" class="btn">Edit device</a>
       {% set active = assignments | selectattr('returned_date','none') | list %}
       {% if not active %}
         {% if device.status == 'maintenance' %}

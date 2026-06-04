@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Add device · Arc Connect Portal{% endblock %}
+{% block title %}{{ 'Edit' if device else 'Add' }} device · Arc Connect Portal{% endblock %}
 {% block body %}
 <div class="page">
   <div class="page-header">
     <div>
-      <h1>Add device to inventory</h1>
-      <div class="subtitle">Register a new BiWaze device</div>
+      <h1>{{ 'Edit device' if device else 'Add device to inventory' }}</h1>
+      <div class="subtitle">{{ 'Update device details' if device else 'Register a new BiWaze device' }}</div>
     </div>
-    <a href="{{ url_for('devices') }}" class="btn">← Back</a>
+    <a href="{{ url_for('device_detail', device_id=device.id) if device else url_for('devices') }}" class="btn">← Back</a>
   </div>
 
   <div class="card">
@@ -16,6 +16,7 @@
         <div class="form-group required">
           <label>Serial number</label>
           <input type="text" name="serial_number" required autofocus placeholder="CNS00A000"
+                 value="{{ device.serial_number if device else '' }}"
                  pattern="[CK]NS\d{2}A\d{3}"
                  title="Format: CNSXXAXXX (Cough) or KNSXXAXXX (Clear), where X is a digit.">
           <div class="help">Format: <span class="mono">CNSXXAXXX</span> for BiWaze Cough, <span class="mono">KNSXXAXXX</span> for BiWaze Clear.</div>
@@ -24,37 +25,39 @@
           <label>Model</label>
           <select name="model" required>
             <option value="">— select —</option>
-            <option value="biwaze_cough">BiWaze Cough</option>
-            <option value="biwaze_clear">BiWaze Clear</option>
+            <option value="biwaze_cough" {% if device and device.model == 'biwaze_cough' %}selected{% endif %}>BiWaze Cough</option>
+            <option value="biwaze_clear" {% if device and device.model == 'biwaze_clear' %}selected{% endif %}>BiWaze Clear</option>
           </select>
         </div>
         <div class="form-group">
           <label>Firmware version</label>
-          <input type="text" name="firmware_version" placeholder="e.g. 3.4.1">
+          <input type="text" name="firmware_version" placeholder="e.g. 3.4.1"
+                 value="{{ device.firmware_version if device else '' }}">
           <div class="help">As shown on the device setup screen.</div>
         </div>
         <div class="form-group">
           <label>Software version</label>
-          <input type="text" name="software_version" placeholder="e.g. 2.6.0">
+          <input type="text" name="software_version" placeholder="e.g. 2.6.0"
+                 value="{{ device.software_version if device else '' }}">
           <div class="help">Arc Connect app/software version on the device.</div>
         </div>
         <div class="form-group">
           <label>Upload date</label>
-          <input type="date" name="upload_date" value="{{ today if today else '' }}">
+          <input type="date" name="upload_date" value="{{ device.upload_date if device else (today if today else '') }}">
           <div class="help">When the device was added to your inventory. Defaults to today.</div>
         </div>
         <div class="form-group span-2">
           <label>Warranty end date</label>
-          <input type="date" name="warranty_end">
+          <input type="date" name="warranty_end" value="{{ device.warranty_end if device else '' }}">
         </div>
         <div class="form-group span-2">
           <label>Notes</label>
-          <textarea name="notes" rows="2" placeholder="e.g. received from manufacturer, inspected by J. Reyes"></textarea>
+          <textarea name="notes" rows="2" placeholder="e.g. received from manufacturer, inspected by J. Reyes">{{ device.notes if device and device.notes else '' }}</textarea>
         </div>
       </div>
       <div class="form-actions">
-        <a href="{{ url_for('devices') }}" class="btn">Cancel</a>
-        <button type="submit" class="btn btn-primary">Add device</button>
+        <a href="{{ url_for('device_detail', device_id=device.id) if device else url_for('devices') }}" class="btn">Cancel</a>
+        <button type="submit" class="btn btn-primary">{{ 'Save changes' if device else 'Add device' }}</button>
       </div>
     </form>
   </div>
