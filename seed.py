@@ -17,7 +17,9 @@ THERAPY_GOAL_PER_DAY = 2  # per prescribed modality per day
 SESSION_DAYS = 45         # how many days of history to seed
 
 HERE = Path(__file__).parent
-DB_PATH = HERE / 'arcconnect.db'
+# DB_PATH is env-configurable so a containerized build can seed into a mounted
+# volume path (e.g. /app/data/arcconnect.db) that persists across rebuilds.
+DB_PATH = Path(os.environ.get('DB_PATH') or (HERE / 'arcconnect.db'))
 SCHEMA_PATH = HERE / 'schema.sql'
 UPLOADS_LOGOS = HERE / 'static' / 'uploads' / 'logos'
 UPLOADS_CONSENT = HERE / 'static' / 'uploads' / 'consent'
@@ -40,6 +42,7 @@ def _remask_serials(rows):
 
 
 def init_db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     if DB_PATH.exists():
         DB_PATH.unlink()
     UPLOADS_LOGOS.mkdir(parents=True, exist_ok=True)
@@ -65,7 +68,7 @@ def seed():
     c.execute("""INSERT INTO organizations (name, parent_id, type, status, phone, email,
                  address_line1, city, state, zip, timezone)
                  VALUES (?, NULL, 'internal', 'active', ?, ?, ?, ?, ?, ?, ?)""",
-              ('ABM Respiratory Care', '1-800-ABMRC-00', 'support@abmrespiratory.com',
+              ('ABM Respiratory Care', '800-555-0100', 'support@abmrespiratory.com',
                '500 Industrial Dr', 'Indianapolis', 'IN', '46214', 'America/Indianapolis'))
     abmrc_id = c.lastrowid
 
@@ -73,7 +76,7 @@ def seed():
     c.execute("""INSERT INTO organizations (name, parent_id, type, phone, email,
                  address_line1, city, state, zip, timezone, latitude, longitude)
                  VALUES (?, NULL, 'parent', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-              ('Adapt Respiratory', '1-800-ADAPT-001', 'info@adapt.com',
+              ('Adapt Respiratory', '800-555-0200', 'info@adapt.com',
                '1200 Corporate Pkwy', 'Chicago', 'IL', '60601', 'America/Chicago',
                41.8781, -87.6298))
     adap_id = c.lastrowid
@@ -1438,6 +1441,24 @@ def seed():
     c.execute("""UPDATE devices SET software_version =
                    CASE model WHEN 'biwaze_cough' THEN '2.6.0' ELSE '1.8.2' END
                  WHERE software_version IS NULL""")
+
+    # ── Normalize every stored phone number to "+1 (XXX) XXX-XXXX" ──────────
+    # Country code defaults to USA (+1). Keeps seeded data consistent with the
+    # phone-mask used on the org/location forms.
+    def _fmt_phone_us(v):
+        digits = ''.join(ch for ch in (v or '') if ch.isdigit())
+        if len(digits) == 11 and digits[0] == '1':
+            digits = digits[1:]
+        if len(digits) == 10:
+            return f'+1 ({digits[0:3]}) {digits[3:6]}-{digits[6:]}'
+        return v  # leave anything non-standard untouched
+    for tbl, col in [('organizations', 'phone'), ('users', 'phone'),
+                     ('referring_clinics', 'phone'), ('referring_providers', 'phone'),
+                     ('patients', 'phone')]:
+        for row in c.execute(f'SELECT rowid AS rid, {col} AS val FROM {tbl}').fetchall():
+            nv = _fmt_phone_us(row['val'])
+            if nv != row['val']:
+                c.execute(f'UPDATE {tbl} SET {col} = ? WHERE rowid = ?', (nv, row['rid']))
 
     conn.commit()
     conn.close()

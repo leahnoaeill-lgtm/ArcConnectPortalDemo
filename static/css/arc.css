@@ -902,6 +902,15 @@ tr.filter-hidden { display: none !important; }
    squishing/wrapping cells. */
 .card .card-body.no-pad > .table { min-width: 720px; }
 
+/* Dense tables (e.g. the ABMRC Super User org/request grids) keep every cell on
+   a single line; the card body scrolls horizontally rather than letting values
+   wrap. Stacked sub-lines inside a cell (a <div> over another) are unaffected. */
+.table-nowrap thead th,
+.table-nowrap tbody td {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
 /* ── Cards ────────────────────────────────────────────────────────── */
 
 .card {
@@ -2457,7 +2466,7 @@ body.super-readonly .super-admin-banner button {
 }
 
 .login-logo img {
-  height: 72px;
+  height: 88px;
   width: auto;
 }
 

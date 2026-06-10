@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_phone.html" import phone_field %}
+{% from "_login_policy.html" import login_policy_fields %}
 {% block title %}Update {{ org.name }} · ABMRC{% endblock %}
 {% block body %}
 <div class="page">
@@ -27,7 +29,7 @@
     </div>
   </div>
 
-  {% set editable = (org.status == 'suspended') %}
+  {% set editable = True %}
   {% set us_states = [
     ('AL','Alabama'),('AK','Alaska'),('AZ','Arizona'),('AR','Arkansas'),
     ('CA','California'),('CO','Colorado'),('CT','Connecticut'),
@@ -58,6 +60,17 @@
               <input type="text" name="name" value="{{ org.name or '' }}" required>
             {% else %}
               <input type="text" value="{{ org.name or '' }}" disabled>
+            {% endif %}
+          </div>
+          <div class="form-group {% if editable %}required{% endif %} span-2">
+            <label>Country</label>
+            {% if editable %}
+              <select name="country" required>
+                <option value="US" selected>United States of America</option>
+              </select>
+              <div class="help">Determines the available states below.</div>
+            {% else %}
+              <input type="text" value="United States of America" disabled>
             {% endif %}
           </div>
           <div class="form-group {% if editable %}required{% endif %} span-2">
@@ -108,19 +121,9 @@
           <div class="form-group {% if editable %}required{% endif %}">
             <label>Phone</label>
             {% if editable %}
-              <input type="tel" name="phone" value="{{ org.phone or '' }}" required pattern="\(\d{3}\) \d{3}-\d{4}" maxlength="14" placeholder="(555) 555-5555" data-phone-mask>
+              {{ phone_field('phone', org.phone, required=True) }}
             {% else %}
               <input type="tel" value="{{ org.phone or '' }}" disabled>
-            {% endif %}
-          </div>
-          <div class="form-group {% if editable %}required{% endif %} span-2">
-            <label>Country</label>
-            {% if editable %}
-              <select name="country" required>
-                <option value="US" selected>United States of America</option>
-              </select>
-            {% else %}
-              <input type="text" value="United States of America" disabled>
             {% endif %}
           </div>
           <div class="form-group {% if editable %}required{% endif %} span-2">
@@ -229,19 +232,20 @@
       <button type="submit" class="btn btn-primary">Save changes</button>
     </div>
   </form>
-</div>
 
-<script>
-  document.querySelectorAll('input[data-phone-mask]').forEach(function(el) {
-    function format(v) {
-      var d = (v || '').replace(/\D/g, '').slice(0, 10);
-      if (d.length >= 7)      return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
-      if (d.length >= 4)      return '(' + d.slice(0,3) + ') ' + d.slice(3);
-      if (d.length >= 1)      return '(' + d;
-      return '';
-    }
-    el.addEventListener('input', function(e) { e.target.value = format(e.target.value); });
-    el.addEventListener('blur',  function(e) { e.target.value = format(e.target.value); });
-  });
-</script>
+  <!-- User Login policy — separate form (always editable; posts to its own route) -->
+  <form method="POST" action="{{ url_for('super_org_login_update', org_id=org.id) }}">
+    <div class="card mt-3">
+      <div class="card-header"><h2>User Login</h2></div>
+      <div class="card-body">
+        <div class="form-grid">
+          {{ login_policy_fields(org) }}
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Save login settings</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
 {% endblock %}

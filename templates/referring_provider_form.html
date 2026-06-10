@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_phone.html" import phone_field %}
 {% block title %}{{ 'Edit' if provider else 'Add' }} provider · Arc Connect Portal{% endblock %}
 {% block body %}
 <div class="page">
@@ -55,7 +56,7 @@
         </div>
         <div class="form-group">
           <label>Phone</label>
-          <input type="tel" name="phone" value="{{ provider.phone if provider else '' }}">
+          {{ phone_field('phone', (provider.phone if provider else '')) }}
         </div>
         <div class="form-group">
           <label>Email</label>

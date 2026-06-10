@@ -14,7 +14,12 @@ COPY app.py schema.sql seed.py ./
 COPY templates/ templates/
 COPY static/ static/
 
-RUN python seed.py
+# DB lives on a mounted volume at /app/data so it survives image rebuilds.
+# Seeding at build time populates the image; on first container start Docker
+# initializes the (empty) named volume from this path, and subsequent rebuilds
+# leave the volume — and its data — untouched.
+ENV DB_PATH=/app/data/arcconnect.db
+RUN mkdir -p /app/data && python seed.py
 
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser

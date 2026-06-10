@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_phone.html" import phone_field %}
 {% block title %}My profile · Arc Connect Portal{% endblock %}
 {% block body %}
 <div class="page">
@@ -34,7 +35,7 @@
         <div class="form-grid">
           <div class="form-group span-2">
             <label>Phone</label>
-            <input type="tel" name="phone" value="{{ user.phone or '' }}">
+            {{ phone_field('phone', user.phone) }}
           </div>
           <div class="form-group span-2">
             <label>Preferred notification channel</label>

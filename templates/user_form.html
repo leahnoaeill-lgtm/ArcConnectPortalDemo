@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_phone.html" import phone_field %}
 {% set is_edit = user is not none %}
 {% block title %}{{ 'Edit user' if is_edit else 'Add user' }} · Arc Connect Portal{% endblock %}
 {% block body %}
@@ -42,7 +43,7 @@
         </div>
         <div class="form-group">
           <label>Phone</label>
-          <input type="tel" name="phone" value="{{ user.phone or '' if is_edit else '' }}">
+          {{ phone_field('phone', (user.phone if is_edit else '')) }}
         </div>
       </div>
       <div class="form-actions">

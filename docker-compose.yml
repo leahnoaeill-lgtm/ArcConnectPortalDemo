@@ -11,15 +11,26 @@ services:
       SECRET_KEY: ${SECRET_KEY:-arc-connect-portal-demo-key-change-me-2026}
       AUTH_USERNAME: ${AUTH_USERNAME:-Arc}
       AUTH_PASSWORD: ${AUTH_PASSWORD:-Connect}
+      DB_PATH: /app/data/arcconnect.db
       PYTHONUNBUFFERED: 1
     ports:
       - "5005:5005"
+    # Named volumes persist the database and uploaded files across image
+    # rebuilds (`docker compose up -d --build`). They are seeded from the image
+    # on first creation, then left untouched — so deploys no longer wipe data.
+    volumes:
+      - arcconnect_db:/app/data
+      - arcconnect_uploads:/app/static/uploads
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5005/healthz').read()"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+
+volumes:
+  arcconnect_db:
+  arcconnect_uploads:
 
 networks:
   default:

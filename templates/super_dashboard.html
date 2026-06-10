@@ -1,18 +1,17 @@
 {% extends "base.html" %}
 {% block title %}ABMRC support · Super admin{% endblock %}
 {% block body %}
-<div class="page">
+<div class="page pd-soft">
   <div class="page-header">
     <div>
       <h1>Customer organizations</h1>
       <div class="subtitle">{{ active_count }} active · {{ pending_count }} pending <span class="muted">(including sub-locations)</span></div>
     </div>
     <div class="actions">
-      <a href="{{ url_for('super_signups') }}" class="btn"
-         style="display: inline-flex; align-items: center; gap: 8px;">
+      <a href="{{ url_for('super_signups') }}" class="btn">
         Pending Requests
         {% if pending_signups_count and pending_signups_count > 0 %}
-          <span style="background: #c92a2a; color: #fff; padding: 2px 8px; border-radius: 10px; font-weight: 700; font-size: 12px; line-height: 1;">{{ pending_signups_count }}</span>
+          <span class="badge severity-critical">{{ pending_signups_count }}</span>
         {% endif %}
       </a>
       <a href="{{ url_for('super_org_new') }}" class="btn btn-primary">+ New organization</a>
@@ -34,9 +33,25 @@
     </div>
   </div>
 
+  {% if orgs %}
+  <div class="filter-bar" id="orgFilterBar">
+    <div class="filter-search">
+      <input type="search" id="orgSearch" placeholder="Search organization, city, state…" autocomplete="off">
+    </div>
+    <select class="filter-select" id="orgStatusFilter">
+      <option value="">All statuses</option>
+      <option value="active">Active</option>
+      <option value="pending_setup">Pending setup</option>
+      <option value="suspended">Suspended</option>
+    </select>
+    <button type="button" class="filter-clear" id="orgFilterClear" style="display:none;">Clear</button>
+    <span class="filter-count" id="orgFilterCount"></span>
+  </div>
+  {% endif %}
+
   <div class="card">
     <div class="card-body no-pad">
-      <table class="table sortable" data-default-sort="name" data-default-dir="asc">
+      <table class="table sortable table-nowrap" data-default-sort="name" data-default-dir="asc">
         <thead>
           <tr>
             <th data-sort-key="name">Organization</th>
@@ -57,11 +72,16 @@
                 data-sort-verification="{{ 'complete' if o.verification_complete else 'missing' }}"
                 data-sort-patients="{{ o.patient_count }}"
                 data-sort-devices="{{ o.device_count }}"
-                data-sort-alerts="{{ o.active_alerts }}">
+                data-sort-alerts="{{ o.active_alerts }}"
+                data-search="{{ (o.name ~ ' ' ~ (o.city or '') ~ ' ' ~ (o.state or '')) | lower }}"
+                data-status="{{ o.status }}">
               <td>
                 <div style="font-weight: 600;">{{ o.name }}</div>
                 <div class="small muted">
                   {% if o.city %}{{ o.city }}{% if o.state %}, {{ o.state }}{% endif %}{% endif %}
+                  {% if o.satellite_count and o.satellite_count > 0 %}
+                    <span class="badge badge-soft" style="margin-left:6px;">+{{ o.satellite_count }} satellite{{ '' if o.satellite_count == 1 else 's' }}</span>
+                  {% endif %}
                 </div>
               </td>
               <td>
@@ -74,9 +94,7 @@
                 {% endif %}
               </td>
               <td class="small">
-                {% if o.baa_state == 'revoked' %}
-                  <span class="status-red">✗ Revoked</span>
-                {% elif o.baa_state in ('active', 'expiring', 'expired') %}
+                {% if o.baa_state == 'active' %}
                   <span class="status-green">✓ {{ o.baa.signed_date | date_only }}</span>
                 {% else %}
                   <span class="muted">— none on file —</span>
@@ -92,30 +110,8 @@
               <td class="num-col num">{{ o.patient_count }}</td>
               <td class="num-col num">{{ o.device_count }}</td>
               <td class="num-col num">{{ o.active_alerts }}</td>
-              <td>
-                <div style="display: flex; gap: 6px; justify-content: flex-end;">
-                  <a href="{{ url_for('super_org_update', org_id=o.id) }}" class="btn btn-sm">View ▸</a>
-                  {% if o.status == 'active' and o.baa_state in ('active','expiring') %}
-                    <form method="POST" action="{{ url_for('super_set_acting_org', org_id=o.id) }}" style="display: inline;">
-                      <button type="submit" class="btn btn-sm btn-primary">Open ▸</button>
-                    </form>
-                  {% endif %}
-                  {% if o.status == 'active' %}
-                    <form method="POST" action="{{ url_for('super_org_suspend', org_id=o.id) }}" style="display: inline;" onsubmit="return confirm('Suspend {{ o.name }}? This pauses access for everyone in the org.');">
-                      <button type="submit" class="btn btn-sm">Suspend</button>
-                    </form>
-                  {% elif o.status == 'suspended' %}
-                    <a href="{{ url_for('super_org_update', org_id=o.id) }}" class="btn btn-sm">Update ▸</a>
-                    <form method="POST" action="{{ url_for('super_org_activate', org_id=o.id) }}" style="display: inline;">
-                      <button type="submit" class="btn btn-sm btn-primary">Reactivate</button>
-                    </form>
-                  {% elif o.status == 'pending_setup' %}
-                    <a href="{{ url_for('super_org_update', org_id=o.id) }}" class="btn btn-sm btn-primary">Update ▸</a>
-                    <form method="POST" action="{{ url_for('super_org_activate', org_id=o.id) }}" style="display: inline;">
-                      <button type="submit" class="btn btn-sm">Activate</button>
-                    </form>
-                  {% endif %}
-                </div>
+              <td class="text-right">
+                <a href="{{ url_for('super_org_overview', org_id=o.id) }}" class="btn btn-sm btn-primary">View ▸</a>
               </td>
             </tr>
           {% endfor %}
@@ -124,4 +120,40 @@
     </div>
   </div>
 </div>
+
+<script>
+(function() {
+  const bar = document.getElementById('orgFilterBar');
+  if (!bar) return;
+  const search   = document.getElementById('orgSearch');
+  const statusEl = document.getElementById('orgStatusFilter');
+  const clearBtn = document.getElementById('orgFilterClear');
+  const count    = document.getElementById('orgFilterCount');
+  const rows     = document.querySelectorAll('tbody tr[data-search]');
+  const totalRows = rows.length;
+
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    const s = statusEl.value;
+    let visible = 0;
+    rows.forEach(row => {
+      const matchSearch = !q || row.dataset.search.includes(q);
+      const matchStatus = !s || row.dataset.status === s;
+      const show = matchSearch && matchStatus;
+      row.classList.toggle('filter-hidden', !show);
+      if (show) visible += 1;
+    });
+    const active = q || s;
+    clearBtn.style.display = active ? '' : 'none';
+    count.textContent = active ? `${visible} of ${totalRows} organizations` : '';
+  }
+  function reset() {
+    search.value = ''; statusEl.value = '';
+    apply();
+  }
+  search.addEventListener('input', apply);
+  statusEl.addEventListener('change', apply);
+  clearBtn.addEventListener('click', reset);
+})();
+</script>
 {% endblock %}

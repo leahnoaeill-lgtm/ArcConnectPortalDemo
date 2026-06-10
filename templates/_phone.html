@@ -1,0 +1,15 @@
+{# Reusable phone field with a country-code selector (default USA +1).
+   Renders a country-code <select>, a national-number input, and a hidden
+   field (submitted as `name`) holding the combined "+<dial> <national>"
+   string. Behavior is wired by the shared initializer in base.html, which
+   populates the dropdown, formats the number, and keeps the hidden field in
+   sync. Mirrors the proven widget on patient_form.html. #}
+{% macro phone_field(name='phone', value='', required=False, default_iso='US') %}
+<div class="phone-widget" data-default-iso="{{ default_iso }}"
+     style="display:flex; gap:8px; align-items:center;">
+  <select class="phone-cc" aria-label="Phone country code" style="flex:0 0 auto; max-width:150px;"></select>
+  <input type="tel" class="phone-national" inputmode="tel" autocomplete="off"
+         placeholder="(555) 555-5555" style="flex:1 1 auto;"{% if required %} required{% endif %}>
+  <input type="hidden" name="{{ name }}" class="phone-hidden" value="{{ value or '' }}">
+</div>
+{% endmacro %}

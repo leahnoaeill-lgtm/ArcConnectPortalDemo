@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_phone.html" import phone_field %}
+{% from "_login_policy.html" import login_policy_fields %}
 {% block title %}Settings · {{ org.name }}{% endblock %}
 {% block body %}
 {% set is_parent_org = org.type == 'parent' %}
@@ -50,6 +52,13 @@
           <input type="text" name="name" value="{{ org.name }}" required>
         </div>
         <div class="form-group required span-2">
+          <label>Country</label>
+          <select name="country" required>
+            <option value="US" selected>United States of America</option>
+          </select>
+          <div class="help">Determines the available states below.</div>
+        </div>
+        <div class="form-group required span-2">
           <label>Address line 1</label>
           <input type="text" name="address_line1" value="{{ org.address_line1 or '' }}" required>
         </div>
@@ -76,13 +85,7 @@
         </div>
         <div class="form-group required">
           <label>Phone</label>
-          <input type="tel" name="phone" required pattern="\(\d{3}\) \d{3}-\d{4}" maxlength="14" placeholder="(555) 555-5555" data-phone-mask value="{{ org.phone or '' }}">
-        </div>
-        <div class="form-group required span-2">
-          <label>Country</label>
-          <select name="country" required>
-            <option value="US" selected>United States of America</option>
-          </select>
+          {{ phone_field('phone', org.phone, required=True) }}
         </div>
         <div class="form-group required span-2">
           <label>NPI Number</label>
@@ -122,6 +125,14 @@
         </div>
         {% endif %}
       </div>
+
+      {% if is_parent_org %}
+      <h2 class="mt-3 mb-2">User Login</h2>
+      <div class="form-grid" style="max-width: none;">
+        {{ login_policy_fields(org) }}
+      </div>
+      {% endif %}
+
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Save changes</button>
       </div>
@@ -262,18 +273,4 @@
   </div>
   {% endif %}
 </div>
-
-<script>
-  document.querySelectorAll('input[data-phone-mask]').forEach(function(el) {
-    function format(v) {
-      var d = (v || '').replace(/\D/g, '').slice(0, 10);
-      if (d.length >= 7)      return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
-      if (d.length >= 4)      return '(' + d.slice(0,3) + ') ' + d.slice(3);
-      if (d.length >= 1)      return '(' + d;
-      return '';
-    }
-    el.addEventListener('input', function(e) { e.target.value = format(e.target.value); });
-    el.addEventListener('blur',  function(e) { e.target.value = format(e.target.value); });
-  });
-</script>
 {% endblock %}

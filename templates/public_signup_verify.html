@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Verify your email · Arc Connect{% endblock %}
+{% block body %}
+<div class="login-page">
+  <div class="login-card" style="max-width: 480px; text-align: center;">
+    <div class="login-logo">
+      <img src="{{ url_for('static', filename='img/updated-arc-connect-logo.svg') }}" alt="Arc Connect">
+    </div>
+    <h1>Verify your email</h1>
+    <p style="font-size: 15px; line-height: 1.6; margin: 14px 0 4px;">
+      We sent a 6-digit verification code to
+    </p>
+    <p style="font-weight: 600; color: var(--ac-dark); margin: 0 0 20px; word-break: break-word;">
+      {{ email }}
+    </p>
+
+    <form method="POST" action="{{ url_for('public_signup_verify_submit') }}" autocomplete="off">
+      <div class="form-group" style="text-align: left;">
+        <label for="otp">Verification code</label>
+        <input type="text" id="otp" name="otp" required inputmode="numeric" pattern="\d{6}"
+               maxlength="6" autocomplete="one-time-code" autofocus
+               placeholder="••••••"
+               style="letter-spacing: 0.5em; text-align: center; font-size: 20px;">
+        <div class="help">Enter the 6-digit code. It expires in 10 minutes.</div>
+      </div>
+      <div style="margin-top: 18px;">
+        <button type="submit" class="btn btn-primary" style="width: 100%;">Verify &amp; submit request</button>
+      </div>
+    </form>
+
+    <form method="POST" action="{{ url_for('public_signup_verify_resend') }}" style="margin-top: 14px;">
+      <button type="submit" class="btn btn-link">Didn't get it? Send a new code</button>
+    </form>
+
+    <div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--ac-border);">
+      <a href="{{ url_for('public_signup_form') }}" class="btn btn-link">← Edit my details</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

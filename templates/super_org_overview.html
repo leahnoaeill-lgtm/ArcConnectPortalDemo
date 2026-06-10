@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% from "_login_policy.html" import login_policy_summary %}
+{% block title %}{{ org.name }} · ABMRC{% endblock %}
+{% block body %}
+{% set is_main = org.type == 'parent' %}
+{% set is_satellite = org.parent_id is not none %}
+<div class="page pd-soft">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Customer organizations</a>
+      <h1 class="mt-2">
+        {{ org.name }}
+        {% if org.status == 'active' %}<span class="badge status-active">Active</span>
+        {% elif org.status == 'pending_setup' %}<span class="badge status-inactive">Pending setup</span>
+        {% else %}<span class="badge severity-warning">Suspended</span>{% endif %}
+      </h1>
+      <div class="subtitle">
+        {% if is_main %}Main organization{% elif is_satellite %}Satellite location of
+          <a href="{{ url_for('super_org_overview', org_id=parent.id) }}">{{ parent.name }}</a>
+        {% else %}Single-location organization{% endif %}
+        {% if org.city %} · {{ org.city }}{% if org.state %}, {{ org.state }}{% endif %}{% endif %}
+      </div>
+    </div>
+    <div class="actions">
+      {% if org.status == 'active' and baa_state == 'active' %}
+        <form method="POST" action="{{ url_for('super_set_acting_org', org_id=org.id) }}" style="display:inline;">
+          <button type="submit" class="btn btn-primary">Open customer portal (read-only) ↗</button>
+        </form>
+      {% endif %}
+      <a href="{{ url_for('super_org_update', org_id=org.id) }}" class="btn">Edit</a>
+      {% if not is_satellite %}
+        {% if org.status == 'active' %}
+          <form method="POST" action="{{ url_for('super_org_suspend', org_id=org.id) }}" style="display:inline;"
+                onsubmit="return confirm('Suspend {{ org.name }}? This pauses access for everyone in the org.');">
+            <button type="submit" class="btn btn-danger">Suspend</button>
+          </form>
+        {% elif org.status == 'suspended' %}
+          <form method="POST" action="{{ url_for('super_org_activate', org_id=org.id) }}" style="display:inline;">
+            <button type="submit" class="btn btn-primary">Reactivate</button>
+          </form>
+        {% elif org.status == 'pending_setup' %}
+          <form method="POST" action="{{ url_for('super_org_activate', org_id=org.id) }}" style="display:inline;">
+            <button type="submit" class="btn btn-primary">Activate</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  {% if org.status == 'active' and baa_state == 'active' %}
+    <div class="subtitle" style="margin: -6px 0 14px;">
+      <span class="muted">“Open customer portal” signs you into {{ org.name }}'s live portal as ABMRC support — read-only, under the signed BAA.</span>
+    </div>
+  {% endif %}
+
+  <div class="kpis">
+    <div class="kpi">
+      <div class="label">Active patients</div>
+      <div class="value">{{ rollup.patients or 0 }}</div>
+      {% if is_main %}<div class="sub">across all locations</div>{% endif %}
+    </div>
+    <div class="kpi kpi-slate">
+      <div class="label">Active devices</div>
+      <div class="value">{{ rollup.devices or 0 }}</div>
+    </div>
+    <div class="kpi kpi-red">
+      <div class="label">Active alerts</div>
+      <div class="value">{{ rollup.alerts or 0 }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Satellite locations</div>
+      <div class="value">{{ satellites | length }}</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <!-- Satellite locations (main organizations only) -->
+    <div>
+      {% if is_main %}
+      <div class="card">
+        <div class="card-header"><h2>Satellite locations <span class="muted">— {{ satellites | length }}</span></h2></div>
+        <div class="card-body no-pad">
+          {% if satellites %}
+          <table class="table table-nowrap">
+            <thead>
+              <tr>
+                <th>Location</th>
+                <th>Status</th>
+                <th class="num-col">Patients</th>
+                <th class="num-col">Devices</th>
+                <th class="num-col">Active alerts</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for s in satellites %}
+                <tr>
+                  <td>
+                    <div style="font-weight: 600;">{{ s.name }}</div>
+                    <div class="small muted">{{ s.city }}{% if s.state %}, {{ s.state }}{% endif %}</div>
+                  </td>
+                  <td>
+                    {% if s.status == 'active' %}<span class="badge status-active">Active</span>
+                    {% elif s.status == 'pending_setup' %}<span class="badge status-inactive">Pending setup</span>
+                    {% else %}<span class="badge severity-warning">Suspended</span>{% endif %}
+                  </td>
+                  <td class="num-col num">{{ s.patient_count }}</td>
+                  <td class="num-col num">{{ s.device_count }}</td>
+                  <td class="num-col num">{{ s.active_alerts }}</td>
+                  <td class="text-right">
+                    <a href="{{ url_for('super_org_overview', org_id=s.id) }}" class="btn btn-sm">View ▸</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+            <div class="empty-state">
+              <div class="big">🏢</div>
+              <p>No satellite locations under this organization yet.</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="card">
+        <div class="card-header"><h2>Organization details</h2></div>
+        <div class="card-body">
+          <div class="form-group mb-2">
+            <label>Address</label>
+            <div>
+              {{ org.address_line1 or '—' }}{% if org.address_line2 %}<br>{{ org.address_line2 }}{% endif %}<br>
+              {{ org.city }}{% if org.state %}, {{ org.state }}{% endif %} {{ org.zip }}<br>
+              {{ org.country or 'US' }}
+            </div>
+          </div>
+          <div class="form-group mb-2">
+            <label>Phone</label>
+            <div>{{ org.phone or '—' }}</div>
+          </div>
+          <div class="form-group mb-0">
+            <label>NPI</label>
+            <div class="mono">{{ org.npi or '—' }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compliance / onboarding (customer-level) -->
+    <div>
+      <div class="card">
+        <div class="card-header"><h2>Compliance &amp; onboarding</h2></div>
+        <div class="card-body">
+          <div class="form-group mb-2">
+            <label>Business Associate Agreement</label>
+            <div>
+              {% if baa_state == 'active' %}
+                <span class="status-green">On file</span>
+                · signed {{ baa.signed_date | date_only }}
+                {% if baa.file_path %}· <a href="{{ url_for('static', filename=baa.file_path) }}" target="_blank" rel="noopener">{{ baa.file_name }}</a>{% endif %}
+              {% else %}<span class="muted">— none on file —</span>{% endif %}
+            </div>
+            {% if is_satellite %}<div class="small muted" style="margin-top:4px;">Inherited from the main organization.</div>{% endif %}
+          </div>
+          <div class="form-group mb-2">
+            <label>Account verification</label>
+            <div>
+              {% if org.verification_complete %}
+                <span class="status-green">✓ Verified {{ org.verification_date | date_only }}</span>
+                {% if verified_by_name %}<div class="small muted">by {{ verified_by_name }}</div>{% endif %}
+              {% else %}<span class="muted">— not verified —</span>{% endif %}
+            </div>
+          </div>
+          {% if org.verification_notes %}
+          <div class="form-group mb-0">
+            <label>Verification notes</label>
+            <div style="white-space: pre-wrap;">{{ org.verification_notes }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>User Login</h2></div>
+        <div class="card-body">
+          <div class="form-group mb-0">
+            <label>Login method</label>
+            <div>{{ login_policy_summary(org) }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

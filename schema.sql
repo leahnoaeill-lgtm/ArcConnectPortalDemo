@@ -19,6 +19,13 @@ CREATE TABLE IF NOT EXISTS organizations (
     city TEXT,
     state TEXT,
     zip TEXT,
+    country TEXT NOT NULL DEFAULT 'US',
+    -- User login policy (parent-org level). 'domain' = restrict to the org email
+    -- domain; 'sso' = allow the listed single-sign-on providers. Default: SSO
+    -- allowed with all three providers.
+    login_mode TEXT NOT NULL DEFAULT 'sso',
+    sso_providers TEXT DEFAULT 'google,facebook,apple',   -- comma list (when login_mode='sso')
+    login_domain TEXT,         -- allowed email domain (when login_mode='domain')
     phone TEXT,
     email TEXT,
     npi TEXT,
@@ -652,12 +659,18 @@ CREATE TABLE IF NOT EXISTS signup_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     npi TEXT NOT NULL,
     org_name TEXT NOT NULL,
-    address_street TEXT NOT NULL,
+    address_street TEXT NOT NULL,   -- address line 1
+    address_line2 TEXT,             -- address line 2 (optional)
     address_city TEXT NOT NULL,
     address_state TEXT NOT NULL,
     address_zip TEXT NOT NULL,
-    submitter_name TEXT NOT NULL,
+    country TEXT NOT NULL DEFAULT 'US',
+    submitter_name TEXT NOT NULL,   -- "first last", retained for display/back-compat
+    submitter_first_name TEXT,
+    submitter_last_name TEXT,
     submitter_email TEXT NOT NULL,
+    terms_accepted_at TIMESTAMP,    -- when the submitter accepted the Terms of Use
+    email_verified_at TIMESTAMP,    -- when the submitter confirmed their email via OTP
     source_ip TEXT,
     status TEXT NOT NULL DEFAULT 'pending_review'
         CHECK(status IN ('pending_review', 'info_requested', 'approved', 'rejected')),

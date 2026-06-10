@@ -669,5 +669,65 @@ function renderChipPopover(d) {
   }, true);
 })();
 </script>
+
+<script>
+/* Shared phone-field widget: a country-code selector (default USA +1) + a
+   national-number input that sync into a hidden field submitted as the phone.
+   Powers every .phone-widget on the page (settings, org/location, referring,
+   user/profile). Format/parse logic mirrors the patient-form implementation;
+   the national number stores "+<dial> <national>", e.g. "+1 (303) 555-0140". */
+(function() {
+  var COUNTRIES = [
+    {iso:'US', dial:'1'},  {iso:'CA', dial:'1'},   {iso:'GB', dial:'44'},
+    {iso:'IE', dial:'353'},{iso:'AU', dial:'61'},  {iso:'NZ', dial:'64'},
+    {iso:'MX', dial:'52'}, {iso:'BR', dial:'55'},  {iso:'DE', dial:'49'},
+    {iso:'FR', dial:'33'}, {iso:'ES', dial:'34'},  {iso:'PT', dial:'351'},
+    {iso:'IT', dial:'39'}, {iso:'NL', dial:'31'},  {iso:'IN', dial:'91'},
+    {iso:'SG', dial:'65'}, {iso:'JP', dial:'81'},  {iso:'CN', dial:'86'},
+    {iso:'AE', dial:'971'},{iso:'ZA', dial:'27'}
+  ];
+  function dialFor(iso){ var c = COUNTRIES.find(function(x){ return x.iso === iso; }); return c ? c.dial : '1'; }
+  function formatPhone(dial, raw){
+    var d = (raw || '').replace(/\D/g, '');
+    if (dial === '1') {                       // North American Numbering Plan
+      d = d.slice(0, 10);
+      if (d.length >= 7) return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+      if (d.length >= 4) return '(' + d.slice(0,3) + ') ' + d.slice(3);
+      if (d.length >= 1) return '(' + d;
+      return '';
+    }
+    return d.slice(0, 15);                     // other countries: digits only (E.164 max)
+  }
+  function parsePhone(raw){
+    raw = (raw || '').trim();
+    if (!raw) return {iso: null, national: ''};
+    var m = raw.match(/^\+(\d+)\s+(.*)$/);
+    if (m) {
+      var dial = m[1];
+      var iso = dial === '1' ? 'US' : (COUNTRIES.find(function(c){ return c.dial === dial; }) || {}).iso;
+      return {iso: iso || null, national: m[2]};
+    }
+    return {iso: null, national: raw};         // legacy value with no country code
+  }
+  document.querySelectorAll('.phone-widget').forEach(function(w){
+    var cc = w.querySelector('.phone-cc'), nat = w.querySelector('.phone-national'), hid = w.querySelector('.phone-hidden');
+    if (!cc || !nat || !hid) return;
+    COUNTRIES.forEach(function(c){
+      var o = document.createElement('option'); o.value = c.iso; o.textContent = '+' + c.dial + '  ' + c.iso; cc.appendChild(o);
+    });
+    function sync(){ var n = nat.value.trim(); hid.value = n ? ('+' + dialFor(cc.value) + ' ' + n) : ''; }
+    var def = w.getAttribute('data-default-iso') || 'US';
+    var parsed = parsePhone(hid.value);
+    cc.value = parsed.iso || def;
+    if (!cc.value) cc.value = 'US';
+    nat.value = formatPhone(dialFor(cc.value), parsed.national);
+    sync();
+    cc.addEventListener('change', function(){ nat.value = formatPhone(dialFor(cc.value), nat.value); sync(); });
+    nat.addEventListener('input', function(){ nat.value = formatPhone(dialFor(cc.value), nat.value); sync(); });
+    nat.addEventListener('blur',  function(){ nat.value = formatPhone(dialFor(cc.value), nat.value); sync(); });
+    var f = hid.closest('form'); if (f) f.addEventListener('submit', sync);
+  });
+})();
+</script>
 </body>
 </html>

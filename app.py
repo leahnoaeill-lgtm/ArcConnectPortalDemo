@@ -4,8 +4,10 @@ Run:  python seed.py && python app.py
 Open: http://localhost:5001
 """
 
+import hashlib
 import json
 import os
+import secrets
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, date
@@ -17,7 +19,9 @@ from flask import (Flask, render_template, request, redirect, url_for,
 from werkzeug.utils import secure_filename
 
 HERE = Path(__file__).parent
-DB_PATH = HERE / 'arcconnect.db'
+# DB_PATH is env-configurable so the container can point it at a mounted volume
+# (e.g. /app/data/arcconnect.db) that survives image rebuilds.
+DB_PATH = Path(os.environ.get('DB_PATH') or (HERE / 'arcconnect.db'))
 UPLOADS_DIR = HERE / 'static' / 'uploads'
 LOGOS_DIR = UPLOADS_DIR / 'logos'
 CONSENT_DIR = UPLOADS_DIR / 'consent'
@@ -73,8 +77,68 @@ def _ensure_org_verification_columns():
         conn.close()
 
 
+def _ensure_signup_request_columns():
+    """Lightweight migration: add address line 2 / country and split-name columns
+    to signup_requests on an existing DB that pre-dates them. Idempotent."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(signup_requests)").fetchall()}
+        wanted = [
+            ('address_line2',        'TEXT'),
+            ('country',              "TEXT NOT NULL DEFAULT 'US'"),
+            ('submitter_first_name', 'TEXT'),
+            ('submitter_last_name',  'TEXT'),
+            ('terms_accepted_at',    'TEXT'),
+            ('email_verified_at',    'TEXT'),
+        ]
+        for name, decl in wanted:
+            if name not in cols:
+                conn.execute(f"ALTER TABLE signup_requests ADD COLUMN {name} {decl}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _ensure_org_country_column():
+    """Lightweight migration: add a stored country column to organizations on an
+    existing DB that pre-dates it (defaults to 'US'). Idempotent."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(organizations)").fetchall()}
+        if 'country' not in cols:
+            conn.execute("ALTER TABLE organizations ADD COLUMN country TEXT NOT NULL DEFAULT 'US'")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _ensure_org_login_columns():
+    """Lightweight migration: add the per-org user-login policy columns to an
+    existing DB (login_mode / sso_providers / login_domain). Idempotent."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(organizations)").fetchall()}
+        for name, decl in [('login_mode', "TEXT NOT NULL DEFAULT 'sso'"),
+                           ('sso_providers', "TEXT DEFAULT 'google,facebook,apple'"),
+                           ('login_domain', 'TEXT')]:
+            if name not in cols:
+                conn.execute(f"ALTER TABLE organizations ADD COLUMN {name} {decl}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 _ensure_heatmap_schema()
 _ensure_org_verification_columns()
+_ensure_signup_request_columns()
+_ensure_org_country_column()
+_ensure_org_login_columns()
 
 
 # ── Optional HTTP Basic Auth gate (set AUTH_USERNAME + AUTH_PASSWORD env vars to enable) ──
@@ -313,6 +377,7 @@ def feature_enabled(flag_name, org_id=None):
 SUPER_ADMIN_WRITE_ALLOWLIST = {
     'login', 'logout', 'super_org_new', 'super_org_suspend', 'super_org_activate',
     'super_baa_new', 'super_user_invite', 'super_set_acting_org', 'super_clear_acting_org',
+    'super_org_login_update', 'super_org_update',
     # REQ-3.9 self-service signup review actions
     'super_signup_approve', 'super_signup_reject', 'super_signup_request_info',
     'super_signup_return_to_review',
@@ -356,6 +421,28 @@ def _signup_audit(actor_user_id, signup_id, prior_status, new_status, detail):
                (actor_user_id, signup_id,
                 f'{prior_status} → {new_status}: {detail}'))
     db.commit()
+
+
+def _sr_get(row, key, default=None):
+    """Safe getter for a sqlite3.Row that may lack a column on a legacy DB."""
+    try:
+        v = row[key]
+    except (IndexError, KeyError):
+        return default
+    return v if v is not None else default
+
+
+def _signup_submitter_name(sr):
+    """Return (first, last) for a signup request, preferring the explicit
+    first/last columns and falling back to splitting the legacy combined
+    submitter_name for rows created before the split."""
+    first = (_sr_get(sr, 'submitter_first_name') or '').strip()
+    last = (_sr_get(sr, 'submitter_last_name') or '').strip()
+    if not (first or last):
+        parts = (_sr_get(sr, 'submitter_name') or '').strip().split(None, 1)
+        first = parts[0] if parts else ''
+        last = parts[1] if len(parts) > 1 else ''
+    return first, last
 
 
 @app.before_request
@@ -903,14 +990,15 @@ def parent_location_new():
 
         q_exec("""INSERT INTO organizations
                   (name, parent_id, type, address_line1, address_line2, city, state,
-                   zip, phone, npi, timezone)
-                  VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   zip, country, phone, npi, timezone)
+                  VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                (name, parent_id,
                 request.form.get('address_line1') or None,
                 request.form.get('address_line2') or None,
                 request.form.get('city') or None,
                 request.form.get('state') or None,
                 request.form.get('zip') or None,
+                request.form.get('country') or 'US',
                 request.form.get('phone') or None,
                 request.form.get('npi') or None,
                 request.form.get('timezone') or 'America/New_York'))
@@ -950,7 +1038,7 @@ def parent_location_edit(org_id):
             flash('Location name is required.', 'error')
             return redirect(url_for('parent_location_edit', org_id=org_id))
         q_exec("""UPDATE organizations SET name = ?, address_line1 = ?,
-                  address_line2 = ?, city = ?, state = ?, zip = ?, phone = ?,
+                  address_line2 = ?, city = ?, state = ?, zip = ?, country = ?, phone = ?,
                   npi = ?, timezone = ? WHERE id = ?""",
                (name,
                 request.form.get('address_line1') or None,
@@ -958,6 +1046,7 @@ def parent_location_edit(org_id):
                 request.form.get('city') or None,
                 request.form.get('state') or None,
                 request.form.get('zip') or None,
+                request.form.get('country') or 'US',
                 request.form.get('phone') or None,
                 request.form.get('npi') or None,
                 request.form.get('timezone') or 'America/New_York',
@@ -983,22 +1072,40 @@ def _require_super_admin():
 
 
 def _baa_status(baa_row, today=None):
-    """Return ('active'|'expiring'|'expired'|'revoked'|'none', days_left)."""
-    from datetime import date as _d
-    today = today or _d.today()
-    if baa_row is None: return ('none', None)
-    if baa_row['revoked_at']: return ('revoked', None)
-    if not baa_row['expires_on']: return ('active', None)
-    expires = _d.fromisoformat(baa_row['expires_on'])
-    days = (expires - today).days
-    if days < 0: return ('expired', days)
-    if days <= 30: return ('expiring', days)
-    return ('active', days)
+    """A BAA is either on file ('active', with its signed date) or not ('none').
+    Arc Connect does not expire or revoke BAAs — the only date is the signed date.
+    (Second tuple element kept as None for backwards-compatible call sites.)"""
+    return ('none', None) if baa_row is None else ('active', None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Public self-service signup (REQ-3.8) + ABMRC review queue (REQ-3.9)
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Email-OTP verification for the public signup (REQ-3.8). Delivery is stubbed in
+# this prototype (logged + surfaced on screen in demo mode); swap _issue_signup_otp
+# to a real transactional-email send when REQ-17.1 lands.
+SIGNUP_OTP_TTL_MIN = 10
+SIGNUP_OTP_MAX_ATTEMPTS = 5
+
+
+def _otp_hash(code):
+    """Hash an OTP with the app secret so the plaintext code is never stored in
+    the (client-readable) session cookie."""
+    return hashlib.sha256((str(code) + app.secret_key).encode('utf-8')).hexdigest()
+
+
+def _issue_signup_otp(email):
+    """Generate a 6-digit OTP, store its hash + expiry + attempt counter in the
+    session, log it, and return the plaintext so the caller can surface it in
+    demo mode. Returns the code."""
+    code = '%06d' % secrets.randbelow(1000000)
+    expires = (datetime.now() + timedelta(minutes=SIGNUP_OTP_TTL_MIN)).isoformat(sep=' ', timespec='seconds')
+    session['signup_otp'] = {'hash': _otp_hash(code), 'expires': expires, 'attempts': 0, 'email': email}
+    print(f'[SIGNUP OTP] verification code for {email}: {code} '
+          f'(valid {SIGNUP_OTP_TTL_MIN} minutes)', flush=True)
+    return code
+
 
 @app.route('/signup', methods=['GET'])
 def public_signup_form():
@@ -1024,12 +1131,17 @@ def public_signup_submit():
     # Field validation (REQ-3.8 AC-2 / SR-3.8.2)
     npi = (request.form.get('npi') or '').strip()
     org_name = (request.form.get('org_name') or '').strip()
-    address_street = (request.form.get('address_street') or '').strip()
+    address_street = (request.form.get('address_street') or '').strip()  # line 1
+    address_line2 = (request.form.get('address_line2') or '').strip()
     address_city = (request.form.get('address_city') or '').strip()
     address_state = (request.form.get('address_state') or '').strip().upper()
     address_zip = (request.form.get('address_zip') or '').strip()
-    submitter_name = (request.form.get('submitter_name') or '').strip()
+    country = (request.form.get('country') or 'US').strip().upper()
+    submitter_first_name = (request.form.get('submitter_first_name') or '').strip()
+    submitter_last_name = (request.form.get('submitter_last_name') or '').strip()
+    submitter_name = (submitter_first_name + ' ' + submitter_last_name).strip()
     submitter_email = (request.form.get('submitter_email') or '').strip().lower()
+    terms_accepted = request.form.get('terms_accepted') == 'on'
 
     errors = []
     if not (npi.isdigit() and len(npi) == 10):
@@ -1037,42 +1149,125 @@ def public_signup_submit():
     if not (1 <= len(org_name) <= 200):
         errors.append('Organization name is required (1–200 characters).')
     if not (1 <= len(address_street) <= 200):
-        errors.append('Street address is required.')
+        errors.append('Address line 1 is required.')
+    if len(address_line2) > 200:
+        errors.append('Address line 2 is too long.')
     if not (1 <= len(address_city) <= 100):
         errors.append('City is required.')
     if len(address_state) != 2:
-        errors.append('State must be a 2-letter code (e.g., CA).')
+        errors.append('State is required.')
     if not (address_zip.replace('-', '').isdigit() and 5 <= len(address_zip.replace('-', '')) <= 9):
         errors.append('ZIP code is invalid.')
-    if not (1 <= len(submitter_name) <= 100):
-        errors.append('Your name is required.')
+    if country != 'US':
+        errors.append('Arc Connect is currently only available in the United States.')
+    if not (1 <= len(submitter_first_name) <= 100):
+        errors.append('Your first name is required.')
+    if not (1 <= len(submitter_last_name) <= 100):
+        errors.append('Your last name is required.')
     if '@' not in submitter_email or '.' not in submitter_email.split('@')[-1]:
         errors.append('A valid email address is required.')
+    if not terms_accepted:
+        errors.append('You must accept the Terms of Use to continue.')
 
     if errors:
         for e in errors:
             flash(e, 'error')
         return redirect(url_for('public_signup_form'))
 
-    # Create signup_request row (REQ-3.8 AC-4 / SR-3.8.5)
+    # Stash the validated submission and require email (OTP) verification before
+    # the request is recorded (REQ-3.8). Nothing is written to the DB until the
+    # submitter confirms the one-time code sent to their email.
+    session['signup_pending'] = {
+        'npi': npi, 'org_name': org_name,
+        'address_street': address_street, 'address_line2': address_line2,
+        'address_city': address_city, 'address_state': address_state,
+        'address_zip': address_zip, 'country': country,
+        'submitter_first_name': submitter_first_name, 'submitter_last_name': submitter_last_name,
+        'submitter_name': submitter_name, 'submitter_email': submitter_email,
+        'source_ip': ip,
+        'terms_accepted_at': datetime.now().isoformat(sep=' ', timespec='seconds'),
+    }
+    code = _issue_signup_otp(submitter_email)
+    flash('Demo mode — email delivery is not wired up yet, so your verification '
+          'code is shown here: ' + code, 'info')
+    return redirect(url_for('public_signup_verify'))
+
+
+@app.route('/signup/verify', methods=['GET'])
+def public_signup_verify():
+    """Email-OTP verification step for a public signup (REQ-3.8)."""
+    pending = session.get('signup_pending')
+    if not pending:
+        flash('Your signup session has expired. Please start again.', 'error')
+        return redirect(url_for('public_signup_form'))
+    return render_template('public_signup_verify.html', email=pending.get('submitter_email', ''))
+
+
+@app.route('/signup/verify', methods=['POST'])
+def public_signup_verify_submit():
+    """Check the OTP; create the signup_request only on success."""
+    pending = session.get('signup_pending')
+    otp = session.get('signup_otp')
+    if not pending or not otp:
+        flash('Your signup session has expired. Please start again.', 'error')
+        return redirect(url_for('public_signup_form'))
+
+    if datetime.now() > datetime.fromisoformat(otp['expires']):
+        session.pop('signup_otp', None)
+        flash('That code has expired. Request a new one below.', 'error')
+        return redirect(url_for('public_signup_verify'))
+    if otp.get('attempts', 0) >= SIGNUP_OTP_MAX_ATTEMPTS:
+        session.pop('signup_otp', None)
+        session.pop('signup_pending', None)
+        flash('Too many incorrect attempts. Please start your signup again.', 'error')
+        return redirect(url_for('public_signup_form'))
+
+    entered = (request.form.get('otp') or '').strip()
+    if _otp_hash(entered) != otp['hash']:
+        otp['attempts'] = otp.get('attempts', 0) + 1
+        session['signup_otp'] = otp
+        left = SIGNUP_OTP_MAX_ATTEMPTS - otp['attempts']
+        flash('Incorrect code. %d attempt%s left.' % (left, '' if left == 1 else 's'), 'error')
+        return redirect(url_for('public_signup_verify'))
+
+    # Verified — create the request (REQ-3.8 AC-4 / SR-3.8.5).
+    now = datetime.now().isoformat(sep=' ', timespec='seconds')
     db = get_db()
     cur = db.execute("""INSERT INTO signup_requests
-                        (npi, org_name, address_street, address_city, address_state, address_zip,
-                         submitter_name, submitter_email, source_ip, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review')""",
-                     (npi, org_name, address_street, address_city, address_state, address_zip,
-                      submitter_name, submitter_email, ip))
+                        (npi, org_name, address_street, address_line2, address_city,
+                         address_state, address_zip, country,
+                         submitter_name, submitter_first_name, submitter_last_name,
+                         submitter_email, source_ip, status,
+                         terms_accepted_at, email_verified_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?)""",
+                     (pending['npi'], pending['org_name'], pending['address_street'],
+                      pending['address_line2'], pending['address_city'], pending['address_state'],
+                      pending['address_zip'], pending['country'], pending['submitter_name'],
+                      pending['submitter_first_name'], pending['submitter_last_name'],
+                      pending['submitter_email'], pending['source_ip'],
+                      pending['terms_accepted_at'], now))
     signup_id = cur.lastrowid
     db.commit()
+    session.pop('signup_otp', None)
+    session.pop('signup_pending', None)
 
-    # Email notification (REQ-3.8 AC-5 / SR-3.8.6) — stub until REQ-17.1 lights up the
-    # transactional-email pipeline. For the prototype we log to stdout so demos can
-    # show the notification firing.
-    print(f'[SIGNUP NOTIFY] new signup_request id={signup_id} from {submitter_email} '
-          f'org={org_name!r} npi={npi} ip={ip} — review at /super/signups/{signup_id}',
-          flush=True)
+    print(f'[SIGNUP NOTIFY] new signup_request id={signup_id} from {pending["submitter_email"]} '
+          f'org={pending["org_name"]!r} npi={pending["npi"]} ip={pending["source_ip"]} '
+          f'(email verified) — review at /super/signups/{signup_id}', flush=True)
 
     return redirect(url_for('public_signup_thanks'))
+
+
+@app.route('/signup/verify/resend', methods=['POST'])
+def public_signup_verify_resend():
+    """Issue a fresh OTP for the in-progress signup."""
+    pending = session.get('signup_pending')
+    if not pending:
+        flash('Your signup session has expired. Please start again.', 'error')
+        return redirect(url_for('public_signup_form'))
+    code = _issue_signup_otp(pending['submitter_email'])
+    flash('Demo mode — a new verification code was generated: ' + code, 'info')
+    return redirect(url_for('public_signup_verify'))
 
 
 @app.route('/signup/thanks')
@@ -1146,9 +1341,7 @@ def super_signup_approve(signup_id):
     # Group-admin invite goes to the submitter as-is. Operator override was removed
     # so the submitter (who self-registered via the public signup form) remains the
     # group admin of record.
-    parts = (sr['submitter_name'] or '').strip().split(None, 1)
-    invite_first = parts[0] if parts else ''
-    invite_last  = parts[1] if len(parts) > 1 else ''
+    invite_first, invite_last = _signup_submitter_name(sr)
     invite_email = (sr['submitter_email'] or '').strip().lower()
 
     # Validate
@@ -1166,10 +1359,11 @@ def super_signup_approve(signup_id):
     # them they've passed review; the real invite arrives at activation.
     db = get_db()
     cur = db.execute("""INSERT INTO organizations
-                        (name, type, status, address_line1, city, state, zip)
-                        VALUES (?, 'parent', 'pending_setup', ?, ?, ?, ?)""",
-                     (sr['org_name'], sr['address_street'], sr['address_city'],
-                      sr['address_state'], sr['address_zip']))
+                        (name, type, status, address_line1, address_line2, city, state, zip, country)
+                        VALUES (?, 'parent', 'pending_setup', ?, ?, ?, ?, ?, ?)""",
+                     (sr['org_name'], sr['address_street'], _sr_get(sr, 'address_line2'),
+                      sr['address_city'], sr['address_state'], sr['address_zip'],
+                      _sr_get(sr, 'country') or 'US'))
     org_id = cur.lastrowid
 
     user = current_user()
@@ -1306,7 +1500,9 @@ def super_dashboard():
                     (SELECT COUNT(*) FROM alerts a
                        JOIN organizations co ON co.id = a.organization_id
                        WHERE (co.id = o.id OR co.parent_id = o.id)
-                         AND a.resolved_at IS NULL) AS active_alerts
+                         AND a.resolved_at IS NULL) AS active_alerts,
+                    (SELECT COUNT(*) FROM organizations s
+                       WHERE s.parent_id = o.id) AS satellite_count
                     FROM organizations o
                     WHERE o.type IN ('parent', 'location') AND o.parent_id IS NULL
                     ORDER BY o.name""")
@@ -1334,6 +1530,73 @@ def super_dashboard():
                            total_devices=totals['devices'] or 0,
                            total_alerts=totals['alerts'] or 0,
                            pending_signups_count=_signup_pending_count())
+
+
+def _parse_login_policy(form):
+    """Read the User Login policy fields from a submitted form → (mode, providers_csv, domain)."""
+    mode = form.get('login_mode') or 'sso'
+    if mode not in ('sso', 'domain'):
+        mode = 'sso'
+    providers = ','.join(p for p in ('google', 'facebook', 'apple') if form.get('sso_' + p) == 'on')
+    domain = (form.get('login_domain') or '').strip().lower().lstrip('@')
+    return mode, providers, domain
+
+
+@app.route('/super/orgs/<int:org_id>/login', methods=['POST'])
+@require_login
+def super_org_login_update(org_id):
+    """ABMRC super admin edits a customer org's user-login policy."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    if not q_one('SELECT id FROM organizations WHERE id = ?', (org_id,)):
+        abort(404)
+    mode, providers, domain = _parse_login_policy(request.form)
+    q_exec("UPDATE organizations SET login_mode = ?, sso_providers = ?, login_domain = ? WHERE id = ?",
+           (mode, providers, domain, org_id))
+    flash('User login settings updated.', 'success')
+    return redirect(url_for('super_org_update', org_id=org_id))
+
+
+def _verified_by_name(org):
+    """Display name of the user who recorded the super-admin verification, or None."""
+    if not org or not org['verified_by_user_id']:
+        return None
+    v = q_one('SELECT first_name, last_name FROM users WHERE id = ?', (org['verified_by_user_id'],))
+    return f"{v['first_name']} {v['last_name']}" if v else None
+
+
+@app.route('/super/orgs/<int:org_id>')
+@require_login
+def super_org_overview(org_id):
+    """Read-only ABMRC overview of one customer organization, including its
+    satellite locations rolled up with per-location patient/device/alert counts."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    org = q_one('SELECT * FROM organizations WHERE id = ?', (org_id,))
+    if not org or org['type'] == 'internal':
+        abort(404)
+    # Rolled-up counts across this org + any satellite locations under it.
+    rollup = q_one("""SELECT
+        (SELECT COUNT(*) FROM patients p JOIN organizations co ON co.id = p.organization_id
+           WHERE co.id = ? OR co.parent_id = ?) AS patients,
+        (SELECT COUNT(*) FROM devices d JOIN organizations co ON co.id = d.organization_id
+           WHERE co.id = ? OR co.parent_id = ?) AS devices,
+        (SELECT COUNT(*) FROM alerts a JOIN organizations co ON co.id = a.organization_id
+           WHERE (co.id = ? OR co.parent_id = ?) AND a.resolved_at IS NULL) AS alerts
+        """, (org_id, org_id, org_id, org_id, org_id, org_id))
+    baa = q_one("""SELECT * FROM organization_baas WHERE organization_id = ? AND revoked_at IS NULL
+                   ORDER BY effective_from DESC LIMIT 1""", (org_id,))
+    baa_state, baa_days_left = _baa_status(baa)
+    parent = q_one('SELECT id, name FROM organizations WHERE id = ?', (org['parent_id'],)) if org['parent_id'] else None
+    satellites = q_all("""SELECT s.*,
+        (SELECT COUNT(*) FROM patients p WHERE p.organization_id = s.id) AS patient_count,
+        (SELECT COUNT(*) FROM devices d WHERE d.organization_id = s.id) AS device_count,
+        (SELECT COUNT(*) FROM alerts a WHERE a.organization_id = s.id AND a.resolved_at IS NULL) AS active_alerts
+        FROM organizations s WHERE s.parent_id = ? ORDER BY s.name""", (org_id,))
+    return render_template('super_org_overview.html', org=org, rollup=rollup,
+                           baa=baa, baa_state=baa_state, baa_days_left=baa_days_left,
+                           parent=parent, satellites=satellites,
+                           verified_by_name=_verified_by_name(org))
 
 
 @app.route('/super/orgs/new', methods=['GET', 'POST'])
@@ -1375,16 +1638,17 @@ def super_org_new():
         verification_complete = 1 if verification_date else 0
 
         q_exec("""INSERT INTO organizations (name, parent_id, type, status,
-                  address_line1, address_line2, city, state, zip, phone, npi,
+                  address_line1, address_line2, city, state, zip, country, phone, npi,
                   verification_complete, verification_date, verification_notes,
                   verified_by_user_id)
-                  VALUES (?, NULL, 'parent', 'pending_setup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  VALUES (?, NULL, 'parent', 'pending_setup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                (org_name,
                 request.form.get('address_line1') or None,
                 request.form.get('address_line2') or None,
                 request.form.get('city') or None,
                 request.form.get('state') or None,
                 request.form.get('zip') or None,
+                request.form.get('country') or 'US',
                 request.form.get('phone') or None,
                 request.form.get('npi') or None,
                 verification_complete,
@@ -1443,13 +1707,13 @@ def super_set_acting_org(org_id):
     if target['status'] != 'active':
         flash('Cannot access a suspended or pending organization.', 'error')
         return redirect(url_for('super_dashboard'))
-    # Require an active, non-revoked, non-expired BAA before any data access.
+    # Require a BAA on file before any data access.
     baa = q_one("""SELECT * FROM organization_baas
-                   WHERE organization_id = ? AND revoked_at IS NULL
+                   WHERE organization_id = ?
                    ORDER BY effective_from DESC LIMIT 1""", (org_id,))
     state, _ = _baa_status(baa)
-    if state not in ('active', 'expiring'):
-        flash('No active BAA on file — access blocked.', 'error')
+    if state != 'active':
+        flash('No BAA on file — access blocked.', 'error')
         return redirect(url_for('super_dashboard'))
     session['super_acting_org_id'] = org_id
     justification = (request.form.get('justification') or '').strip() or 'general support access'
@@ -1511,9 +1775,7 @@ def super_org_activate(org_id):
     if not existing_invite:
         sr = q_one('SELECT * FROM signup_requests WHERE approved_org_id = ?', (org_id,))
         if sr:
-            parts = (sr['submitter_name'] or '').strip().split(None, 1)
-            invite_first = parts[0] if parts else ''
-            invite_last  = parts[1] if len(parts) > 1 else ''
+            invite_first, invite_last = _signup_submitter_name(sr)
             invite_email = (sr['submitter_email'] or '').strip().lower()
             import secrets
             from datetime import timedelta as _td
@@ -1551,17 +1813,11 @@ def super_org_update(org_id):
            ORDER BY id DESC LIMIT 1""", (org_id,))
 
     if request.method == 'POST':
-        # Suspended orgs allow full edit of details + verification; pending/active
-        # orgs are view-only except for BAA upload. Status is checked server-side
-        # to enforce, not just rely on the disabled inputs on the client.
-        is_suspended = (org['status'] == 'suspended')
+        # ABMRC super admin may edit a customer org's details + verification at any
+        # status, and optionally upload a new BAA.
         baa_file = request.files.get('baa_document')
         baa_provided = bool(baa_file and baa_file.filename)
         signed_date = request.form.get('signed_date')
-
-        if not is_suspended and not baa_provided:
-            flash('Nothing to save — upload a new BAA to update this organization.', 'info')
-            return redirect(url_for('super_org_update', org_id=org_id))
 
         if baa_provided:
             ext = baa_file.filename.rsplit('.', 1)[-1].lower() if '.' in baa_file.filename else ''
@@ -1573,34 +1829,34 @@ def super_org_update(org_id):
                 return redirect(url_for('super_org_update', org_id=org_id))
 
         u = current_user()
-
-        if is_suspended:
-            org_name = (request.form.get('name') or '').strip()
-            if not org_name:
-                flash('Organization name is required.', 'error')
-                return redirect(url_for('super_org_update', org_id=org_id))
-            verification_date = request.form.get('verification_date') or None
-            verification_complete = 1 if verification_date else 0
-            q_exec("""UPDATE organizations SET
-                      name = ?, address_line1 = ?, address_line2 = ?,
-                      city = ?, state = ?, zip = ?, phone = ?,
-                      timezone = ?, npi = ?,
-                      verification_complete = ?, verification_date = ?,
-                      verification_notes = ?, verified_by_user_id = ?
-                      WHERE id = ?""",
-                   (org_name,
-                    request.form.get('address_line1') or None,
-                    request.form.get('address_line2') or None,
-                    request.form.get('city') or None,
-                    request.form.get('state') or None,
-                    request.form.get('zip') or None,
-                    request.form.get('phone') or None,
-                    request.form.get('timezone') or 'America/New_York',
-                    request.form.get('npi') or None,
-                    verification_complete,
-                    verification_date,
-                    request.form.get('verification_notes') or None,
-                    u['id'], org_id))
+        org_name = (request.form.get('name') or '').strip()
+        if not org_name:
+            flash('Organization name is required.', 'error')
+            return redirect(url_for('super_org_update', org_id=org_id))
+        verification_date = request.form.get('verification_date') or None
+        verification_complete = 1 if verification_date else 0
+        q_exec("""UPDATE organizations SET
+                  name = ?, address_line1 = ?, address_line2 = ?,
+                  city = ?, state = ?, zip = ?, country = ?, phone = ?,
+                  timezone = ?, npi = ?,
+                  verification_complete = ?, verification_date = ?,
+                  verification_notes = ?, verified_by_user_id = ?
+                  WHERE id = ?""",
+               (org_name,
+                request.form.get('address_line1') or None,
+                request.form.get('address_line2') or None,
+                request.form.get('city') or None,
+                request.form.get('state') or None,
+                request.form.get('zip') or None,
+                request.form.get('country') or 'US',
+                request.form.get('phone') or None,
+                request.form.get('timezone') or 'America/New_York',
+                request.form.get('npi') or None,
+                verification_complete,
+                verification_date,
+                request.form.get('verification_notes') or None,
+                (u['id'] if verification_complete else org['verified_by_user_id']),
+                org_id))
 
         if baa_provided:
             BAA_DIR.mkdir(parents=True, exist_ok=True)
@@ -1616,18 +1872,10 @@ def super_org_update(org_id):
                     signed_date, signed_date, None,
                     None, None, u['id']))
 
-        if is_suspended and baa_provided:
-            msg_action = 'updated details + uploaded new BAA'
-            flash(f'"{org["name"]}" updated and new BAA uploaded.', 'success')
-        elif is_suspended:
-            msg_action = 'updated details'
-            flash(f'"{org["name"]}" updated.', 'success')
-        else:
-            msg_action = 'uploaded new BAA'
-            flash(f'New BAA uploaded for "{org["name"]}".', 'success')
+        flash(f'"{org_name}" updated' + (' and new BAA uploaded.' if baa_provided else '.'), 'success')
         _log_access('location_update', ref_type='organization', ref_id=org_id,
-                    detail=f'Super admin {msg_action} for "{org["name"]}"')
-        return redirect(url_for('super_dashboard'))
+                    detail=f'Super admin updated "{org_name}"' + (' + new BAA' if baa_provided else ''))
+        return redirect(url_for('super_org_overview', org_id=org_id))
 
     verified_by_name = None
     if org['verified_by_user_id']:
@@ -4123,12 +4371,18 @@ def settings():
         new_tz = request.form.get('timezone') or (existing_org['timezone'] if existing_org else 'America/New_York')
         q_exec("""UPDATE organizations SET name = ?, phone = ?, npi = ?,
                   address_line1 = ?, address_line2 = ?, city = ?, state = ?, zip = ?,
-                  timezone = ?, default_assignee_user_id = ? WHERE id = ?""",
+                  country = ?, timezone = ?, default_assignee_user_id = ? WHERE id = ?""",
                (request.form.get('name'), request.form.get('phone'),
                 request.form.get('npi') or None, request.form.get('address_line1'),
                 request.form.get('address_line2'), request.form.get('city'),
                 request.form.get('state'), request.form.get('zip'),
+                request.form.get('country') or 'US',
                 new_tz, default_assignee, oid))
+        # User login policy — only present on the parent-org (group admin) form.
+        if request.form.get('login_mode'):
+            l_mode, l_providers, l_domain = _parse_login_policy(request.form)
+            q_exec("UPDATE organizations SET login_mode = ?, sso_providers = ?, login_domain = ? WHERE id = ?",
+                   (l_mode, l_providers, l_domain, oid))
         # Logo upload (optional) — only group admins (parent orgs) can upload.
         # Satellite admins POSTing a logo are silently ignored.
         logo_file = request.files.get('logo')
