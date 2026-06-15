@@ -12,7 +12,10 @@ CREATE TABLE IF NOT EXISTS organizations (
     -- Lifecycle status. 'pending_setup' = BAA uploaded + parent admin invited
     -- but invite not yet accepted; 'active' = normal operating state;
     -- 'suspended' = BAA expired or revoked, super admin paused access.
-    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('pending_setup', 'active', 'suspended')),
+    -- Customer-org lifecycle: new (verified from a submission) → pending (BAA or
+    -- verification saved) → ready (both saved) → active (super admin activates);
+    -- suspended is a manual pause.
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('new', 'pending', 'ready', 'active', 'suspended')),
     logo_path TEXT,
     address_line1 TEXT,
     address_line2 TEXT,

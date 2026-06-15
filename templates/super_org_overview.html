@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_login_policy.html" import login_policy_summary %}
+{% from "_org_status.html" import org_status_badge %}
 {% block title %}{{ org.name }} · ABMRC{% endblock %}
 {% block body %}
 {% set is_main = org.type == 'parent' %}
@@ -8,12 +9,7 @@
   <div class="page-header">
     <div>
       <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Customer organizations</a>
-      <h1 class="mt-2">
-        {{ org.name }}
-        {% if org.status == 'active' %}<span class="badge status-active">Active</span>
-        {% elif org.status == 'pending_setup' %}<span class="badge status-inactive">Pending setup</span>
-        {% else %}<span class="badge severity-warning">Suspended</span>{% endif %}
-      </h1>
+      <h1 class="mt-2">{{ org.name }} {{ org_status_badge(org.status) }}</h1>
       <div class="subtitle">
         {% if is_main %}Main organization{% elif is_satellite %}Satellite location of
           <a href="{{ url_for('super_org_overview', org_id=parent.id) }}">{{ parent.name }}</a>
@@ -38,10 +34,12 @@
           <form method="POST" action="{{ url_for('super_org_activate', org_id=org.id) }}" style="display:inline;">
             <button type="submit" class="btn btn-primary">Reactivate</button>
           </form>
-        {% elif org.status == 'pending_setup' %}
+        {% elif org.status == 'ready' %}
           <form method="POST" action="{{ url_for('super_org_activate', org_id=org.id) }}" style="display:inline;">
             <button type="submit" class="btn btn-primary">Activate</button>
           </form>
+        {% else %}
+          <span class="muted small" style="align-self:center;">Add a BAA and verification to enable activation</span>
         {% endif %}
       {% endif %}
     </div>
@@ -99,11 +97,7 @@
                     <div style="font-weight: 600;">{{ s.name }}</div>
                     <div class="small muted">{{ s.city }}{% if s.state %}, {{ s.state }}{% endif %}</div>
                   </td>
-                  <td>
-                    {% if s.status == 'active' %}<span class="badge status-active">Active</span>
-                    {% elif s.status == 'pending_setup' %}<span class="badge status-inactive">Pending setup</span>
-                    {% else %}<span class="badge severity-warning">Suspended</span>{% endif %}
-                  </td>
+                  <td>{{ org_status_badge(s.status) }}</td>
                   <td class="num-col num">{{ s.patient_count }}</td>
                   <td class="num-col num">{{ s.device_count }}</td>
                   <td class="num-col num">{{ s.active_alerts }}</td>
@@ -159,6 +153,7 @@
                 <span class="status-green">On file</span>
                 · signed {{ baa.signed_date | date_only }}
                 {% if baa.file_path %}· <a href="{{ url_for('static', filename=baa.file_path) }}" target="_blank" rel="noopener">{{ baa.file_name }}</a>{% endif %}
+              {% elif org.status in ('new', 'pending', 'ready') %}<span class="status-yellow">Pending</span>
               {% else %}<span class="muted">— none on file —</span>{% endif %}
             </div>
             {% if is_satellite %}<div class="small muted" style="margin-top:4px;">Inherited from the main organization.</div>{% endif %}
@@ -169,6 +164,7 @@
               {% if org.verification_complete %}
                 <span class="status-green">✓ Verified {{ org.verification_date | date_only }}</span>
                 {% if verified_by_name %}<div class="small muted">by {{ verified_by_name }}</div>{% endif %}
+              {% elif org.status in ('new', 'pending', 'ready') %}<span class="status-yellow">Pending</span>
               {% else %}<span class="muted">— not verified —</span>{% endif %}
             </div>
           </div>

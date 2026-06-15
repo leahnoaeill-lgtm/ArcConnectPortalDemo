@@ -37,7 +37,7 @@
       <a href="?tab=assigned" class="{{ 'active' if tab == 'assigned' else '' }}">Assigned <span class="tab-count">{{ kpis.in_use }}</span></a>
       <a href="?tab=unassigned" class="{{ 'active' if tab == 'unassigned' else '' }}">Unassigned <span class="tab-count">{{ kpis.total - kpis.in_use }}</span></a>
     </div>
-    <a href="{{ url_for('device_new') }}" class="btn btn-primary" style="margin-bottom: 6px;">+ Add device</a>
+    {% if account_active %}<a href="{{ url_for('device_new') }}" class="btn btn-primary" style="margin-bottom: 6px;">+ Add device</a>{% endif %}
   </div>
 
   {% if devices %}
@@ -139,7 +139,7 @@
       {% else %}
         <div class="empty-state">
           <p>No devices {% if tab != 'all' %}in this view{% else %}yet{% endif %}.
-            {% if tab != 'assigned' %}<a href="{{ url_for('device_new') }}">Add one →</a>{% endif %}
+            {% if account_active and tab != 'assigned' %}<a href="{{ url_for('device_new') }}">Add one →</a>{% endif %}
           </p>
         </div>
       {% endif %}

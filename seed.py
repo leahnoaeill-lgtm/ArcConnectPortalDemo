@@ -117,6 +117,29 @@ def seed():
                33.4255, -111.9400))
     sunwest_id = c.lastrowid
 
+    # Big Sky Home Health — verified self-registration, status 'new' (no BAA or
+    # verification yet, so it sits at the start of the new→pending→ready lifecycle).
+    c.execute("""INSERT INTO organizations (name, parent_id, type, status, phone, email,
+                 address_line1, city, state, zip, timezone, latitude, longitude, npi)
+                 VALUES (?, NULL, 'parent', 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+              ('Big Sky Home Health', '406-555-0190', 'admin@bigskyhh.com',
+               '120 N Willson Ave', 'Bozeman', 'MT', '59715', 'America/Denver',
+               45.6770, -111.0429, '1730284615'))
+    bigsky_id = c.lastrowid
+
+    # ── Example self-registrations (the "Submitted" queue, awaiting verification) ──
+    for _npi, _oname, _street, _city, _st, _zip, _fn, _ln, _em in [
+        ('1992847650', 'Cascade Respiratory Partners', '410 SW Alder St', 'Portland', 'OR', '97204', 'Dana', 'Whitfield', 'dana@cascaderp.com'),
+        ('1730495862', 'Lone Star Home Medical', '900 Congress Ave', 'Austin', 'TX', '78701', 'Marcus', 'Reyes', 'marcus@lonestarhm.com'),
+    ]:
+        c.execute("""INSERT INTO signup_requests
+                     (npi, org_name, address_street, address_city, address_state, address_zip, country,
+                      submitter_name, submitter_first_name, submitter_last_name, submitter_email,
+                      source_ip, status, terms_accepted_at, email_verified_at, submitted_at)
+                     VALUES (?, ?, ?, ?, ?, ?, 'US', ?, ?, ?, ?, '198.51.100.20', 'pending_review', ?, ?, ?)""",
+                  (_npi, _oname, _street, _city, _st, _zip, _fn + ' ' + _ln, _fn, _ln, _em,
+                   iso(now - timedelta(days=2)), iso(now - timedelta(days=2)), iso(now - timedelta(days=2))))
+
     # ── Users ────────────────────────────────────────────────────────
     # ABMRC super admin
     c.execute("""INSERT INTO users (organization_id, email, first_name, last_name,
@@ -201,6 +224,12 @@ def seed():
     c.execute("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone)
                  VALUES (?, ?, ?, ?, ?, ?)""",
               (sunwest_id, 'maria.t@sunwest.com', 'Maria', 'Torres', 'admin', '480-555-0701'))
+
+    # Big Sky group admin — can log in while the account is pending (status 'new');
+    # sees the pending banner + a limited view (no add location/user/device).
+    c.execute("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone)
+                 VALUES (?, ?, ?, ?, 'admin', ?)""",
+              (bigsky_id, 'admin@bigskyhh.com', 'Reed', 'Calloway', '406-555-0190'))
 
     # ── Patients (Adapt Denver — the main demo location) ─────────────
     # Seed patterned after the PPT clickable demo

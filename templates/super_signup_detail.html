@@ -4,7 +4,7 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <a href="{{ url_for('super_signups') }}" class="btn btn-sm">← Pending Requests</a>
+      <a href="{{ url_for('super_signups') }}" class="btn btn-sm">← Submitted</a>
       <h1 class="mt-2">
         Request #{{ sr.id }} · {{ sr.org_name }}
         {% if sr.status == 'pending_review' %}<span class="badge severity-warning">Pending review</span>
@@ -85,12 +85,12 @@
           {% if sr.status in ('pending_review', 'info_requested') %}
 
             {# 1. Approve — primary path. Group-admin invite goes to the submitter as-is. #}
-            <h3 class="mt-0 mb-1">Approve &amp; create organization</h3>
+            <h3 class="mt-0 mb-1">Verify &amp; add to organizations</h3>
             <div class="small muted mb-2">
-              Creates a customer main organization (status <code>pending_setup</code>) with the
-              submitted fields prefilled, then sends the group-admin invitation to the submitter below.
-              The group admin is the person who submitted this request and cannot be changed here.
-              You'll attach the signed BAA PDF on the next step.
+              Confirms this self-registration is legitimate and adds it to the organizations table
+              as a <strong>New</strong> account (submitted fields prefilled), then sends the group-admin
+              invitation to the submitter below. The group admin is the person who submitted this request
+              and cannot be changed here. You'll add the BAA and verification on the org record next.
             </div>
             <div class="form-group mb-2">
               <label>Group admin</label>
@@ -101,8 +101,8 @@
             </div>
             <form method="POST" action="{{ url_for('super_signup_approve', signup_id=sr.id) }}">
               <button type="submit" class="btn btn-primary"
-                      onclick="return confirm('Approve this request, create the organization, and send the group-admin invite?');">
-                Approve &amp; send invite →
+                      onclick="return confirm('Verify this request and add the organization to the table?');">
+                Verify &amp; add to organizations →
               </button>
             </form>
 

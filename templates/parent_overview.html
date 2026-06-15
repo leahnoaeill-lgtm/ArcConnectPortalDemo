@@ -37,9 +37,11 @@
     </div>
   </div>
 
+  {% if account_active %}
   <div class="text-right" style="margin: -8px 0 14px;">
     <a href="{{ url_for('parent_location_new') }}" class="btn btn-primary">+ Add Satellite location</a>
   </div>
+  {% endif %}
 
   <!-- ══════════════════ Chart selector card ══════════════════ -->
   <div class="card mb-3">
@@ -190,7 +192,7 @@
 
   <div class="flex-between mb-2" id="locations">
     <h2 style="margin: 0;">Locations</h2>
-    <a href="{{ url_for('parent_location_new') }}" class="btn btn-sm btn-primary">+ Add Satellite location</a>
+    {% if account_active %}<a href="{{ url_for('parent_location_new') }}" class="btn btn-sm btn-primary">+ Add Satellite location</a>{% endif %}
   </div>
   <div class="location-grid">
     {% for loc in locations %}
@@ -221,7 +223,7 @@
         </a>
         <div class="location-card-actions">
           <a href="{{ url_for('parent_location_edit', org_id=loc.id) }}" class="btn btn-sm">Edit</a>
-          <a href="{{ url_for('user_new', location=loc.id) }}" class="btn btn-sm">+ Add admin</a>
+          {% if account_active %}<a href="{{ url_for('user_new', location=loc.id) }}" class="btn btn-sm">+ Add admin</a>{% endif %}
         </div>
       </div>
     {% endfor %}

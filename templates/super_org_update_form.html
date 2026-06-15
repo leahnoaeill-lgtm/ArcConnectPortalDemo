@@ -1,30 +1,16 @@
 {% extends "base.html" %}
 {% from "_phone.html" import phone_field %}
 {% from "_login_policy.html" import login_policy_fields %}
+{% from "_org_status.html" import org_status_badge %}
 {% block title %}Update {{ org.name }} · ABMRC{% endblock %}
 {% block body %}
 <div class="page">
   <div class="page-header">
     <div>
-      <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Back</a>
-      <h1 class="mt-2">
-        Update {{ org.name }}
-        {% if org.status == 'active' %}
-          <span class="badge status-active">Active</span>
-        {% elif org.status == 'suspended' %}
-          <span class="badge severity-warning">Suspended</span>
-        {% else %}
-          <span class="badge status-inactive">Pending setup</span>
-        {% endif %}
-      </h1>
+      <a href="{{ url_for('super_org_overview', org_id=org.id) }}" class="btn btn-sm">← Back</a>
+      <h1 class="mt-2">Update {{ org.name }} {{ org_status_badge(org.status) }}</h1>
       <div class="subtitle">
-        {% if org.status == 'suspended' %}
-          Edit organization details, BAA, and verification. A signed BAA and verification date are required to reactivate this organization.
-        {% elif org.status == 'pending_setup' %}
-          Complete the missing setup for this pending organization. A signed BAA is required before the account can be activated.
-        {% else %}
-          Edit organization details, BAA, and verification.
-        {% endif %}
+        Edit organization details, BAA, and verification — all fields are optional, so you can save a partial record. The account becomes <strong>Ready</strong> once both a BAA and verification are saved, then a super admin can activate it.
       </div>
     </div>
   </div>
@@ -54,18 +40,18 @@
       <div class="card-header"><h2>Organization details</h2></div>
       <div class="card-body">
         <div class="form-grid">
-          <div class="form-group {% if editable %}required{% endif %} span-2">
+          <div class="form-group span-2">
             <label>Organization name</label>
             {% if editable %}
-              <input type="text" name="name" value="{{ org.name or '' }}" required>
+              <input type="text" name="name" value="{{ org.name or '' }}">
             {% else %}
               <input type="text" value="{{ org.name or '' }}" disabled>
             {% endif %}
           </div>
-          <div class="form-group {% if editable %}required{% endif %} span-2">
+          <div class="form-group span-2">
             <label>Country</label>
             {% if editable %}
-              <select name="country" required>
+              <select name="country">
                 <option value="US" selected>United States of America</option>
               </select>
               <div class="help">Determines the available states below.</div>
@@ -73,10 +59,10 @@
               <input type="text" value="United States of America" disabled>
             {% endif %}
           </div>
-          <div class="form-group {% if editable %}required{% endif %} span-2">
+          <div class="form-group span-2">
             <label>Address line 1</label>
             {% if editable %}
-              <input type="text" name="address_line1" value="{{ org.address_line1 or '' }}" required>
+              <input type="text" name="address_line1" value="{{ org.address_line1 or '' }}">
             {% else %}
               <input type="text" value="{{ org.address_line1 or '' }}" disabled>
             {% endif %}
@@ -89,18 +75,18 @@
               <input type="text" value="{{ org.address_line2 or '' }}" disabled>
             {% endif %}
           </div>
-          <div class="form-group {% if editable %}required{% endif %}">
+          <div class="form-group">
             <label>City</label>
             {% if editable %}
-              <input type="text" name="city" value="{{ org.city or '' }}" required>
+              <input type="text" name="city" value="{{ org.city or '' }}">
             {% else %}
               <input type="text" value="{{ org.city or '' }}" disabled>
             {% endif %}
           </div>
-          <div class="form-group {% if editable %}required{% endif %}">
+          <div class="form-group">
             <label>State</label>
             {% if editable %}
-              <select name="state" required>
+              <select name="state">
                 <option value="" disabled {% if not org.state %}selected{% endif %}>Select…</option>
                 {% for code, name in us_states %}
                   <option value="{{ code }}" {% if org.state == code %}selected{% endif %}>{{ code }} — {{ name }}</option>
@@ -110,26 +96,26 @@
               <input type="text" value="{{ org.state or '' }}" disabled>
             {% endif %}
           </div>
-          <div class="form-group {% if editable %}required{% endif %}">
+          <div class="form-group">
             <label>ZIP code</label>
             {% if editable %}
-              <input type="text" name="zip" value="{{ org.zip or '' }}" required pattern="[0-9]{5}" maxlength="5" inputmode="numeric" placeholder="5 digits">
+              <input type="text" name="zip" value="{{ org.zip or '' }}" pattern="[0-9]{5}" maxlength="5" inputmode="numeric" placeholder="5 digits">
             {% else %}
               <input type="text" value="{{ org.zip or '' }}" disabled>
             {% endif %}
           </div>
-          <div class="form-group {% if editable %}required{% endif %}">
+          <div class="form-group">
             <label>Phone</label>
             {% if editable %}
-              {{ phone_field('phone', org.phone, required=True) }}
+              {{ phone_field('phone', org.phone, required=False) }}
             {% else %}
               <input type="tel" value="{{ org.phone or '' }}" disabled>
             {% endif %}
           </div>
-          <div class="form-group {% if editable %}required{% endif %} span-2">
+          <div class="form-group span-2">
             <label>NPI</label>
             {% if editable %}
-              <input type="text" name="npi" value="{{ org.npi or '' }}" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier">
+              <input type="text" name="npi" value="{{ org.npi or '' }}" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier">
               <div class="help">10 digits, no dashes.</div>
             {% else %}
               <input type="text" value="{{ org.npi or '' }}" disabled>
@@ -158,7 +144,7 @@
           {% if current_baa %}
             <span class="small status-green">— on file</span>
           {% else %}
-            <span class="small status-red">— required for activation</span>
+            <span class="small status-yellow">— Pending</span>
           {% endif %}
         </h2>
       </div>
@@ -192,21 +178,21 @@
           {% if org.verification_complete %}
             <span class="small status-green">— on file</span>
           {% else %}
-            <span class="small status-red">— required for activation</span>
+            <span class="small status-yellow">— Pending</span>
           {% endif %}
         </h2>
       </div>
       <div class="card-body">
         <div class="form-grid">
-          <div class="form-group {% if editable %}required{% endif %}">
+          <div class="form-group">
             <label>Verification date</label>
             {% if editable %}
-              <input type="date" name="verification_date" value="{{ org.verification_date or '' }}" required>
+              <input type="date" name="verification_date" value="{{ org.verification_date or '' }}">
             {% else %}
               <input type="text" value="{{ (org.verification_date | date_only) if org.verification_date else '—' }}" disabled>
             {% endif %}
           </div>
-          <div class="form-group {% if editable %}required{% endif %}">
+          <div class="form-group">
             <label>Verified by</label>
             {% if editable %}
               <input type="text" value="{{ current_user.first_name }} {{ current_user.last_name }}" disabled>

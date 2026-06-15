@@ -544,6 +544,8 @@ def inject_globals():
         'is_parent_admin': is_parent_admin(),
         'is_super_admin': is_super_admin(),
         'super_acting_org_id': super_acting_org_id(),
+        'account_status': _account_status(),
+        'account_active': _account_active() if u else True,
         'now_iso': _dt_now.now().isoformat(sep=' ', timespec='seconds'),
         'messaging_enabled': messaging_on,
         'mood_response_enabled': mood_resp_on,
@@ -968,6 +970,9 @@ def _require_parent_admin():
 def parent_location_new():
     bounce = _require_parent_admin()
     if bounce: return bounce
+    if not _account_active():
+        flash("Your account is pending activation — you can't add satellite locations yet.", 'error')
+        return redirect(url_for('parent_overview'))
     u = current_user()
     parent_id = u['organization_id']
     if request.method == 'POST':
@@ -1076,6 +1081,41 @@ def _baa_status(baa_row, today=None):
     Arc Connect does not expire or revoke BAAs — the only date is the signed date.
     (Second tuple element kept as None for backwards-compatible call sites.)"""
     return ('none', None) if baa_row is None else ('active', None)
+
+
+def _recompute_org_status(org_id):
+    """Pre-activation lifecycle: new → pending (BAA *or* verification saved) →
+    ready (both saved). Never changes an 'active' or 'suspended' org."""
+    org = q_one('SELECT status, verification_complete FROM organizations WHERE id = ?', (org_id,))
+    if not org or org['status'] in ('active', 'suspended'):
+        return
+    has_baa = q_one('SELECT 1 FROM organization_baas WHERE organization_id = ? LIMIT 1', (org_id,)) is not None
+    has_verif = bool(org['verification_complete'])
+    new_status = 'ready' if (has_baa and has_verif) else ('pending' if (has_baa or has_verif) else 'new')
+    if new_status != org['status']:
+        q_exec('UPDATE organizations SET status = ? WHERE id = ?', (new_status, org_id))
+
+
+def _account_org():
+    """The customer 'account' org for the current user — the main/parent org, or
+    the org itself if it has no parent. Used to gate actions on activation."""
+    u = current_user()
+    if not u:
+        return None
+    org = q_one('SELECT * FROM organizations WHERE id = ?', (u['organization_id'],))
+    if org and org['parent_id']:
+        return q_one('SELECT * FROM organizations WHERE id = ?', (org['parent_id'],))
+    return org
+
+
+def _account_active():
+    a = _account_org()
+    return bool(a and a['status'] == 'active')
+
+
+def _account_status():
+    a = _account_org()
+    return a['status'] if a else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1360,7 +1400,7 @@ def super_signup_approve(signup_id):
     db = get_db()
     cur = db.execute("""INSERT INTO organizations
                         (name, type, status, address_line1, address_line2, city, state, zip, country)
-                        VALUES (?, 'parent', 'pending_setup', ?, ?, ?, ?, ?, ?)""",
+                        VALUES (?, 'parent', 'new', ?, ?, ?, ?, ?, ?)""",
                      (sr['org_name'], sr['address_street'], _sr_get(sr, 'address_line2'),
                       sr['address_city'], sr['address_state'], sr['address_zip'],
                       _sr_get(sr, 'country') or 'US'))
@@ -1376,10 +1416,10 @@ def super_signup_approve(signup_id):
     _signup_audit(user['id'], signup_id, sr['status'], 'approved',
                   f'approved → org_id={org_id} ({sr["org_name"]}); acknowledgment to {invite_email}; invite deferred to activation')
     print(f'[SIGNUP NOTIFY] approval acknowledgment to {invite_email} — '
-          f'org "{sr["org_name"]}" is in pending setup; BAA execution next; '
+          f'org "{sr["org_name"]}" is now onboarding; BAA execution next; '
           f'portal invite will follow once activated. org_id={org_id}', flush=True)
 
-    flash(f'Approved. Customer organization "{sr["org_name"]}" created in pending setup. '
+    flash(f'Approved. Customer organization "{sr["org_name"]}" created and moved to Onboarding. '
           f'Acknowledgment email sent to {invite_email}; portal invite will go out at activation.', 'success')
     return redirect(url_for('super_signups'))
 
@@ -1516,7 +1556,7 @@ def super_dashboard():
                      'baa_state': baa_state, 'baa_days_left': days_left})
     counts = q_one("""SELECT
                         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
-                        SUM(CASE WHEN status = 'pending_setup' THEN 1 ELSE 0 END) AS pending
+                        SUM(CASE WHEN status IN ('new','pending','ready') THEN 1 ELSE 0 END) AS pending
                       FROM organizations
                       WHERE type IN ('parent','location')""")
     totals = q_one("""SELECT
@@ -1641,7 +1681,7 @@ def super_org_new():
                   address_line1, address_line2, city, state, zip, country, phone, npi,
                   verification_complete, verification_date, verification_notes,
                   verified_by_user_id)
-                  VALUES (?, NULL, 'parent', 'pending_setup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  VALUES (?, NULL, 'parent', 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                (org_name,
                 request.form.get('address_line1') or None,
                 request.form.get('address_line2') or None,
@@ -1683,12 +1723,13 @@ def super_org_new():
                (new_org_id, invite_email, invite_first, invite_last, token,
                 u['id'], expires_at))
 
+        # Set new → pending → ready based on what was provided at creation.
+        _recompute_org_status(new_org_id)
+
         _log_access('location_create', ref_type='organization', ref_id=new_org_id,
                     detail=f'Super admin created customer org "{org_name}"; invited {invite_email}; BAA={"on file" if baa_provided else "missing"}')
-        if baa_provided:
-            flash(f'Organization "{org_name}" created. Invite sent to {invite_email}. Account is in pending setup until activated.', 'success')
-        else:
-            flash(f'Organization "{org_name}" created without a BAA. Invite sent to {invite_email}. Upload a signed BAA to enable activation.', 'success')
+        flash(f'Organization "{org_name}" added to the organizations table. Invite sent to {invite_email}. '
+              f'It moves to Ready once a BAA and verification are saved, then you can activate it.', 'success')
         return redirect(url_for('super_dashboard'))
     return render_template('super_org_form.html')
 
@@ -1829,10 +1870,9 @@ def super_org_update(org_id):
                 return redirect(url_for('super_org_update', org_id=org_id))
 
         u = current_user()
-        org_name = (request.form.get('name') or '').strip()
-        if not org_name:
-            flash('Organization name is required.', 'error')
-            return redirect(url_for('super_org_update', org_id=org_id))
+        # Fields are optional so a partial org can be saved; keep the existing
+        # name if the field is left blank.
+        org_name = (request.form.get('name') or '').strip() or org['name']
         verification_date = request.form.get('verification_date') or None
         verification_complete = 1 if verification_date else 0
         q_exec("""UPDATE organizations SET
@@ -1872,7 +1912,12 @@ def super_org_update(org_id):
                     signed_date, signed_date, None,
                     None, None, u['id']))
 
-        flash(f'"{org_name}" updated' + (' and new BAA uploaded.' if baa_provided else '.'), 'success')
+        # Re-evaluate the lifecycle: new → pending (BAA or verification) → ready (both).
+        _recompute_org_status(org_id)
+        new_status = (q_one('SELECT status FROM organizations WHERE id = ?', (org_id,)) or {})['status']
+
+        flash(f'"{org_name}" saved' + (' (new BAA uploaded)' if baa_provided else '')
+              + ('. All set — you can now activate it.' if new_status == 'ready' else '.'), 'success')
         _log_access('location_update', ref_type='organization', ref_id=org_id,
                     detail=f'Super admin updated "{org_name}"' + (' + new BAA' if baa_provided else ''))
         return redirect(url_for('super_org_overview', org_id=org_id))
@@ -3981,6 +4026,9 @@ def devices():
 @require_login
 def device_new():
     oid = current_org_id()
+    if not _account_active():
+        flash("Your account is pending activation — you can't add devices yet.", 'error')
+        return redirect(url_for('devices'))
     if request.method == 'POST':
         serial = request.form.get('serial_number', '').strip()
         model = request.form.get('model')
@@ -4597,6 +4645,9 @@ def users():
 @require_login
 @require_admin
 def user_new():
+    if not _account_active():
+        flash("Your account is pending activation — you can't add users yet.", 'error')
+        return redirect(url_for('users'))
     # Parent admins may pre-target a specific child location via ?location=<id>.
     # Otherwise the new user is scoped to the admin's current acting org.
     target_org_id = current_org_id()

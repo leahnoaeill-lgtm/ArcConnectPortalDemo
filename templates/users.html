@@ -8,7 +8,7 @@
       <div class="subtitle">{{ users | selectattr('is_active') | list | length }} active · {{ users | rejectattr('is_active') | list | length }} deactivated</div>
     </div>
     <div class="actions">
-      <a href="{{ url_for('user_new') }}" class="btn btn-primary">+ Add user</a>
+      {% if account_active %}<a href="{{ url_for('user_new') }}" class="btn btn-primary">+ Add user</a>{% endif %}
     </div>
   </div>
 

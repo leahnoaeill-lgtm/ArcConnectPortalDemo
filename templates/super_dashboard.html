@@ -1,15 +1,16 @@
 {% extends "base.html" %}
+{% from "_org_status.html" import org_status_badge %}
 {% block title %}ABMRC support · Super admin{% endblock %}
 {% block body %}
 <div class="page pd-soft">
   <div class="page-header">
     <div>
       <h1>Customer organizations</h1>
-      <div class="subtitle">{{ active_count }} active · {{ pending_count }} pending <span class="muted">(including sub-locations)</span></div>
+      <div class="subtitle">{{ active_count }} active · {{ pending_count }} in setup <span class="muted">(New / Pending / Ready · incl. sub-locations)</span></div>
     </div>
     <div class="actions">
       <a href="{{ url_for('super_signups') }}" class="btn">
-        Pending Requests
+        Submitted
         {% if pending_signups_count and pending_signups_count > 0 %}
           <span class="badge severity-critical">{{ pending_signups_count }}</span>
         {% endif %}
@@ -40,8 +41,10 @@
     </div>
     <select class="filter-select" id="orgStatusFilter">
       <option value="">All statuses</option>
+      <option value="new">New</option>
+      <option value="pending">Pending</option>
+      <option value="ready">Ready</option>
       <option value="active">Active</option>
-      <option value="pending_setup">Pending setup</option>
       <option value="suspended">Suspended</option>
     </select>
     <button type="button" class="filter-clear" id="orgFilterClear" style="display:none;">Clear</button>
@@ -84,15 +87,7 @@
                   {% endif %}
                 </div>
               </td>
-              <td>
-                {% if o.status == 'active' %}
-                  <span class="badge status-active">Active</span>
-                {% elif o.status == 'pending_setup' %}
-                  <span class="badge status-inactive">Pending setup</span>
-                {% else %}
-                  <span class="badge severity-warning">Suspended</span>
-                {% endif %}
-              </td>
+              <td>{{ org_status_badge(o.status) }}</td>
               <td class="small">
                 {% if o.baa_state == 'active' %}
                   <span class="status-green">✓ {{ o.baa.signed_date | date_only }}</span>

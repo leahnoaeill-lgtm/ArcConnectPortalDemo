@@ -1,0 +1,9 @@
+{# Customer-org lifecycle status pill. new → pending → ready → active (+ suspended). #}
+{% macro org_status_badge(status) -%}
+{% if status == 'active' %}<span class="badge status-active">Active</span>
+{% elif status == 'ready' %}<span class="badge status-assigned">Ready</span>
+{% elif status == 'pending' %}<span class="badge severity-warning">Pending</span>
+{% elif status == 'new' %}<span class="badge badge-soft">New</span>
+{% elif status == 'suspended' %}<span class="badge severity-critical">Suspended</span>
+{% else %}<span class="badge status-inactive">{{ status | replace('_',' ') | title }}</span>{% endif %}
+{%- endmacro %}
