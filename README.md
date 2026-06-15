@@ -1,6 +1,6 @@
 # Arc Connect Provider Portal — localhost prototype
 
-A working Flask + SQLite prototype of the HME-facing provider portal. Demonstrates the end-to-end Arc Connect workflow: multi-tenant organizations (main organizations + satellite locations), per-location user management, device inventory, patient-to-device assignment with consent upload, configurable alert rules, and alerts inbox — plus an **ABMRC super-admin console** for managing customer organizations and a **public self-service signup** with Terms acceptance and email OTP verification.
+A working Flask + SQLite prototype of the HME-facing provider portal. Demonstrates the end-to-end Arc Connect workflow: multi-tenant organizations (main organizations + satellite locations), per-location user management, device inventory, patient-to-device assignment with consent upload, configurable alert rules, and alerts inbox — plus an **ABMRC super-admin console** for managing customer organizations and a **public self-service signup** (Terms acceptance + email OTP) that feeds an **onboarding lifecycle**: Submitted → New → Pending → Ready → Active.
 
 **See `context.md` for design decisions, schema, routes, and build progress.**
 
@@ -37,12 +37,13 @@ The database (`/app/data`) and uploaded files (`/app/static/uploads`) live on **
 
 | Email | Role | Org | Scope |
 |---|---|---|---|
-| `support@abmrespiratory.com` | Super admin | ABM Respiratory Care (ABMRC) | Manufacturer console — customer-org roster, read-only org overview, pending-signup review, USA map |
+| `support@abmrespiratory.com` | Super admin | ABM Respiratory Care (ABMRC) | Manufacturer console — customer-org roster, read-only org overview, **Submitted** queue, USA map |
 | `karen.h@adapt.com` | Admin | Adapt (parent HQ) | Sees rollup across all Adapt locations + can switch into any |
 | `priya.s@adapt.com` | Admin | Adapt — Denver | Full location admin |
 | `james.r@adapt.com` | User | Adapt — Denver | Read-mostly; no settings (per LD-8 the Release 1 role enum is admin / user / super_admin only — "clinician", "billing" etc. are descriptive job titles, not enum values) |
 | `linda.w@adapt.com` | Admin | Adapt — Boulder | Different location under same parent |
 | `maria.t@sunwest.com` | Admin | Sunwest Medical | Unrelated org (multi-tenant isolation test) |
+| `admin@bigskyhh.com` | Admin | Big Sky Home Health (**New**) | Group admin of a pre-Active account — shows the "pending activation" banner + limited view |
 
 ## Port
 
@@ -67,20 +68,35 @@ Served directly by Flask in this prototype. In production this would move to S3 
 - Multi-tenant isolation (one org can't see another's data)
 
 **ABMRC super-admin console**
-- Customer-organization roster (live search + status filter)
+- **Customer-organization roster** (live search + status filter) — only verified orgs appear here
+- **Submitted** queue: organizations that self-registered on the website. **Verify** a submission (super-admin only) to add it to the org table as **New** — keeps the roster clean until a request is vetted
 - Read-only org overview **hub**: rolled-up patient/device/alert counts, a **satellite-locations** breakdown, compliance (BAA + verification), and the per-org login policy
-- Edit organization records (details, verification, BAA upload)
-- **Open customer portal** — read-only support view into a customer's live portal (requires a BAA on file)
-- Pending-requests **review queue** (approve / reject / request info) + USA overview map
+- **Edit** organization records — all fields optional, so a partial record can be saved
+- **Activate** a Ready org; **Open customer portal** (read-only support view, requires a BAA on file); suspend / reactivate; USA overview map
 
 **Self-service organization signup** (`/signup`, public)
 - Multi-field intake with **Country-first** address, State / Country dropdowns, and a country-coded phone (default `+1`)
-- **Terms-of-Use** acceptance + **email one-time-code (OTP)** verification before a request is recorded
-- Approved requests create a customer organization in pending setup
+- **Terms-of-Use** acceptance + **email one-time-code (OTP)** verification before the request is recorded
+- Submissions land in the super admin's **Submitted** queue; verifying one adds the org to the table as **New**
 
 **Per-organization User Login policy**
 - Each org chooses **Single Sign-On Allowed** (Google / Facebook / Apple) or **organization email-domain only**
 - Default: SSO allowed with all three providers
+
+## Organization lifecycle
+
+A customer organization moves through these statuses:
+
+| Status | Meaning | How it advances |
+|---|---|---|
+| **Submitted** | A self-registration from the website — lives in the super admin's *Submitted* queue, **not** in the org table yet | super admin **Verify** → New |
+| **New** | Verified; now in the org table, no BAA/verification yet | save a BAA *or* verification → Pending |
+| **Pending** | A BAA **or** account verification has been saved | save the other one → Ready |
+| **Ready** | **Both** a BAA and verification are on file | super admin **Activate** → Active |
+| **Active** | Live | (super admin can Suspend) |
+| **Suspended** | Manually paused | Reactivate → Active |
+
+A **group admin can sign in while their account is pre-Active** (New / Pending / Ready). They see a **"pending activation" banner** and a limited view — they **cannot add satellite locations, users, or devices** until a super admin activates the organization.
 
 ## What doesn't (yet)
 
