@@ -902,6 +902,12 @@ tr.filter-hidden { display: none !important; }
    squishing/wrapping cells. */
 .card .card-body.no-pad > .table { min-width: 720px; }
 
+/* Portal-wide "scroll right" affordance: injected above a table by base.html and
+   shown only while its card body overflows horizontally (hidden at the right edge). */
+.table-scroll-hint { display: none; padding: 8px 16px 0; font-size: 12px;
+  font-weight: 600; color: var(--ac-cyan-dark); text-align: right; }
+.table-scroll-hint.is-visible { display: block; }
+
 /* Dense tables (e.g. the ABMRC Super User org/request grids) keep every cell on
    a single line; the card body scrolls horizontally rather than letting values
    wrap. Stacked sub-lines inside a cell (a <div> over another) are unaffected. */
@@ -2477,11 +2483,11 @@ body.super-readonly .super-admin-banner button {
   font-size: 28px;
   margin-bottom: 4px;
   color: var(--ac-dark);
-  text-align: center;
+  text-align: left;
 }
 
 .login-card .login-sub {
-  text-align: center;
+  text-align: left;
 }
 
 .login-card .login-sub {

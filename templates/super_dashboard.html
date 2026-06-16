@@ -9,14 +9,6 @@
   @media (max-width: 820px) {
     .super-dash .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
   }
-  /* Keep the org table fully readable on smaller screens: scroll horizontally
-     within the card rather than clipping the right-hand columns. */
-  .super-dash .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .super-dash .table-scroll > table { min-width: 760px; }
-  /* Scroll affordance — only shown when the table actually overflows (toggled in JS). */
-  .super-dash .scroll-hint { display: none; padding: 8px 16px 0; font-size: 12px;
-    font-weight: 600; color: var(--ac-cyan-dark); text-align: right; }
-  .super-dash .scroll-hint.is-visible { display: block; }
 </style>
 <div class="page pd-soft super-dash">
   <div class="page-header">
@@ -85,8 +77,6 @@
 
   <div class="card">
     <div class="card-body no-pad">
-      <div class="scroll-hint" id="orgScrollHint">Scroll right to see all columns →</div>
-      <div class="table-scroll" id="orgTableScroll">
       <table class="table sortable table-nowrap" data-default-sort="name" data-default-dir="asc">
         <thead>
           <tr>
@@ -145,7 +135,6 @@
           {% endfor %}
         </tbody>
       </table>
-      </div>
     </div>
   </div>
 </div>
@@ -183,22 +172,6 @@
   search.addEventListener('input', apply);
   statusEl.addEventListener('change', apply);
   clearBtn.addEventListener('click', reset);
-})();
-
-// Show the "scroll right" hint only when the org table actually overflows its
-// container, and hide it once the user has scrolled to the right edge.
-(function() {
-  const scroller = document.getElementById('orgTableScroll');
-  const hint = document.getElementById('orgScrollHint');
-  if (!scroller || !hint) return;
-  function update() {
-    const overflowing = scroller.scrollWidth > scroller.clientWidth + 4;
-    const atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 4;
-    hint.classList.toggle('is-visible', overflowing && !atEnd);
-  }
-  update();
-  scroller.addEventListener('scroll', update, { passive: true });
-  window.addEventListener('resize', update);
 })();
 </script>
 {% endblock %}

@@ -735,5 +735,37 @@ function renderChipPopover(d) {
   });
 })();
 </script>
+
+<script>
+/* Portal-wide "scroll right" affordance. For every horizontally-scrollable table
+   container (.card-body.no-pad holding a .table), inject a hint above the table and
+   show it only while the table overflows — hidden once scrolled to the right edge.
+   This covers all responsive tables across the portal without per-template markup. */
+(function() {
+  var updaters = [];
+  function ensureHint(scroller) {
+    var prev = scroller.previousElementSibling;
+    if (prev && prev.classList.contains('table-scroll-hint')) return prev;
+    var hint = document.createElement('div');
+    hint.className = 'table-scroll-hint';
+    hint.textContent = 'Scroll right to see all columns →';
+    scroller.parentNode.insertBefore(hint, scroller);
+    return hint;
+  }
+  document.querySelectorAll('.card-body.no-pad').forEach(function(scroller) {
+    if (!scroller.querySelector('table.table')) return;
+    var hint = ensureHint(scroller);
+    function update() {
+      var overflowing = scroller.scrollWidth > scroller.clientWidth + 4;
+      var atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 4;
+      hint.classList.toggle('is-visible', overflowing && !atEnd);
+    }
+    update();
+    scroller.addEventListener('scroll', update, { passive: true });
+    updaters.push(update);
+  });
+  window.addEventListener('resize', function() { updaters.forEach(function(u) { u(); }); });
+})();
+</script>
 </body>
 </html>
