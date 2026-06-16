@@ -379,8 +379,7 @@ SUPER_ADMIN_WRITE_ALLOWLIST = {
     'super_baa_new', 'super_user_invite', 'super_set_acting_org', 'super_clear_acting_org',
     'super_org_login_update', 'super_org_update',
     # REQ-3.9 self-service signup review actions
-    'super_signup_approve', 'super_signup_reject', 'super_signup_request_info',
-    'super_signup_return_to_review',
+    'super_signup_approve', 'super_signup_reject',
     # REQ-3.8 public signup form (no auth required, but POSTs from anonymous users)
     'public_signup_submit',
 }
@@ -406,9 +405,9 @@ def _signup_rate_limit_check(ip):
 
 
 def _signup_pending_count():
-    """Count of signup_requests in pending_review or info_requested state."""
+    """Count of signup_requests awaiting review."""
     row = q_one("""SELECT COUNT(*) AS n FROM signup_requests
-                   WHERE status IN ('pending_review', 'info_requested')""")
+                   WHERE status = 'pending_review'""")
     return row['n'] if row else 0
 
 
@@ -1325,7 +1324,7 @@ def super_signups():
     bounce = _require_super_admin()
     if bounce: return bounce
     pending = q_all("""SELECT * FROM signup_requests
-                       WHERE status IN ('pending_review', 'info_requested')
+                       WHERE status = 'pending_review'
                        ORDER BY submitted_at DESC""")
     closed = q_all("""SELECT * FROM signup_requests
                       WHERE status IN ('approved', 'rejected')
@@ -1333,13 +1332,11 @@ def super_signups():
     # All-time totals for the stat tiles (independent of the LIMIT-25 closed list).
     counts = q_one("""SELECT
                         SUM(CASE WHEN status = 'pending_review'  THEN 1 ELSE 0 END) AS n_pending,
-                        SUM(CASE WHEN status = 'info_requested'  THEN 1 ELSE 0 END) AS n_info,
                         SUM(CASE WHEN status = 'approved'        THEN 1 ELSE 0 END) AS n_approved,
                         SUM(CASE WHEN status = 'rejected'        THEN 1 ELSE 0 END) AS n_rejected
                       FROM signup_requests""") or {}
     totals = {
         'pending':  (counts['n_pending']  if counts else 0) or 0,
-        'info':     (counts['n_info']     if counts else 0) or 0,
         'approved': (counts['n_approved'] if counts else 0) or 0,
         'rejected': (counts['n_rejected'] if counts else 0) or 0,
     }
@@ -1374,7 +1371,7 @@ def super_signup_approve(signup_id):
     sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
     if not sr:
         abort(404)
-    if sr['status'] not in ('pending_review', 'info_requested'):
+    if sr['status'] != 'pending_review':
         flash('This signup request is already finalized; cannot approve.', 'error')
         return redirect(url_for('super_signup_detail', signup_id=signup_id))
 
@@ -1433,7 +1430,7 @@ def super_signup_reject(signup_id):
     sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
     if not sr:
         abort(404)
-    if sr['status'] not in ('pending_review', 'info_requested'):
+    if sr['status'] != 'pending_review':
         flash('This signup request is already finalized; cannot reject.', 'error')
         return redirect(url_for('super_signup_detail', signup_id=signup_id))
 
@@ -1459,64 +1456,6 @@ def super_signup_reject(signup_id):
 
     flash(f'Signup request rejected. Submitter notified.', 'success')
     return redirect(url_for('super_signups'))
-
-
-@app.route('/super/signups/<int:signup_id>/request_info', methods=['POST'])
-@require_login
-def super_signup_request_info(signup_id):
-    """Request more information from the submitter (REQ-3.9 AC-2 + SR-3.9.5)."""
-    bounce = _require_super_admin()
-    if bounce: return bounce
-    sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
-    if not sr:
-        abort(404)
-    if sr['status'] not in ('pending_review',):
-        flash('More info can only be requested while the signup is in pending_review.', 'error')
-        return redirect(url_for('super_signup_detail', signup_id=signup_id))
-
-    message = (request.form.get('message') or '').strip()
-    if not message:
-        flash('Please enter the question or info you need from the submitter.', 'error')
-        return redirect(url_for('super_signup_detail', signup_id=signup_id))
-
-    db = get_db()
-    user = current_user()
-    db.execute("""UPDATE signup_requests
-                  SET status = 'info_requested', reviewed_by_user_id = ?,
-                      reviewed_at = CURRENT_TIMESTAMP, info_request_message = ?
-                  WHERE id = ?""", (user['id'], message, signup_id))
-    db.commit()
-
-    _signup_audit(user['id'], signup_id, sr['status'], 'info_requested', f'info request: {message[:80]}')
-    print(f'[SIGNUP NOTIFY] info-request email to {sr["submitter_email"]}: {message}', flush=True)
-
-    flash('Info-request email sent to submitter. Status set to info_requested.', 'success')
-    return redirect(url_for('super_signups'))
-
-
-@app.route('/super/signups/<int:signup_id>/return_to_review', methods=['POST'])
-@require_login
-def super_signup_return_to_review(signup_id):
-    """Return an info_requested signup back to pending_review (after submitter replied via email)."""
-    bounce = _require_super_admin()
-    if bounce: return bounce
-    sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
-    if not sr:
-        abort(404)
-    if sr['status'] != 'info_requested':
-        flash('Only info_requested signups can be returned to review.', 'error')
-        return redirect(url_for('super_signup_detail', signup_id=signup_id))
-
-    db = get_db()
-    user = current_user()
-    db.execute("""UPDATE signup_requests SET status = 'pending_review', reviewed_at = CURRENT_TIMESTAMP
-                  WHERE id = ?""", (signup_id,))
-    db.commit()
-
-    _signup_audit(user['id'], signup_id, 'info_requested', 'pending_review',
-                  'submitter replied; ready for re-review')
-    flash('Signup returned to pending review.', 'success')
-    return redirect(url_for('super_signup_detail', signup_id=signup_id))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

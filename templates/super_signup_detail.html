@@ -1,24 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Request #{{ sr.id }} · ABMRC · Arc Connect{% endblock %}
+{% block title %}{{ sr.org_name }} · ABMRC · Arc Connect{% endblock %}
 {% block body %}
-<div class="page">
+<style>
+  /* Compact, low-whitespace layout for the review page. */
+  .page.signup-detail { max-width: 900px; }          /* don't stretch across wide screens */
+  .signup-detail .two-col.signup-cols {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;                               /* cards size to content — no stretched empty card */
+    gap: 14px;
+  }
+  .signup-detail .card { margin-bottom: 14px; }
+  .signup-detail .card-header { padding: 12px 16px; }
+  .signup-detail .card-body { padding: 16px; }
+  @media (max-width: 900px) {
+    .signup-detail .two-col.signup-cols { grid-template-columns: 1fr; }
+  }
+</style>
+<div class="page signup-detail">
   <div class="page-header">
     <div>
       <a href="{{ url_for('super_signups') }}" class="btn btn-sm">← Submitted</a>
       <h1 class="mt-2">
-        Request #{{ sr.id }} · {{ sr.org_name }}
-        {% if sr.status == 'pending_review' %}<span class="badge severity-warning">Pending review</span>
-        {% elif sr.status == 'info_requested' %}<span class="badge badge-soft">Info requested</span>
-        {% elif sr.status == 'approved' %}<span class="badge status-active">Approved</span>
+        {{ sr.org_name }}
+        {% if sr.status == 'pending_review' %}<span class="badge severity-warning">To be reviewed</span>
+        {% elif sr.status == 'approved' %}<span class="badge status-active">Verified</span>
         {% elif sr.status == 'rejected' %}<span class="badge severity-critical">Rejected</span>{% endif %}
       </h1>
       <div class="subtitle">
-        Submitted {{ sr.submitted_at }} · Source IP {{ sr.source_ip or 'unknown' }}
+        Submitted {{ sr.submitted_at | dt }}
       </div>
     </div>
   </div>
 
-  <div class="two-col">
+  <div class="two-col signup-cols">
     <!-- ──────── Submitted information ──────── -->
     <div>
       <div class="card">
@@ -26,7 +40,7 @@
         <div class="card-body">
           <div class="form-group mb-2">
             <label>Organization</label>
-            <div style="font-weight: 600;">{{ sr.org_name }}</div>
+            <div>{{ sr.org_name }}</div>
           </div>
           <div class="form-group mb-2">
             <label>NPI</label>
@@ -48,12 +62,6 @@
               <a href="mailto:{{ sr.submitter_email }}">{{ sr.submitter_email }}</a>
             </div>
           </div>
-          {% if sr.info_request_message %}
-            <div class="form-group mb-2">
-              <label>Info request</label>
-              <div style="white-space: pre-wrap;">{{ sr.info_request_message }}</div>
-            </div>
-          {% endif %}
           {% if sr.rejection_reason %}
             <div class="form-group mb-2">
               <label>Rejection</label>
@@ -82,69 +90,28 @@
       <div class="card">
         <div class="card-header"><h2>Review actions</h2></div>
         <div class="card-body">
-          {% if sr.status in ('pending_review', 'info_requested') %}
+          {% if sr.status == 'pending_review' %}
 
-            {# 1. Approve — primary path. Group-admin invite goes to the submitter as-is. #}
-            <h3 class="mt-0 mb-1">Verify &amp; add to organizations</h3>
-            <div class="small muted mb-2">
-              Confirms this self-registration is legitimate and adds it to the organizations table
-              as a <strong>New</strong> account (submitted fields prefilled), then sends the group-admin
-              invitation to the submitter below. The group admin is the person who submitted this request
-              and cannot be changed here. You'll add the BAA and verification on the org record next.
-            </div>
-            <div class="form-group mb-2">
-              <label>Group admin</label>
-              <div>
-                {{ sr.submitter_name }}<br>
-                <a href="mailto:{{ sr.submitter_email }}">{{ sr.submitter_email }}</a>
-              </div>
-            </div>
-            <form method="POST" action="{{ url_for('super_signup_approve', signup_id=sr.id) }}">
-              <button type="submit" class="btn btn-primary"
+            {# Verify — primary path. Group-admin invite goes to the submitter as-is. #}
+            <form method="POST" action="{{ url_for('super_signup_approve', signup_id=sr.id) }}" style="margin: 0;">
+              <button type="submit" class="btn btn-success"
                       onclick="return confirm('Verify this request and add the organization to the table?');">
-                Verify &amp; add to organizations →
+                Verify
               </button>
             </form>
 
-            {# 2. Request more info (only when status=pending_review) — second priority #}
-            {% if sr.status == 'pending_review' %}
-              <div style="border-top: 1px solid var(--ac-border); margin-top: 18px; padding-top: 18px;">
-                <h3 class="mt-0 mb-1">Request more info</h3>
-                <div class="small muted mb-2">
-                  Send a question to the submitter. Status moves to <code>info_requested</code>.
-                  The submitter replies via email; mark the request "ready" below when their answer comes in.
-                </div>
-                <form method="POST" action="{{ url_for('super_signup_request_info', signup_id=sr.id) }}">
-                  <div class="form-group required mb-2">
-                    <label for="message">Message</label>
-                    <textarea name="message" id="message" rows="3" required
-                              placeholder="e.g., Could you confirm the NPI on the NPPES record matches the legal organization name?"></textarea>
-                  </div>
-                  <button type="submit" class="btn">Send info request</button>
-                </form>
-              </div>
-            {% else %}
-              <div style="border-top: 1px solid var(--ac-border); margin-top: 18px; padding-top: 18px;">
-                <h3 class="mt-0 mb-1">Submitter replied?</h3>
-                <div class="small muted mb-2">Move the request back to <code>pending_review</code> once the submitter has answered your question.</div>
-                <form method="POST" action="{{ url_for('super_signup_return_to_review', signup_id=sr.id) }}">
-                  <button type="submit" class="btn">Return to pending review</button>
-                </form>
-              </div>
-            {% endif %}
-
-            {# 3. Reject — last because it's terminal #}
+            {# Reject — progressive disclosure: reason fields stay hidden until Reject is clicked. #}
             <div style="border-top: 1px solid var(--ac-border); margin-top: 18px; padding-top: 18px;">
-              <h3 class="mt-0 mb-1">Reject</h3>
-              <div class="small muted mb-2">
-                Sends a templated email to the submitter with the reason category (free-text notes are not included in the email).
-                Rejection is final but the submitter can submit a fresh request.
-              </div>
+              <button type="button" class="btn btn-danger" id="rejectToggle"
+                      onclick="document.getElementById('rejectForm').hidden = false; this.hidden = true;">
+                Reject
+              </button>
               <form method="POST" action="{{ url_for('super_signup_reject', signup_id=sr.id) }}"
+                    id="rejectForm" hidden
                     onsubmit="return confirm('Reject this request? Submitter will be notified.');">
-                <div class="form-group required mb-2">
-                  <label for="reason_category">Reason category</label>
-                  <select name="reason_category" id="reason_category" required>
+                <div class="form-group required mb-2" style="flex-direction: row; align-items: center; gap: 10px;">
+                  <label for="reason_category" style="margin: 0; white-space: nowrap;">Reason</label>
+                  <select name="reason_category" id="reason_category" required style="flex: 1;">
                     <option value="">— choose a reason —</option>
                     <option value="existing_customer">Existing customer organization</option>
                     <option value="only_available_usa">Only available in the USA</option>
@@ -156,14 +123,20 @@
                   <textarea name="reason_notes" id="reason_notes" rows="2"
                             placeholder="Notes for the audit trail; not sent to the submitter."></textarea>
                 </div>
-                <button type="submit" class="btn btn-danger">Reject request</button>
+                <div style="display: flex; gap: 8px;">
+                  <button type="submit" class="btn btn-danger">Confirm reject</button>
+                  <button type="button" class="btn"
+                          onclick="document.getElementById('rejectForm').hidden = true; document.getElementById('rejectToggle').hidden = false;">
+                    Cancel
+                  </button>
+                </div>
               </form>
             </div>
 
           {% else %}
             <div class="empty-state">
               <div class="big">{% if sr.status == 'approved' %}✓{% else %}✕{% endif %}</div>
-              <p>This request was {{ sr.status }} on {{ sr.reviewed_at }}.<br>
+              <p>This request was {% if sr.status == 'approved' %}verified{% else %}rejected{% endif %} on {{ sr.reviewed_at | dt }}.<br>
               No further actions are available.</p>
             </div>
           {% endif %}

@@ -6,7 +6,6 @@
     <div>
       <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← ABMRC dashboard</a>
       <h1 class="mt-2">Submitted</h1>
-      <div class="subtitle">Organizations that self-registered on the Arc Connect website — verify a request to add it to the organizations table.</div>
     </div>
   </div>
 
@@ -15,15 +14,11 @@
      "Recently closed" list below. #}
   <div class="kpis">
     <div class="kpi kpi-yellow">
-      <div class="label">Pending review</div>
+      <div class="label">To be reviewed</div>
       <div class="value">{{ totals.pending }}</div>
     </div>
-    <div class="kpi kpi-slate">
-      <div class="label">Info requested</div>
-      <div class="value">{{ totals.info }}</div>
-    </div>
     <div class="kpi kpi-green">
-      <div class="label">Approved</div>
+      <div class="label">Verified</div>
       <div class="value">{{ totals.approved }}</div>
     </div>
     <div class="kpi kpi-red">
@@ -32,11 +27,24 @@
     </div>
   </div>
 
-  <!-- ───────── Open requests ───────── -->
-  <div class="card">
-    <div class="card-header">
-      <h2>Open <span class="muted">— {{ pending|length }} {% if pending|length == 1 %}request{% else %}requests{% endif %} awaiting your review</span></h2>
+  {% if pending or closed %}
+  <div class="filter-bar">
+    <div class="filter-search">
+      <input type="search" id="signupSearch" placeholder="Search organization, NPI, submitter, city…" autocomplete="off">
     </div>
+    <label class="small muted" for="signupStatus">Status</label>
+    <select class="filter-select" id="signupStatus">
+      <option value="">All statuses</option>
+      <option value="pending_review">To be reviewed</option>
+      <option value="approved">Verified</option>
+      <option value="rejected">Rejected</option>
+    </select>
+    <span class="filter-count" id="signupCount"></span>
+  </div>
+  {% endif %}
+
+  <!-- ───────── To be reviewed ───────── -->
+  <div class="card" data-filter-card>
     <div class="card-body no-pad">
       {% if pending %}
         <table class="table sortable table-nowrap" data-default-sort="submitted" data-default-dir="desc">
@@ -52,7 +60,10 @@
           </thead>
           <tbody>
             {% for sr in pending %}
-              <tr data-sort-submitted="{{ sr.submitted_at }}"
+              <tr class="sr-row"
+                  data-search="{{ (sr.org_name ~ ' ' ~ (sr.npi or '') ~ ' ' ~ (sr.submitter_name or '') ~ ' ' ~ (sr.submitter_email or '') ~ ' ' ~ (sr.address_city or '') ~ ' ' ~ (sr.address_state or '')) | lower }}"
+                  data-status="{{ sr.status }}"
+                  data-sort-submitted="{{ sr.submitted_at }}"
                   data-sort-org="{{ sr.org_name | lower }}"
                   data-sort-npi="{{ sr.npi }}"
                   data-sort-submitter="{{ sr.submitter_email | lower }}"
@@ -72,9 +83,7 @@
                 </td>
                 <td>
                   {% if sr.status == 'pending_review' %}
-                    <span class="badge severity-warning">Pending review</span>
-                  {% elif sr.status == 'info_requested' %}
-                    <span class="badge badge-soft">Info requested</span>
+                    <span class="badge severity-warning">To be reviewed</span>
                   {% endif %}
                 </td>
                 <td class="text-right">
@@ -95,7 +104,7 @@
 
   <!-- ───────── Recently closed ───────── -->
   {% if closed %}
-    <div class="card">
+    <div class="card" data-filter-card>
       <div class="card-header">
         <h2>Recently closed <span class="muted">— last 25</span></h2>
       </div>
@@ -113,7 +122,10 @@
           </thead>
           <tbody>
             {% for sr in closed %}
-              <tr data-sort-submitted="{{ sr.submitted_at }}"
+              <tr class="sr-row"
+                  data-search="{{ (sr.org_name ~ ' ' ~ (sr.npi or '') ~ ' ' ~ (sr.submitter_name or '') ~ ' ' ~ (sr.submitter_email or '') ~ ' ' ~ (sr.address_city or '') ~ ' ' ~ (sr.address_state or '')) | lower }}"
+                  data-status="{{ sr.status }}"
+                  data-sort-submitted="{{ sr.submitted_at }}"
                   data-sort-org="{{ sr.org_name | lower }}"
                   data-sort-npi="{{ sr.npi }}"
                   data-sort-submitter="{{ sr.submitter_email | lower }}"
@@ -130,7 +142,7 @@
                 <td class="small muted">{{ sr.submitter_email }}</td>
                 <td>
                   {% if sr.status == 'approved' %}
-                    <span class="badge status-active">Approved</span>
+                    <span class="badge status-active">Verified</span>
                   {% elif sr.status == 'rejected' %}
                     <span class="badge severity-critical">Rejected</span>
                   {% endif %}
@@ -149,4 +161,39 @@
     </div>
   {% endif %}
 </div>
+
+<script>
+// Unified search + status filter across both Submitted tables. Column sorting is
+// handled globally by the .sortable header handler in base.html.
+(function() {
+  const search = document.getElementById('signupSearch');
+  const statusSel = document.getElementById('signupStatus');
+  if (!search || !statusSel) return;
+  const rows = Array.from(document.querySelectorAll('tr.sr-row'));
+  const cards = Array.from(document.querySelectorAll('[data-filter-card]'));
+  const count = document.getElementById('signupCount');
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    const s = statusSel.value;
+    const filtering = !!(q || s);
+    let visible = 0;
+    rows.forEach(r => {
+      const matchQ = !q || (r.dataset.search || '').includes(q);
+      const matchS = !s || r.dataset.status === s;
+      const show = matchQ && matchS;
+      r.classList.toggle('filter-hidden', !show);
+      if (show) visible++;
+    });
+    // Hide a whole card when none of its rows match — only while a filter is active,
+    // so the server-rendered empty states still show when nothing is typed/selected.
+    cards.forEach(card => {
+      if (!filtering) { card.style.display = ''; return; }
+      card.style.display = card.querySelector('tr.sr-row:not(.filter-hidden)') ? '' : 'none';
+    });
+    count.textContent = filtering ? (visible + ' match' + (visible === 1 ? '' : 'es')) : '';
+  }
+  search.addEventListener('input', apply);
+  statusSel.addEventListener('change', apply);
+})();
+</script>
 {% endblock %}
