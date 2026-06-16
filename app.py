@@ -376,7 +376,8 @@ def feature_enabled(flag_name, org_id=None):
 # is read-only; submitting a form refuses with 403.
 SUPER_ADMIN_WRITE_ALLOWLIST = {
     'login', 'logout', 'super_org_new', 'super_org_suspend', 'super_org_activate',
-    'super_baa_new', 'super_user_invite', 'super_set_acting_org', 'super_clear_acting_org',
+    'super_baa_new', 'super_user_invite', 'super_org_group_admin_new',
+    'super_set_acting_org', 'super_clear_acting_org',
     'super_org_login_update', 'super_org_update',
     # REQ-3.9 self-service signup review actions
     'super_signup_approve', 'super_signup_reject',
@@ -1376,12 +1377,7 @@ def super_signup_detail(signup_id):
     sr = q_one('SELECT * FROM signup_requests WHERE id = ?', (signup_id,))
     if not sr:
         abort(404)
-    transitions = q_all("""SELECT al.*, u.first_name, u.last_name
-                           FROM access_log al
-                           LEFT JOIN users u ON u.id = al.user_id
-                           WHERE al.event = 'signup_request_transition' AND al.ref_id = ?
-                           ORDER BY al.occurred_at DESC""", (signup_id,))
-    return render_template('super_signup_detail.html', sr=sr, transitions=transitions)
+    return render_template('super_signup_detail.html', sr=sr)
 
 
 @app.route('/super/signups/<int:signup_id>/approve', methods=['POST'])
@@ -1627,9 +1623,8 @@ def super_org_new():
         invite_email = (request.form.get('invite_email') or '').strip().lower()
         invite_first = (request.form.get('invite_first_name') or '').strip()
         invite_last = (request.form.get('invite_last_name') or '').strip()
-        if not (invite_email and invite_first and invite_last):
-            flash('An initial group admin invite (email + name) is required.', 'error')
-            return redirect(url_for('super_org_new'))
+        # Everything except the org name is optional at creation — those fields are
+        # only required to activate (enforced in super_org_activate).
 
         # BAA is optional at creation. If a file is provided, validate it
         # and the signed date; effective_from defaults to signed_date and
@@ -1686,24 +1681,25 @@ def super_org_new():
                     request.form.get('signed_by_name') or None,
                     request.form.get('signed_by_title') or None, u['id']))
 
-        # Parent-admin invite
-        import secrets
-        from datetime import timedelta as _td
-        token = secrets.token_urlsafe(24)
-        expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
-        q_exec("""INSERT INTO org_invitations (organization_id, email, first_name,
-                  last_name, token, invited_by_user_id, expires_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)""",
-               (new_org_id, invite_email, invite_first, invite_last, token,
-                u['id'], expires_at))
+        # Group-admin invite — only when an email was provided (optional at create).
+        if invite_email:
+            import secrets
+            from datetime import timedelta as _td
+            token = secrets.token_urlsafe(24)
+            expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
+            q_exec("""INSERT INTO org_invitations (organization_id, email, first_name,
+                      last_name, token, invited_by_user_id, expires_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (new_org_id, invite_email, invite_first, invite_last, token,
+                    u['id'], expires_at))
 
         # Set new → pending → ready based on what was provided at creation.
         _recompute_org_status(new_org_id)
 
         _log_access('location_create', ref_type='organization', ref_id=new_org_id,
-                    detail=f'Super admin created customer org "{org_name}"; invited {invite_email}; BAA={"on file" if baa_provided else "missing"}')
-        flash(f'Organization "{org_name}" added to the organizations table. Invite sent to {invite_email}. '
-              f'It moves to Ready once a BAA and verification are saved, then you can activate it.', 'success')
+                    detail=f'Super admin created customer org "{org_name}"; invited {invite_email or "(none yet)"}; BAA={"on file" if baa_provided else "missing"}')
+        flash(f'Organization "{org_name}" added as New. Complete the profile, group-admin invite, '
+              f'BAA, and verification to enable activation.', 'success')
         return redirect(url_for('super_dashboard'))
     return render_template('super_org_form.html')
 
@@ -1766,15 +1762,30 @@ def super_org_suspend(org_id):
 def super_org_activate(org_id):
     bounce = _require_super_admin()
     if bounce: return bounce
+    org = q_one('SELECT * FROM organizations WHERE id = ?', (org_id,))
+    if not org:
+        abort(404)
+    # All the fields that are optional at creation become required to activate.
+    missing = []
+    for field, label in (('name', 'organization name'), ('address_line1', 'address'),
+                         ('city', 'city'), ('state', 'state'), ('zip', 'ZIP'),
+                         ('phone', 'phone'), ('npi', 'NPI')):
+        if not org[field]:
+            missing.append(label)
+    has_invite = q_one(
+        """SELECT 1 AS x FROM users WHERE organization_id = ? AND role = 'admin' AND is_active = 1
+           LIMIT 1""", (org_id,)) or q_one(
+        'SELECT 1 AS x FROM org_invitations WHERE organization_id = ? LIMIT 1', (org_id,))
+    if not has_invite:
+        missing.append('a group-admin invite')
     has_baa = q_one(
-        'SELECT 1 AS x FROM organization_baas WHERE organization_id = ? LIMIT 1',
-        (org_id,))
+        'SELECT 1 AS x FROM organization_baas WHERE organization_id = ? LIMIT 1', (org_id,))
     if not has_baa:
-        flash('Cannot activate: a signed BAA must be on file before this organization can be active.', 'error')
-        return redirect(url_for('super_dashboard'))
-    org = q_one('SELECT verification_complete FROM organizations WHERE id = ?', (org_id,))
-    if not (org and org['verification_complete']):
-        flash('Cannot activate: account verification (verification date) must be recorded before this organization can be active.', 'error')
+        missing.append('a signed BAA')
+    if not org['verification_complete']:
+        missing.append('account verification')
+    if missing:
+        flash('Cannot activate — still needed: ' + ', '.join(missing) + '.', 'error')
         return redirect(url_for('super_dashboard'))
     q_exec("UPDATE organizations SET status = 'active' WHERE id = ?", (org_id,))
     _log_access('location_update', ref_type='organization', ref_id=org_id,
@@ -1903,9 +1914,49 @@ def super_org_update(org_id):
         if v:
             verified_by_name = f"{v['first_name']} {v['last_name']}"
 
+    # Existing group admins (parent org) — shown view-only under User Login.
+    group_admins = q_all("""SELECT id, first_name, last_name, email, phone, is_active,
+                            last_login_at
+                            FROM users
+                            WHERE organization_id = ? AND role = 'admin'
+                            ORDER BY is_active DESC, last_name, first_name""", (org['id'],))
     return render_template('super_org_update_form.html',
                            org=org, current_baa=current_baa,
-                           verified_by_name=verified_by_name)
+                           verified_by_name=verified_by_name,
+                           group_admins=group_admins)
+
+
+@app.route('/super/orgs/<int:org_id>/group-admin', methods=['POST'])
+@require_login
+def super_org_group_admin_new(org_id):
+    """Super admin adds a new group admin (role='admin') to a main organization."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    org = q_one("SELECT * FROM organizations WHERE id = ? AND type = 'parent'", (org_id,))
+    if not org:
+        flash('Group admins can only be added to a main organization.', 'error')
+        return redirect(url_for('super_org_update', org_id=org_id))
+    email = (request.form.get('email') or '').strip().lower()
+    first = (request.form.get('first_name') or '').strip()
+    last = (request.form.get('last_name') or '').strip()
+    phone = (request.form.get('phone') or '').strip() or None
+    if not (email and first and last):
+        flash('First name, last name, and email are required to add a group admin.', 'error')
+        return redirect(url_for('super_org_update', org_id=org_id))
+    if '@' not in email or '.' not in email.split('@')[-1]:
+        flash('Enter a valid email address for the group admin.', 'error')
+        return redirect(url_for('super_org_update', org_id=org_id))
+    if q_one('SELECT id FROM users WHERE email = ?', (email,)):
+        flash('A user with that email already exists.', 'error')
+        return redirect(url_for('super_org_update', org_id=org_id))
+    q_exec("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, is_active)
+              VALUES (?, ?, ?, ?, 'admin', ?, 1)""",
+           (org_id, email, first, last, phone))
+    new_uid = q_one('SELECT last_insert_rowid() AS id')['id']
+    _log_access('user_create', ref_type='user', ref_id=new_uid,
+                detail=f'Super admin added group admin {email} to org {org_id}')
+    flash(f'Group admin {first} {last} added to {org["name"]}.', 'success')
+    return redirect(url_for('super_org_update', org_id=org_id))
 
 
 # Two-letter US state code → FIPS numeric (matches us-atlas topojson state ids).
@@ -4635,19 +4686,25 @@ def user_new():
             (requested_loc, u['organization_id']))
         if target_location:
             target_org_id = target_location['id']
+    # Role options depend on the target org's tier: a main organization (parent)
+    # only takes Group admins; a satellite location takes admin or user.
+    _torg = q_one('SELECT type FROM organizations WHERE id = ?', (target_org_id,))
+    target_is_parent = bool(_torg and _torg['type'] == 'parent')
+    allowed_roles = ('admin',) if target_is_parent else ('admin', 'user')
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
         existing = q_one('SELECT id FROM users WHERE email = ?', (email,))
         if existing:
             flash('A user with that email already exists.', 'error')
             return redirect(url_for('user_new', location=requested_loc or None))
-        if request.form.get('role') not in ('admin', 'user'):
+        role = request.form.get('role')
+        if role not in allowed_roles:
             flash('Invalid role.', 'error')
             return redirect(url_for('user_new', location=requested_loc or None))
         q_exec("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, is_active)
                   VALUES (?, ?, ?, ?, ?, ?, 1)""",
                (target_org_id, email, request.form.get('first_name'),
-                request.form.get('last_name'), request.form.get('role'),
+                request.form.get('last_name'), role,
                 request.form.get('phone')))
         new_uid = q_one('SELECT last_insert_rowid() AS id')['id']
         _log_access('user_create', ref_type='user', ref_id=new_uid,
@@ -4657,7 +4714,8 @@ def user_new():
             return redirect(url_for('parent_overview'))
         return redirect(url_for('users'))
     return render_template('user_form.html', user=None,
-                           target_location=target_location)
+                           target_location=target_location,
+                           target_is_parent=target_is_parent)
 
 
 @app.route('/settings/users/<int:user_id>/edit', methods=['GET', 'POST'])
@@ -4668,6 +4726,11 @@ def user_edit(user_id):
     u = q_one('SELECT * FROM users WHERE id = ? AND organization_id = ?',
               (user_id, oid))
     if not u: abort(404)
+    # Role options depend on the org tier: a main organization (parent) only takes
+    # Group admins; a satellite location takes admin or user.
+    _torg = q_one('SELECT type FROM organizations WHERE id = ?', (oid,))
+    target_is_parent = bool(_torg and _torg['type'] == 'parent')
+    allowed_roles = ('admin',) if target_is_parent else ('admin', 'user')
     if request.method == 'POST':
         email = (request.form.get('email') or '').strip().lower()
         # Email must remain unique across the system (excluding this user's
@@ -4679,7 +4742,8 @@ def user_edit(user_id):
             return redirect(url_for('user_edit', user_id=user_id))
         role = request.form.get('role')
         # Per LD-8: Release 1 role enum is admin / user only at the customer tier.
-        if role not in ('admin', 'user'):
+        # A main organization (parent) only takes Group admins.
+        if role not in allowed_roles:
             flash('Invalid role.', 'error')
             return redirect(url_for('user_edit', user_id=user_id))
         # Don't let an admin strip the last active admin role from the org —
@@ -4704,7 +4768,7 @@ def user_edit(user_id):
                     detail=f'Updated {email} (role={role})')
         flash(f'User {email} updated.', 'success')
         return redirect(url_for('users'))
-    return render_template('user_form.html', user=u)
+    return render_template('user_form.html', user=u, target_is_parent=target_is_parent)
 
 
 @app.route('/settings/users/<int:user_id>/deactivate', methods=['POST'])

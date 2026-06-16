@@ -2,8 +2,8 @@
 {% block title %}{{ sr.org_name }} · ABMRC · Arc Connect{% endblock %}
 {% block body %}
 <style>
-  /* Compact, low-whitespace layout for the review page. */
-  .page.signup-detail { max-width: 900px; }          /* don't stretch across wide screens */
+  /* Low-whitespace review layout; use the full screen width. */
+  .page.signup-detail { max-width: none; }
   .signup-detail .two-col.signup-cols {
     grid-template-columns: 1fr 1fr;
     align-items: start;                               /* cards size to content — no stretched empty card */
@@ -144,32 +144,5 @@
       </div>
     </div>
   </div>
-
-  <!-- ──────── Audit trail ──────── -->
-  {% if transitions %}
-    <div class="card">
-      <div class="card-header"><h2>Audit trail</h2></div>
-      <div class="card-body no-pad">
-        <table class="table table-nowrap">
-          <thead>
-            <tr>
-              <th>When</th>
-              <th>Actor</th>
-              <th>Transition</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for t in transitions %}
-              <tr>
-                <td class="small muted nowrap">{{ t.occurred_at }}</td>
-                <td class="small">{{ t.first_name }} {{ t.last_name }}</td>
-                <td class="small">{{ t.detail }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  {% endif %}
 </div>
 {% endblock %}

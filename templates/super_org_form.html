@@ -2,7 +2,7 @@
 {% from "_phone.html" import phone_field %}
 {% block title %}New organization · ABMRC{% endblock %}
 {% block body %}
-<div class="page">
+<div class="page org-form-page">
   <div class="page-header">
     <div>
       <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Back</a>
@@ -12,36 +12,36 @@
 
   <form method="POST" enctype="multipart/form-data">
     <div class="card">
-      <div class="card-header"><h2>Organization details</h2></div>
+      <div class="card-header"><h2>Organization details <span class="small muted">— required for activation</span></h2></div>
       <div class="card-body">
         <div class="form-grid">
-          <div class="form-group required span-2">
+          <div class="form-group span-2">
             <label>Organization name</label>
-            <input type="text" name="name" required>
+            <input type="text" name="name">
             <div class="help">Shown across the customer's portal as their main organization name.</div>
           </div>
-          <div class="form-group required span-2">
+          <div class="form-group span-2">
             <label>Country</label>
-            <select name="country" required>
+            <select name="country">
               <option value="US" selected>United States of America</option>
             </select>
             <div class="help">Determines the available states below.</div>
           </div>
-          <div class="form-group required span-2">
+          <div class="form-group span-2">
             <label>Address line 1</label>
-            <input type="text" name="address_line1" required>
+            <input type="text" name="address_line1">
           </div>
           <div class="form-group span-2">
             <label>Address line 2</label>
             <input type="text" name="address_line2">
           </div>
-          <div class="form-group required">
+          <div class="form-group">
             <label>City</label>
-            <input type="text" name="city" required>
+            <input type="text" name="city">
           </div>
-          <div class="form-group required">
+          <div class="form-group">
             <label>State</label>
-            <select name="state" required>
+            <select name="state">
               <option value="" disabled selected>Select…</option>
               <option value="AL">AL — Alabama</option>
               <option value="AK">AK — Alaska</option>
@@ -96,17 +96,17 @@
               <option value="WY">WY — Wyoming</option>
             </select>
           </div>
-          <div class="form-group required">
+          <div class="form-group">
             <label>ZIP code</label>
-            <input type="text" name="zip" required pattern="[0-9]{5}" maxlength="5" inputmode="numeric" placeholder="5 digits">
+            <input type="text" name="zip" pattern="[0-9]{5}" maxlength="5" inputmode="numeric" placeholder="5 digits">
           </div>
-          <div class="form-group required">
+          <div class="form-group">
             <label>Phone</label>
-            {{ phone_field('phone', required=True) }}
+            {{ phone_field('phone') }}
           </div>
-          <div class="form-group required span-2">
+          <div class="form-group span-2">
             <label>NPI</label>
-            <input type="text" name="npi" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier">
+            <input type="text" name="npi" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" placeholder="10-digit National Provider Identifier">
             <div class="help">10 digits, no dashes. Required for activation.</div>
           </div>
         </div>
@@ -117,22 +117,23 @@
       <div class="card-header"><h2>Group Admin Invite <span class="small muted">— required for activation</span></h2></div>
       <div class="card-body">
         <div class="form-grid">
-          <div class="form-group required">
+          <div class="form-group">
             <label>First name</label>
-            <input type="text" name="invite_first_name" required>
+            <input type="text" name="invite_first_name">
           </div>
-          <div class="form-group required">
+          <div class="form-group">
             <label>Last name</label>
-            <input type="text" name="invite_last_name" required>
+            <input type="text" name="invite_last_name">
           </div>
-          <div class="form-group required span-2">
+          <div class="form-group span-2">
             <label>Email</label>
-            <input type="email" name="invite_email" required>
+            <input type="email" name="invite_email">
           </div>
         </div>
       </div>
     </div>
 
+    <div class="org-cols">
     <div class="card mt-3">
       <div class="card-header"><h2>Business Associate Agreement <span class="small muted">— required for activation</span></h2></div>
       <div class="card-body">
@@ -141,9 +142,9 @@
             <label>Signed BAA (PDF)</label>
             <input type="file" name="baa_document" accept=".pdf,application/pdf">
           </div>
-          <div class="form-group required">
+          <div class="form-group">
             <label>Signed date</label>
-            <input type="date" name="signed_date" required>
+            <input type="date" name="signed_date">
           </div>
         </div>
       </div>
@@ -153,11 +154,11 @@
       <div class="card-header"><h2>Account verification <span class="small muted">— required for activation</span></h2></div>
       <div class="card-body">
         <div class="form-grid">
-          <div class="form-group required">
+          <div class="form-group">
             <label>Verification date</label>
-            <input type="date" name="verification_date" required>
+            <input type="date" name="verification_date">
           </div>
-          <div class="form-group required">
+          <div class="form-group">
             <label>Verified by</label>
             <input type="text" value="{{ current_user.first_name }} {{ current_user.last_name }}" disabled>
             <div class="help">Recorded automatically when you press Save.</div>
@@ -169,8 +170,9 @@
         </div>
       </div>
     </div>
+    </div>
 
-    <div class="form-actions">
+    <div class="org-form-actions">
       <a href="{{ url_for('super_dashboard') }}" class="btn">Cancel</a>
       <button type="submit" class="btn btn-primary">Save organization</button>
     </div>

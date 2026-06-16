@@ -4,14 +4,11 @@
 {% from "_org_status.html" import org_status_badge %}
 {% block title %}Update {{ org.name }} · ABMRC{% endblock %}
 {% block body %}
-<div class="page">
+<div class="page org-form-page">
   <div class="page-header">
     <div>
       <a href="{{ url_for('super_org_overview', org_id=org.id) }}" class="btn btn-sm">← Back</a>
       <h1 class="mt-2">Update {{ org.name }} {{ org_status_badge(org.status) }}</h1>
-      <div class="subtitle">
-        Edit organization details, BAA, and verification — all fields are optional, so you can save a partial record. The account becomes <strong>Ready</strong> once both a BAA and verification are saved, then a super admin can activate it.
-      </div>
     </div>
   </div>
 
@@ -138,6 +135,7 @@
       </div>
     </div>
 
+    <div class="org-cols">
     <div class="card mt-3">
       <div class="card-header">
         <h2>Business Associate Agreement
@@ -212,13 +210,15 @@
         </div>
       </div>
     </div>
+    </div>
 
-    <div class="form-actions">
+    <div class="org-form-actions">
       <a href="{{ url_for('super_dashboard') }}" class="btn">Cancel</a>
       <button type="submit" class="btn btn-primary">Save changes</button>
     </div>
   </form>
 
+  <div class="{% if org.type == 'parent' %}org-cols{% endif %}">
   <!-- User Login policy — separate form (always editable; posts to its own route) -->
   <form method="POST" action="{{ url_for('super_org_login_update', org_id=org.id) }}">
     <div class="card mt-3">
@@ -233,5 +233,65 @@
       </div>
     </div>
   </form>
+
+  {% if org.type == 'parent' %}
+  <!-- Group admins — view-only list + add (super admin) -->
+  <div class="card mt-3">
+    <div class="card-header"><h2>Group admins</h2></div>
+    <div class="card-body no-pad">
+      {% if group_admins %}
+        <table class="table table-nowrap">
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for ga in group_admins %}
+              <tr>
+                <td style="font-weight: 600;">{{ ga.last_name }}, {{ ga.first_name }}</td>
+                <td class="mono small">{{ ga.email }}</td>
+                <td class="small">{{ ga.phone or '—' }}</td>
+                <td>
+                  {% if ga.is_active %}<span class="badge status-active">Active</span>
+                  {% else %}<span class="badge status-inactive">Inactive</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty-state" style="padding: 16px;">
+          <p>No group admins yet. Add the first one below.</p>
+        </div>
+      {% endif %}
+    </div>
+    <div class="card-body" style="border-top: 1px solid var(--ac-slate-light);">
+      <h3 class="mt-0 mb-2">Add a group admin</h3>
+      <form method="POST" action="{{ url_for('super_org_group_admin_new', org_id=org.id) }}">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>First name</label>
+            <input type="text" name="first_name" required>
+          </div>
+          <div class="form-group">
+            <label>Last name</label>
+            <input type="text" name="last_name" required>
+          </div>
+          <div class="form-group span-2">
+            <label>Email</label>
+            <input type="email" name="email" required>
+          </div>
+          <div class="form-group span-2">
+            <label>Phone</label>
+            {{ phone_field('phone') }}
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Add group admin</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  </div>
 </div>
 {% endblock %}
