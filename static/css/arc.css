@@ -2626,6 +2626,18 @@ body.super-readonly .super-admin-banner button {
   gap: 16px;
 }
 
+/* Referring-clinic detail: compact info column beside the wider providers table;
+   cards size to their own content and stack on narrow screens. */
+.ref-detail-cols {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .ref-detail-cols { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 900px) {
   .two-col { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
