@@ -81,6 +81,7 @@
         <thead>
           <tr>
             <th data-sort-key="name">Organization</th>
+            <th data-sort-key="groupadmin">Group admin</th>
             <th data-sort-key="status">Status</th>
             <th data-sort-key="baa">BAA</th>
             <th data-sort-key="verification">Verification</th>
@@ -93,13 +94,14 @@
         <tbody>
           {% for o in orgs %}
             <tr data-sort-name="{{ o.name | lower }}"
+                data-sort-groupadmin="{{ ((o.group_admin.last_name ~ ' ' ~ o.group_admin.first_name) if o.group_admin else '') | lower }}"
                 data-sort-status="{{ o.status }}"
                 data-sort-baa="{{ o.baa_state }}"
                 data-sort-verification="{{ 'complete' if o.verification_complete else 'missing' }}"
                 data-sort-patients="{{ o.patient_count }}"
                 data-sort-devices="{{ o.device_count }}"
                 data-sort-alerts="{{ o.active_alerts }}"
-                data-search="{{ (o.name ~ ' ' ~ (o.city or '') ~ ' ' ~ (o.state or '')) | lower }}"
+                data-search="{{ (o.name ~ ' ' ~ (o.city or '') ~ ' ' ~ (o.state or '') ~ ' ' ~ ((o.group_admin.first_name ~ ' ' ~ o.group_admin.last_name ~ ' ' ~ o.group_admin.email) if o.group_admin else '')) | lower }}"
                 data-status="{{ o.status }}">
               <td>
                 <div style="font-weight: 600;">{{ o.name }}</div>
@@ -109,6 +111,19 @@
                     <span class="badge badge-soft" style="margin-left:6px;">+{{ o.satellite_count }} satellite{{ '' if o.satellite_count == 1 else 's' }}</span>
                   {% endif %}
                 </div>
+              </td>
+              <td class="small">
+                {% if o.group_admin %}
+                  <div style="font-weight: 600;">{{ o.group_admin.first_name }} {{ o.group_admin.last_name }}</div>
+                  <div class="mono muted" style="font-size: 11px;">{{ o.group_admin.email }}</div>
+                  {% if o.group_admin.status == 'invited' %}
+                    <span class="badge status-yellow">Invited</span>
+                  {% elif o.group_admin.status == 'inactive' %}
+                    <span class="badge status-inactive">Inactive</span>
+                  {% endif %}
+                {% else %}
+                  <span class="muted">— none —</span>
+                {% endif %}
               </td>
               <td>{{ org_status_badge(o.status) }}</td>
               <td class="small">

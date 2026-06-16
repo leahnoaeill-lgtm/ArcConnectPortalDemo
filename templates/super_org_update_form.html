@@ -235,8 +235,8 @@
   </form>
 
   {% if org.type == 'parent' %}
-  <!-- Group admins — view-only list + add (super admin) -->
-  <div class="card mt-3">
+  <!-- Group admins — accepted accounts (view-only) + editable pending invitations + add -->
+  <div class="card mt-3" id="group-admins">
     <div class="card-header"><h2>Group admins</h2></div>
     <div class="card-body no-pad">
       {% if group_admins %}
@@ -258,12 +258,44 @@
             {% endfor %}
           </tbody>
         </table>
-      {% else %}
+      {% elif not pending_invites %}
         <div class="empty-state" style="padding: 16px;">
           <p>No group admins yet. Add the first one below.</p>
         </div>
       {% endif %}
     </div>
+
+    {% if pending_invites %}
+    <div class="card-body" style="border-top: 1px solid var(--ac-slate-light);">
+      <h3 class="mt-0 mb-2">Pending invitation{{ '' if pending_invites | length == 1 else 's' }}
+        <span class="badge status-yellow">Invited</span></h3>
+      <p class="small muted mb-2">The submitter who self-registered is the group admin of record
+        while this organization is onboarding. Edit their details below before they accept the
+        portal invite — they become an active account on acceptance.</p>
+      {% for inv in pending_invites %}
+        <form method="POST" action="{{ url_for('super_org_invite_update', org_id=org.id, invite_id=inv.id) }}"
+              class="mb-3" style="border:1px solid var(--ac-slate-light); border-radius:8px; padding:12px;">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>First name</label>
+              <input type="text" name="first_name" value="{{ inv.first_name or '' }}" required>
+            </div>
+            <div class="form-group">
+              <label>Last name</label>
+              <input type="text" name="last_name" value="{{ inv.last_name or '' }}" required>
+            </div>
+            <div class="form-group span-2">
+              <label>Email</label>
+              <input type="email" name="email" value="{{ inv.email or '' }}" required>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save group admin</button>
+          </div>
+        </form>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div class="card-body" style="border-top: 1px solid var(--ac-slate-light);">
       <h3 class="mt-0 mb-2">Add a group admin</h3>
       <form method="POST" action="{{ url_for('super_org_group_admin_new', org_id=org.id) }}">

@@ -2640,6 +2640,13 @@ body.super-readonly .super-admin-banner button {
   grid-template-columns: 2fr 1fr;
   gap: 16px;
 }
+/* Grid items default to min-width:auto, so a wide data table (min-width:720px) in
+   the left column refuses to shrink — blowing the 2fr track past the viewport,
+   pushing the side-column cards off-screen, and making the whole page scroll
+   sideways instead of the table's own card-body (which also hides the injected
+   "Scroll right to see all columns →" hint). Letting the items shrink keeps the
+   side cards on-screen and confines the overflow to the table's scroll container. */
+.two-col > * { min-width: 0; }
 
 /* Referring-clinic detail: compact info column beside the wider providers table;
    cards size to their own content and stack on narrow screens. */

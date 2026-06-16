@@ -377,6 +377,7 @@ def feature_enabled(flag_name, org_id=None):
 SUPER_ADMIN_WRITE_ALLOWLIST = {
     'login', 'logout', 'super_org_new', 'super_org_suspend', 'super_org_activate',
     'super_baa_new', 'super_user_invite', 'super_org_group_admin_new',
+    'super_org_invite_update',
     'super_set_acting_org', 'super_clear_acting_org',
     'super_org_login_update', 'super_org_update',
     # REQ-3.9 self-service signup review actions
@@ -1523,7 +1524,8 @@ def super_dashboard():
                        ORDER BY effective_from DESC LIMIT 1""", (o['id'],))
         baa_state, days_left = _baa_status(baa)
         rows.append({**dict(o), 'baa': dict(baa) if baa else None,
-                     'baa_state': baa_state, 'baa_days_left': days_left})
+                     'baa_state': baa_state, 'baa_days_left': days_left,
+                     'group_admin': _org_group_admin(o['id'])})
     counts = q_one("""SELECT
                         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
                         SUM(CASE WHEN status IN ('new','pending','ready') THEN 1 ELSE 0 END) AS pending
@@ -1575,6 +1577,41 @@ def _verified_by_name(org):
     return f"{v['first_name']} {v['last_name']}" if v else None
 
 
+def _org_group_admin(org_id):
+    """Resolve the group admin 'of record' for an organization, as a normalized dict
+    (or None).
+
+    The submitter who self-registers via the public signup form becomes the group
+    admin the moment ABMRC approves the request and the org is created as 'new' — but
+    at that point they exist only as a pending `org_invitations` row, not yet a
+    `users` record (they become one when they accept their portal invite). So a
+    lookup against `users` alone makes the group admin disappear from the org table
+    and overview while the org sits in 'new'/'pending'/'ready'. This helper keeps the
+    admin attached to the org across that whole lifecycle by preferring an accepted
+    admin user and otherwise falling back to the most recent open invitation.
+    """
+    u = q_one("""SELECT id, first_name, last_name, email, phone, is_active
+                 FROM users
+                 WHERE organization_id = ? AND role = 'admin'
+                 ORDER BY is_active DESC, last_login_at DESC, id ASC
+                 LIMIT 1""", (org_id,))
+    if u:
+        return {'first_name': u['first_name'], 'last_name': u['last_name'],
+                'email': u['email'], 'phone': u['phone'],
+                'status': 'active' if u['is_active'] else 'inactive',
+                'source': 'user', 'user_id': u['id'], 'invitation_id': None}
+    inv = q_one("""SELECT id, first_name, last_name, email
+                   FROM org_invitations
+                   WHERE organization_id = ? AND accepted_at IS NULL
+                   ORDER BY invited_at DESC, id DESC LIMIT 1""", (org_id,))
+    if inv:
+        return {'first_name': inv['first_name'], 'last_name': inv['last_name'],
+                'email': inv['email'], 'phone': None,
+                'status': 'invited', 'source': 'invitation',
+                'user_id': None, 'invitation_id': inv['id']}
+    return None
+
+
 @app.route('/super/orgs/<int:org_id>')
 @require_login
 def super_org_overview(org_id):
@@ -1606,7 +1643,8 @@ def super_org_overview(org_id):
     return render_template('super_org_overview.html', org=org, rollup=rollup,
                            baa=baa, baa_state=baa_state, baa_days_left=baa_days_left,
                            parent=parent, satellites=satellites,
-                           verified_by_name=_verified_by_name(org))
+                           verified_by_name=_verified_by_name(org),
+                           group_admin=_org_group_admin(org_id))
 
 
 @app.route('/super/orgs/new', methods=['GET', 'POST'])
@@ -1914,16 +1952,24 @@ def super_org_update(org_id):
         if v:
             verified_by_name = f"{v['first_name']} {v['last_name']}"
 
-    # Existing group admins (parent org) — shown view-only under User Login.
+    # Existing group admins (parent org) — accepted user accounts.
     group_admins = q_all("""SELECT id, first_name, last_name, email, phone, is_active,
                             last_login_at
                             FROM users
                             WHERE organization_id = ? AND role = 'admin'
                             ORDER BY is_active DESC, last_name, first_name""", (org['id'],))
+    # Pending group-admin invitations — the submitter who self-registered is the group
+    # admin of record from the moment the org is created as 'new', before they accept
+    # their portal invite, so surface (and allow editing of) the open invitation here.
+    pending_invites = q_all("""SELECT id, first_name, last_name, email, invited_at, expires_at
+                               FROM org_invitations
+                               WHERE organization_id = ? AND accepted_at IS NULL
+                               ORDER BY invited_at DESC, id DESC""", (org['id'],))
     return render_template('super_org_update_form.html',
                            org=org, current_baa=current_baa,
                            verified_by_name=verified_by_name,
-                           group_admins=group_admins)
+                           group_admins=group_admins,
+                           pending_invites=pending_invites)
 
 
 @app.route('/super/orgs/<int:org_id>/group-admin', methods=['POST'])
@@ -1956,6 +2002,43 @@ def super_org_group_admin_new(org_id):
     _log_access('user_create', ref_type='user', ref_id=new_uid,
                 detail=f'Super admin added group admin {email} to org {org_id}')
     flash(f'Group admin {first} {last} added to {org["name"]}.', 'success')
+    return redirect(url_for('super_org_update', org_id=org_id))
+
+
+@app.route('/super/orgs/<int:org_id>/invitations/<int:invite_id>', methods=['POST'])
+@require_login
+def super_org_invite_update(org_id, invite_id):
+    """Super admin edits a pending group-admin invitation (name/email) before it is
+    accepted. The invitation IS the group admin of record while the org sits in
+    'new'/'pending'/'ready', so it must be editable from the org's edit screen."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    inv = q_one("""SELECT * FROM org_invitations
+                   WHERE id = ? AND organization_id = ? AND accepted_at IS NULL""",
+                (invite_id, org_id))
+    if not inv:
+        flash('That group-admin invitation no longer exists or has been accepted.', 'error')
+        return redirect(url_for('super_org_update', org_id=org_id))
+    email = (request.form.get('email') or '').strip().lower()
+    first = (request.form.get('first_name') or '').strip()
+    last = (request.form.get('last_name') or '').strip()
+    if not (email and first and last):
+        flash('First name, last name, and email are required for the group admin.', 'error')
+        return redirect(url_for('super_org_update', org_id=org_id))
+    if '@' not in email or '.' not in email.split('@')[-1]:
+        flash('Enter a valid email address for the group admin.', 'error')
+        return redirect(url_for('super_org_update', org_id=org_id))
+    # Guard against pointing the invite at an email that already has an account.
+    clash = q_one('SELECT id FROM users WHERE email = ?', (email,))
+    if clash:
+        flash('A user with that email already exists.', 'error')
+        return redirect(url_for('super_org_update', org_id=org_id))
+    q_exec("""UPDATE org_invitations SET first_name = ?, last_name = ?, email = ?
+              WHERE id = ?""", (first, last, email, invite_id))
+    _log_access('location_update', ref_type='organization', ref_id=org_id,
+                detail=f'Super admin updated pending group-admin invite {invite_id} '
+                       f'for org {org_id} → {email}')
+    flash(f'Group admin invitation updated to {first} {last} ({email}).', 'success')
     return redirect(url_for('super_org_update', org_id=org_id))
 
 
