@@ -42,7 +42,7 @@
   <div class="card">
     <div class="card-body no-pad">
       {% if providers %}
-      <table class="table sortable" data-default-sort="name" data-default-dir="asc">
+      <table class="table sortable table-nowrap" data-default-sort="name" data-default-dir="asc">
         <thead>
           <tr>
             <th data-sort-key="name">Name</th>
@@ -69,7 +69,7 @@
                 data-sort-npi="{{ p.npi or '' }}"
                 data-sort-patients="{{ p.patient_count }}"
                 data-sort-status="{{ 'active' if p.is_active else 'inactive' }}">
-              <td style="font-weight: 600;">{{ p.last_name }}, {{ p.first_name }}</td>
+              <td style="font-weight: 600;"><a href="{{ url_for('referring_provider_detail', provider_id=p.id) }}">{{ p.last_name }}, {{ p.first_name }}</a></td>
               <td>{% if p.credentials %}<span class="badge" style="background: var(--ac-slate); color: white;">{{ p.credentials }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
               <td class="small">{{ p.specialty or '—' }}</td>
               <td class="small">
@@ -92,6 +92,7 @@
               </td>
               <td>
                 <div class="flex gap-1">
+                  <a href="{{ url_for('referring_provider_detail', provider_id=p.id) }}" class="btn btn-sm">Open ▸</a>
                   <a href="{{ url_for('referring_provider_edit', provider_id=p.id, next=url_for('referring_providers')) }}" class="btn btn-sm">Edit</a>
                   {% if p.is_active %}
                     <form method="POST" action="{{ url_for('referring_provider_deactivate', provider_id=p.id) }}" style="display:inline;">

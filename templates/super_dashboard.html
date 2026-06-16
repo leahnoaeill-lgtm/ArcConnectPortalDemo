@@ -31,15 +31,15 @@
   {% set pending_orgs = orgs | selectattr('status', 'equalto', 'pending') | list | length %}
   {% set ready_orgs   = orgs | selectattr('status', 'equalto', 'ready')   | list | length %}
   <div class="kpis">
-    <div class="kpi kpi-green">
+    <div class="kpi kpi-green kpi-clickable" onclick="filterOrgs('active')" title="Show active organizations">
       <div class="label">Active organizations</div>
       <div class="value">{{ active_orgs }}</div>
     </div>
-    <div class="kpi kpi-yellow">
+    <div class="kpi kpi-yellow kpi-clickable" onclick="filterOrgs('pending')" title="Show pending organizations">
       <div class="label">Pending organizations</div>
       <div class="value">{{ pending_orgs }}</div>
     </div>
-    <div class="kpi kpi-teal">
+    <div class="kpi kpi-teal kpi-clickable" onclick="filterOrgs('ready')" title="Show ready organizations">
       <div class="label">Ready organizations</div>
       <div class="value">{{ ready_orgs }}</div>
     </div>
@@ -140,6 +140,15 @@
 </div>
 
 <script>
+// Clicking an org-status summary card filters the table to that status.
+function filterOrgs(status) {
+  const el = document.getElementById('orgStatusFilter');
+  if (!el) return;
+  el.value = status;
+  el.dispatchEvent(new Event('change'));
+  const tbl = document.querySelector('.card .table');
+  if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
 (function() {
   const bar = document.getElementById('orgFilterBar');
   if (!bar) return;

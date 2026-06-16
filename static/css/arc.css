@@ -472,6 +472,19 @@ a:hover { text-decoration: underline; }
   h2    { font-size: 15px; }
   .kpi .value { font-size: 24px; }
   .page-header .subtitle { font-size: 12px; }
+  /* Shrink wrap-prone elements so labels stay on one line as the screen narrows. */
+  .btn { font-size: 12px; padding: 7px 12px; }
+  .btn-sm { font-size: 11px; padding: 4px 9px; }
+  .badge { font-size: 10px; }
+  .table th, .table td { font-size: 12px; }
+}
+
+@media (max-width: 640px) {
+  body { font-size: 12px; }
+  h1   { font-size: 18px; }
+  .btn { font-size: 11px; padding: 6px 10px; }
+  .btn-sm { font-size: 10px; }
+  .table th, .table td { font-size: 11px; }
 }
 
 .page-header {
@@ -1162,6 +1175,8 @@ a.idband-stat:hover .l { color: var(--ac-slate-deep); }
 .kpi.kpi-green::before  { background: var(--ac-green); }
 .kpi.kpi-slate::before  { background: var(--ac-slate); }
 .kpi.kpi-teal::before   { background: var(--ac-teal); }
+/* Summary cards that filter the table below when clicked. */
+.kpi.kpi-clickable { cursor: pointer; }
 
 .kpi .label {
   font-size: 10px;
@@ -2637,6 +2652,27 @@ body.super-readonly .super-admin-banner button {
 @media (max-width: 900px) {
   .ref-detail-cols { grid-template-columns: 1fr; }
 }
+
+/* Referring-clinic tables fill their card and only scroll when the columns truly
+   can't fit — no artificial 720px floor forcing a scrollbar on wide screens. */
+.ref-area .card-body.no-pad > .table { min-width: 0; width: 100%; }
+
+/* Horizontal info band — fields flow left-to-right across the full card width
+   (wrapping as needed), so a detail card sits compactly on top of a full-width
+   table below it rather than in a narrow side column. */
+.info-horizontal {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 28px;
+}
+.info-horizontal .form-group { gap: 2px; }
+
+/* Compact key:value info list — label and value share one line with tight
+   vertical rhythm, so read-only detail cards don't spread out. */
+.info-compact { display: flex; flex-direction: column; gap: 8px; }
+.info-compact .form-group { flex-direction: row; align-items: baseline; gap: 10px; }
+.info-compact .form-group label { flex: 0 0 80px; margin: 0; }
+.info-compact .form-group > div { flex: 1; min-width: 0; word-break: break-word; }
 
 @media (max-width: 900px) {
   .two-col { grid-template-columns: 1fr; }

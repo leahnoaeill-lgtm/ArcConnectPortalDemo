@@ -19,6 +19,7 @@
         {% if clinic.patient_count %} · {{ clinic.patient_count }} patient{{ 's' if clinic.patient_count != 1 }}{% endif %}
       </div>
     </div>
+    {% if manageable %}
     <div class="actions">
       <a href="{{ url_for('referring_clinic_edit', clinic_id=clinic.id) }}" class="btn">Edit clinic</a>
       {% if clinic.is_active %}
@@ -37,16 +38,20 @@
         </form>
       {% endif %}
     </div>
+    {% else %}
+    <div class="actions">
+      <span class="small muted">View only — switch into this clinic's location to manage it.</span>
+    </div>
+    {% endif %}
   </div>
 
-  {# Clinic info (compact, left) sits beside the Providers table (right);
-     referral history spans full width below. #}
-  <div class="ref-detail-cols">
+  {# Clinic info as a horizontal band on top; the providers table expands to full
+     width below it (no narrow side column, so it doesn't need to scroll). #}
     {# ── Clinic info card ── #}
     <div class="card">
       <div class="card-header"><h2>Clinic info</h2></div>
       <div class="card-body">
-        <div class="form-grid single">
+        <div class="info-horizontal">
           <div class="form-group">
             <label>Name</label>
             <div style="font-weight: 600;">{{ clinic.name }}</div>
@@ -97,11 +102,11 @@
     <div class="card">
       <div class="card-header">
         <h2>Providers <span class="tab-count">{{ providers | length }}</span></h2>
-        <a href="{{ url_for('referring_provider_new', clinic_id=clinic.id) }}" class="btn btn-primary">+ Add provider</a>
+        {% if manageable %}<a href="{{ url_for('referring_provider_new', clinic_id=clinic.id) }}" class="btn btn-primary">+ Add provider</a>{% endif %}
       </div>
       <div class="card-body no-pad">
         {% if providers %}
-        <table class="table">
+        <table class="table table-nowrap">
           <thead>
             <tr>
               <th>Name</th>
@@ -116,7 +121,8 @@
           <tbody>
             {% for p in providers %}
               <tr>
-                <td style="font-weight: 600;">{{ p.last_name }}, {{ p.first_name }}
+                <td style="font-weight: 600;">
+                  <a href="{{ url_for('referring_provider_detail', provider_id=p.id) }}">{{ p.last_name }}, {{ p.first_name }}</a>
                   {% if p.npi %}<div class="mono muted small">NPI {{ p.npi }}</div>{% endif %}
                 </td>
                 <td>
@@ -136,6 +142,7 @@
                   {% endif %}
                 </td>
                 <td>
+                  {% if manageable %}
                   <div class="flex gap-1">
                     <a href="{{ url_for('referring_provider_edit', provider_id=p.id) }}" class="btn btn-sm">Edit</a>
                     {% if p.is_active %}
@@ -154,6 +161,7 @@
                       </form>
                     {% endif %}
                   </div>
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}
@@ -166,7 +174,6 @@
         {% endif %}
       </div>
     </div>
-  </div>
 
   {# ── Referral history (full width) ── #}
   {% if referral_history %}
@@ -175,7 +182,7 @@
         <h2>Patient referral history <span class="tab-count">{{ referral_history | length }}</span></h2>
       </div>
       <div class="card-body no-pad">
-        <table class="table">
+        <table class="table table-nowrap">
           <thead>
             <tr>
               <th>Patient</th>

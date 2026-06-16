@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}{{ provider.last_name }}, {{ provider.first_name }} · Arc Connect Portal{% endblock %}
+{% block body %}
+{% set can_delete = current_user.role == 'admin' %}
+<div class="page pd-soft ref-area">
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('referring_providers') }}" class="btn btn-sm">← Back to providers</a>
+      <h1 class="mt-2">
+        {{ provider.last_name }}, {{ provider.first_name }}
+        {% if provider.credentials %}<span class="badge" style="background: var(--ac-slate); color: white;">{{ provider.credentials }}</span>{% endif %}
+        {% if provider.is_active %}
+          <span class="badge status-active">Active</span>
+        {% else %}
+          <span class="badge status-inactive">Inactive</span>
+        {% endif %}
+      </h1>
+      <div class="subtitle">
+        {% if provider.specialty %}{{ provider.specialty }}{% endif %}
+        {% if provider.clinic_name %} · {{ provider.clinic_name }}{% endif %}
+        · {{ patients | length }} patient{{ 's' if patients | length != 1 }}
+      </div>
+    </div>
+    {% if manageable %}
+    <div class="actions">
+      <a href="{{ url_for('referring_provider_edit', provider_id=provider.id, next=url_for('referring_provider_detail', provider_id=provider.id)) }}" class="btn">Edit provider</a>
+      {% if provider.is_active %}
+        <form method="POST" action="{{ url_for('referring_provider_deactivate', provider_id=provider.id) }}" style="display:inline;">
+          <button type="submit" class="btn btn-warn">Deactivate</button>
+        </form>
+      {% else %}
+        <form method="POST" action="{{ url_for('referring_provider_activate', provider_id=provider.id) }}" style="display:inline;">
+          <button type="submit" class="btn">Reactivate</button>
+        </form>
+      {% endif %}
+      {% if can_delete %}
+        <form method="POST" action="{{ url_for('referring_provider_delete', provider_id=provider.id) }}" style="display:inline;"
+              onsubmit="return confirm('Delete {{ provider.first_name }} {{ provider.last_name }}? Any patients linked to this provider will lose the referral reference. This cannot be undone.');">
+          <button type="submit" class="btn btn-danger">Delete</button>
+        </form>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="actions">
+      <span class="small muted">View only — switch into this provider's location to manage them.</span>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Provider info as a horizontal band on top; the patients table expands to full
+     width below it (no narrow side column, so it doesn't need to scroll). #}
+    {# ── Provider info card ── #}
+    <div class="card">
+      <div class="card-header"><h2>Provider info</h2></div>
+      <div class="card-body">
+        <div class="info-horizontal">
+          <div class="form-group">
+            <label>Name</label>
+            <div style="font-weight: 600;">{{ provider.last_name }}, {{ provider.first_name }}</div>
+          </div>
+          <div class="form-group">
+            <label>Credentials</label>
+            <div>{{ provider.credentials or '—' }}</div>
+          </div>
+          <div class="form-group">
+            <label>Specialty</label>
+            <div>{{ provider.specialty or '—' }}</div>
+          </div>
+          <div class="form-group">
+            <label>NPI</label>
+            <div class="mono">{{ provider.npi or '—' }}</div>
+          </div>
+          <div class="form-group">
+            <label>Clinic</label>
+            <div>
+              {% if provider.clinic_id %}
+                <a href="{{ url_for('referring_clinic_detail', clinic_id=provider.clinic_id) }}">{{ provider.clinic_name }}</a>
+              {% else %}<span class="muted">—</span>{% endif %}
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <div>{% if provider.phone %}<a href="tel:{{ provider.phone }}">{{ provider.phone }}</a>{% else %}<span class="muted">—</span>{% endif %}</div>
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <div>{% if provider.email %}<a href="mailto:{{ provider.email }}">{{ provider.email }}</a>{% else %}<span class="muted">—</span>{% endif %}</div>
+          </div>
+          {% if provider.notes %}
+            <div class="form-group">
+              <label>Notes</label>
+              <div>{{ provider.notes }}</div>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# ── Associated patients card ── #}
+    <div class="card">
+      <div class="card-header">
+        <h2>Patients <span class="tab-count">{{ patients | length }}</span></h2>
+      </div>
+      <div class="card-body no-pad">
+        {% if patients %}
+        <table class="table sortable table-nowrap" data-default-sort="name" data-default-dir="asc">
+          <thead>
+            <tr>
+              <th data-sort-key="name">Patient</th>
+              <th data-sort-key="dob">Date of birth</th>
+              <th data-sort-key="diagnosis">Diagnosis</th>
+              <th data-sort-key="lastsession">Last session</th>
+              <th data-sort-key="status">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pt in patients %}
+              <tr class="clickable"
+                  data-sort-name="{{ ((pt.last_name or '') ~ ' ' ~ (pt.first_name or '')) | trim | lower }}"
+                  data-sort-dob="{{ pt.dob or '' }}"
+                  data-sort-diagnosis="{{ (pt.diagnosis or '') | lower }}"
+                  data-sort-lastsession="{{ pt.last_session_at or '' }}"
+                  data-sort-status="{{ pt.status }}"
+                  onclick="window.location='{{ url_for('patient_detail', patient_id=pt.id) }}'">
+                <td>
+                  <strong>{{ pt.first_name }} {{ pt.last_name }}</strong>
+                  {% if pt.mrn %}<div class="mono muted small">ID: {{ pt.mrn | replace('MRN-', '') }}</div>{% endif %}
+                </td>
+                <td class="small">{{ pt.dob | date_only if pt.dob else '—' }}</td>
+                <td class="small">{{ pt.diagnosis or '—' }}</td>
+                <td class="small">{{ pt.last_session_at | date_only if pt.last_session_at else '—' }}</td>
+                <td>
+                  {% if pt.status == 'active' %}
+                    <span class="badge status-active">Active</span>
+                  {% else %}
+                    <span class="badge status-inactive">Inactive</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+          <div class="empty-state">
+            <p>No patients are currently associated with this provider.</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+</div>
+{% endblock %}

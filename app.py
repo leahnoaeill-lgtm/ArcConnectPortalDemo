@@ -4896,20 +4896,27 @@ def referring_clinics():
 @app.route('/settings/referring-clinics/<int:clinic_id>/view')
 @require_login
 def referring_clinic_detail(clinic_id):
-    """Drill-down: clinic info + its providers list."""
-    oid = current_org_id()
-    clinic = q_one("""SELECT c.*,
+    """Drill-down: clinic info + its providers list. A group admin can view any
+    clinic across their network (rollup drill-in); management stays at the location
+    level, so the action buttons are gated on `manageable` (clinic in the current
+    org)."""
+    scope_ids = scope_org_ids()
+    if not scope_ids:
+        abort(404)
+    ph = ','.join('?' * len(scope_ids))
+    clinic = q_one(f"""SELECT c.*,
                       (SELECT COUNT(*) FROM patients p WHERE p.referring_clinic_id = c.id AND p.status = 'active') AS patient_count
                       FROM referring_clinics c
-                      WHERE c.id = ? AND c.organization_id = ?""", (clinic_id, oid))
+                      WHERE c.id = ? AND c.organization_id IN ({ph})""",
+                   (clinic_id, *scope_ids))
     if not clinic: abort(404)
-    providers = q_all("""SELECT rp.*,
+    providers = q_all(f"""SELECT rp.*,
                          (SELECT COUNT(*) FROM patients p
                             WHERE p.referring_provider_id = rp.id AND p.status = 'active') AS patient_count
                          FROM referring_providers rp
-                         WHERE rp.clinic_id = ? AND rp.organization_id = ?
+                         WHERE rp.clinic_id = ? AND rp.organization_id IN ({ph})
                          ORDER BY rp.is_active DESC, rp.last_name, rp.first_name""",
-                      (clinic_id, oid))
+                      (clinic_id, *scope_ids))
     # Full referral history for this clinic — who was referred, when, and
     # whether they're still linked.
     referral_history = q_all("""SELECT rh.*, p.first_name, p.last_name, p.mrn,
@@ -4920,9 +4927,10 @@ def referring_clinic_detail(clinic_id):
                                 WHERE rh.clinic_id = ?
                                 ORDER BY (rh.removed_at IS NULL) DESC, rh.assigned_at DESC""",
                              (clinic_id,))
+    manageable = clinic['organization_id'] == current_org_id()
     return render_template('referring_clinic_detail.html',
                            clinic=clinic, providers=providers,
-                           referral_history=referral_history)
+                           referral_history=referral_history, manageable=manageable)
 
 
 @app.route('/settings/referring-clinics/new', methods=['GET', 'POST'])
@@ -5019,6 +5027,33 @@ def referring_providers():
                     WHERE rp.organization_id = ?
                     ORDER BY c.name, rp.is_active DESC, rp.last_name""", (oid,))
     return render_template('referring_providers.html', providers=rows)
+
+
+@app.route('/settings/referring-providers/<int:provider_id>/view')
+@require_login
+def referring_provider_detail(provider_id):
+    """Physician drill-down: provider info + every patient associated with them.
+    Network-scoped so a group admin can view any provider in their locations;
+    management is gated on `manageable` (provider in the current org)."""
+    scope_ids = scope_org_ids()
+    if not scope_ids:
+        abort(404)
+    ph = ','.join('?' * len(scope_ids))
+    provider = q_one(f"""SELECT rp.*, c.name AS clinic_name
+                         FROM referring_providers rp
+                         LEFT JOIN referring_clinics c ON c.id = rp.clinic_id
+                         WHERE rp.id = ? AND rp.organization_id IN ({ph})""",
+                     (provider_id, *scope_ids))
+    if not provider: abort(404)
+    patients = q_all(f"""SELECT p.id, p.mrn, p.first_name, p.last_name, p.dob,
+                         p.status, p.diagnosis, p.last_session_at
+                         FROM patients p
+                         WHERE p.referring_provider_id = ? AND p.organization_id IN ({ph})
+                         ORDER BY (p.status = 'active') DESC, p.last_name, p.first_name""",
+                     (provider_id, *scope_ids))
+    manageable = provider['organization_id'] == current_org_id()
+    return render_template('referring_provider_detail.html',
+                           provider=provider, patients=patients, manageable=manageable)
 
 
 @app.route('/settings/referring-providers/new', methods=['GET', 'POST'])

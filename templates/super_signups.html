@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Submitted · ABMRC · Arc Connect{% endblock %}
 {% block body %}
-<div class="page pd-soft">
+<style>
+  /* Use the full browser width on this page so the submitted table spreads out
+     across the whole screen when the window is expanded. */
+  .page.signups-wide { max-width: none; }
+</style>
+<div class="page pd-soft signups-wide">
   <div class="page-header">
     <div>
       <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← ABMRC dashboard</a>
@@ -12,15 +17,15 @@
   {# All-time totals from the route handler — queried directly from the DB so the
      Accepted/Rejected counts aren't capped by the 25-row "closed" slice in the table. #}
   <div class="kpis">
-    <div class="kpi kpi-yellow">
+    <div class="kpi kpi-yellow kpi-clickable" onclick="filterSignups('pending_review')" title="Show to-be-reviewed requests">
       <div class="label">To be reviewed</div>
       <div class="value">{{ totals.pending }}</div>
     </div>
-    <div class="kpi kpi-green">
+    <div class="kpi kpi-green kpi-clickable" onclick="filterSignups('approved')" title="Show accepted requests">
       <div class="label">Accepted</div>
       <div class="value">{{ totals.approved }}</div>
     </div>
-    <div class="kpi kpi-red">
+    <div class="kpi kpi-red kpi-clickable" onclick="filterSignups('rejected')" title="Show rejected requests">
       <div class="label">Rejected</div>
       <div class="value">{{ totals.rejected }}</div>
     </div>
@@ -68,8 +73,7 @@
                   data-sort-submitter="{{ sr.submitter_email | lower }}"
                   data-sort-status="{{ sr.status }}">
                 <td class="small">
-                  <div style="font-weight: 600;">{{ sr.submitted_at[:10] }}</div>
-                  <div class="muted">{{ sr.submitted_at[11:16] }}</div>
+                  <div style="font-weight: 600;">{{ sr.submitted_at | date_only }}</div>
                 </td>
                 <td>
                   <div style="font-weight: 600;">{{ sr.org_name }}</div>
@@ -117,6 +121,13 @@
 </div>
 
 <script>
+// Clicking a summary tile filters the table to that status.
+function filterSignups(status) {
+  const el = document.getElementById('signupStatus');
+  if (!el) return;
+  el.value = status;
+  el.dispatchEvent(new Event('change'));
+}
 // Search + status filter over the single Submitted-requests table. Column sorting
 // is handled globally by the .sortable header handler in base.html.
 (function() {
