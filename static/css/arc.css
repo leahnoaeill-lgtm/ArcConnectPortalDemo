@@ -1155,6 +1155,7 @@ a.idband-stat:hover .l { color: var(--ac-slate-deep); }
 .kpi.kpi-yellow::before { background: var(--ac-yellow); }
 .kpi.kpi-green::before  { background: var(--ac-green); }
 .kpi.kpi-slate::before  { background: var(--ac-slate); }
+.kpi.kpi-teal::before   { background: var(--ac-teal); }
 
 .kpi .label {
   font-size: 10px;
@@ -1168,6 +1169,7 @@ a.idband-stat:hover .l { color: var(--ac-slate-deep); }
 .kpi.kpi-red .label    { color: var(--ac-red); }
 .kpi.kpi-yellow .label { color: #B28600; }
 .kpi.kpi-green .label  { color: #006B31; }
+.kpi.kpi-teal .label   { color: var(--ac-teal-deep); }
 
 .kpi .value {
   font-family: var(--font-head);

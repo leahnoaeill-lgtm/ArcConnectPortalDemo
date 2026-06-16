@@ -9,16 +9,15 @@
     </div>
   </div>
 
-  {# All-time totals from the route handler — totals dict is queried directly
-     from the DB so the Approved/Rejected counts are not capped by the 25-row
-     "Recently closed" list below. #}
+  {# All-time totals from the route handler — queried directly from the DB so the
+     Accepted/Rejected counts aren't capped by the 25-row "closed" slice in the table. #}
   <div class="kpis">
     <div class="kpi kpi-yellow">
       <div class="label">To be reviewed</div>
       <div class="value">{{ totals.pending }}</div>
     </div>
     <div class="kpi kpi-green">
-      <div class="label">Verified</div>
+      <div class="label">Accepted</div>
       <div class="value">{{ totals.approved }}</div>
     </div>
     <div class="kpi kpi-red">
@@ -36,17 +35,17 @@
     <select class="filter-select" id="signupStatus">
       <option value="">All statuses</option>
       <option value="pending_review">To be reviewed</option>
-      <option value="approved">Verified</option>
+      <option value="approved">Accepted</option>
       <option value="rejected">Rejected</option>
     </select>
     <span class="filter-count" id="signupCount"></span>
   </div>
   {% endif %}
 
-  <!-- ───────── To be reviewed ───────── -->
-  <div class="card" data-filter-card>
+  <!-- ───────── Submitted requests (single list; filter by status) ───────── -->
+  <div class="card">
     <div class="card-body no-pad">
-      {% if pending %}
+      {% if pending or closed %}
         <table class="table sortable table-nowrap" data-default-sort="submitted" data-default-dir="desc">
           <thead>
             <tr>
@@ -59,7 +58,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for sr in pending %}
+            {% for sr in pending + closed %}
               <tr class="sr-row"
                   data-search="{{ (sr.org_name ~ ' ' ~ (sr.npi or '') ~ ' ' ~ (sr.submitter_name or '') ~ ' ' ~ (sr.submitter_email or '') ~ ' ' ~ (sr.address_city or '') ~ ' ' ~ (sr.address_state or '')) | lower }}"
                   data-status="{{ sr.status }}"
@@ -84,65 +83,8 @@
                 <td>
                   {% if sr.status == 'pending_review' %}
                     <span class="badge severity-warning">To be reviewed</span>
-                  {% endif %}
-                </td>
-                <td class="text-right">
-                  <a href="{{ url_for('super_signup_detail', signup_id=sr.id) }}" class="btn btn-sm btn-primary">Review →</a>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <div class="empty-state">
-          <div class="big">📭</div>
-          <p>No open requests. New submissions from the public Arc Connect website will appear here.</p>
-        </div>
-      {% endif %}
-    </div>
-  </div>
-
-  <!-- ───────── Recently closed ───────── -->
-  {% if closed %}
-    <div class="card" data-filter-card>
-      <div class="card-header">
-        <h2>Recently closed <span class="muted">— last 25</span></h2>
-      </div>
-      <div class="card-body no-pad">
-        <table class="table sortable table-nowrap" data-default-sort="submitted" data-default-dir="desc">
-          <thead>
-            <tr>
-              <th data-sort-key="submitted">Submitted</th>
-              <th data-sort-key="org">Organization</th>
-              <th data-sort-key="npi">NPI</th>
-              <th data-sort-key="submitter">Submitter</th>
-              <th data-sort-key="status">Outcome</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for sr in closed %}
-              <tr class="sr-row"
-                  data-search="{{ (sr.org_name ~ ' ' ~ (sr.npi or '') ~ ' ' ~ (sr.submitter_name or '') ~ ' ' ~ (sr.submitter_email or '') ~ ' ' ~ (sr.address_city or '') ~ ' ' ~ (sr.address_state or '')) | lower }}"
-                  data-status="{{ sr.status }}"
-                  data-sort-submitted="{{ sr.submitted_at }}"
-                  data-sort-org="{{ sr.org_name | lower }}"
-                  data-sort-npi="{{ sr.npi }}"
-                  data-sort-submitter="{{ sr.submitter_email | lower }}"
-                  data-sort-status="{{ sr.status }}">
-                <td class="small">
-                  <div style="font-weight: 600;">{{ sr.submitted_at[:10] }}</div>
-                  <div class="muted">{{ sr.submitted_at[11:16] }}</div>
-                </td>
-                <td>
-                  <div style="font-weight: 600;">{{ sr.org_name }}</div>
-                  <div class="small muted">{{ sr.address_city }}{% if sr.address_state %}, {{ sr.address_state }}{% endif %}</div>
-                </td>
-                <td class="mono small">{{ sr.npi }}</td>
-                <td class="small muted">{{ sr.submitter_email }}</td>
-                <td>
-                  {% if sr.status == 'approved' %}
-                    <span class="badge status-active">Verified</span>
+                  {% elif sr.status == 'approved' %}
+                    <span class="badge status-active">Accepted</span>
                   {% elif sr.status == 'rejected' %}
                     <span class="badge severity-critical">Rejected</span>
                   {% endif %}
@@ -151,27 +93,39 @@
                   {% endif %}
                 </td>
                 <td class="text-right">
-                  <a href="{{ url_for('super_signup_detail', signup_id=sr.id) }}" class="btn btn-sm">View →</a>
+                  {% if sr.status == 'pending_review' %}
+                    <a href="{{ url_for('super_signup_detail', signup_id=sr.id) }}" class="btn btn-sm btn-primary">Review →</a>
+                  {% else %}
+                    <a href="{{ url_for('super_signup_detail', signup_id=sr.id) }}" class="btn btn-sm">View →</a>
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}
+            <tr id="signupNoMatch" style="display: none;">
+              <td colspan="6" class="empty-state">No matching requests.</td>
+            </tr>
           </tbody>
         </table>
-      </div>
+      {% else %}
+        <div class="empty-state">
+          <div class="big">📭</div>
+          <p>No submitted requests. New submissions from the public Arc Connect website will appear here.</p>
+        </div>
+      {% endif %}
     </div>
-  {% endif %}
+  </div>
 </div>
 
 <script>
-// Unified search + status filter across both Submitted tables. Column sorting is
-// handled globally by the .sortable header handler in base.html.
+// Search + status filter over the single Submitted-requests table. Column sorting
+// is handled globally by the .sortable header handler in base.html.
 (function() {
   const search = document.getElementById('signupSearch');
   const statusSel = document.getElementById('signupStatus');
   if (!search || !statusSel) return;
   const rows = Array.from(document.querySelectorAll('tr.sr-row'));
-  const cards = Array.from(document.querySelectorAll('[data-filter-card]'));
   const count = document.getElementById('signupCount');
+  const noMatch = document.getElementById('signupNoMatch');
   function apply() {
     const q = (search.value || '').trim().toLowerCase();
     const s = statusSel.value;
@@ -184,12 +138,7 @@
       r.classList.toggle('filter-hidden', !show);
       if (show) visible++;
     });
-    // Hide a whole card when none of its rows match — only while a filter is active,
-    // so the server-rendered empty states still show when nothing is typed/selected.
-    cards.forEach(card => {
-      if (!filtering) { card.style.display = ''; return; }
-      card.style.display = card.querySelector('tr.sr-row:not(.filter-hidden)') ? '' : 'none';
-    });
+    if (noMatch) noMatch.style.display = (filtering && visible === 0) ? '' : 'none';
     count.textContent = filtering ? (visible + ' match' + (visible === 1 ? '' : 'es')) : '';
   }
   search.addEventListener('input', apply);

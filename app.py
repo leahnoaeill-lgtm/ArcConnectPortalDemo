@@ -459,6 +459,30 @@ def _enforce_super_admin_readonly():
     return redirect(request.referrer or url_for('home'))
 
 
+# Session/navigation POSTs a pre-Active customer user may still make. Everything
+# else state-changing is blocked until the org is activated.
+PRE_ACTIVE_WRITE_ALLOWLIST = {'login', 'logout'}
+
+
+@app.before_request
+def _enforce_account_active_readonly():
+    """A customer whose account is not yet Active (New / Pending / Ready) has
+    view-only access until ABM Respiratory Care activates the organization. Block
+    any state-changing request from such a user. (Super admins are handled by
+    _enforce_super_admin_readonly above; anonymous/login traffic is untouched.)"""
+    if request.method in ('GET', 'HEAD', 'OPTIONS'):
+        return None
+    u = current_user()
+    if not u or is_super_admin():
+        return None
+    if _account_active():
+        return None
+    if (request.endpoint or '') in PRE_ACTIVE_WRITE_ALLOWLIST:
+        return None
+    flash('Your account is pending activation — access is view-only until ABM Respiratory Care activates it.', 'error')
+    return redirect(request.referrer or url_for('home'))
+
+
 def require_login(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -1390,10 +1414,6 @@ def super_signup_approve(signup_id):
         return redirect(url_for('super_signup_detail', signup_id=signup_id))
 
     # Create the customer main organization with submitted fields prefilled.
-    # NB: the portal invite (org_invitations row + token) is NOT created here. It
-    # is deferred to super_org_activate, so the submitter cannot reach /login
-    # until BAA + verification are on file. The acknowledgment email below tells
-    # them they've passed review; the real invite arrives at activation.
     db = get_db()
     cur = db.execute("""INSERT INTO organizations
                         (name, type, status, address_line1, address_line2, city, state, zip, country)
@@ -1404,6 +1424,22 @@ def super_signup_approve(signup_id):
     org_id = cur.lastrowid
 
     user = current_user()
+
+    # Send the portal invite NOW (at verification), not at activation. The group
+    # admin can sign in immediately with view-only access and watch their account
+    # move through BAA + verification toward activation (enforced read-only by
+    # _enforce_account_active_readonly until status == 'active').
+    import secrets
+    from datetime import timedelta as _td
+    token = secrets.token_urlsafe(24)
+    expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
+    db.execute("""INSERT INTO org_invitations
+                  (organization_id, email, first_name, last_name, token,
+                   invited_by_user_id, expires_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (org_id, invite_email, invite_first, invite_last, token,
+                user['id'], expires_at))
+
     db.execute("""UPDATE signup_requests
                   SET status = 'approved', reviewed_by_user_id = ?, reviewed_at = CURRENT_TIMESTAMP,
                       approved_org_id = ?
@@ -1411,13 +1447,12 @@ def super_signup_approve(signup_id):
     db.commit()
 
     _signup_audit(user['id'], signup_id, sr['status'], 'approved',
-                  f'approved → org_id={org_id} ({sr["org_name"]}); acknowledgment to {invite_email}; invite deferred to activation')
-    print(f'[SIGNUP NOTIFY] approval acknowledgment to {invite_email} — '
-          f'org "{sr["org_name"]}" is now onboarding; BAA execution next; '
-          f'portal invite will follow once activated. org_id={org_id}', flush=True)
+                  f'verified → org_id={org_id} ({sr["org_name"]}); portal invite sent to {invite_email}')
+    print(f'[SIGNUP NOTIFY] portal invite to {invite_email} — '
+          f'org "{sr["org_name"]}" verified and added as New; 14-day token issued; '
+          f'view-only until activation. org_id={org_id}', flush=True)
 
-    flash(f'Approved. Customer organization "{sr["org_name"]}" created and moved to Onboarding. '
-          f'Acknowledgment email sent to {invite_email}; portal invite will go out at activation.', 'success')
+    # No on-screen notification when an org shifts from Submitted to New/Pending.
     return redirect(url_for('super_signups'))
 
 

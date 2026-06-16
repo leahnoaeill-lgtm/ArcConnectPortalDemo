@@ -23,7 +23,7 @@
       <h1 class="mt-2">
         {{ sr.org_name }}
         {% if sr.status == 'pending_review' %}<span class="badge severity-warning">To be reviewed</span>
-        {% elif sr.status == 'approved' %}<span class="badge status-active">Verified</span>
+        {% elif sr.status == 'approved' %}<span class="badge status-active">Accepted</span>
         {% elif sr.status == 'rejected' %}<span class="badge severity-critical">Rejected</span>{% endif %}
       </h1>
       <div class="subtitle">
@@ -92,11 +92,11 @@
         <div class="card-body">
           {% if sr.status == 'pending_review' %}
 
-            {# Verify — primary path. Group-admin invite goes to the submitter as-is. #}
+            {# Accept — primary path. Group-admin invite goes to the submitter as-is. #}
             <form method="POST" action="{{ url_for('super_signup_approve', signup_id=sr.id) }}" style="margin: 0;">
               <button type="submit" class="btn btn-success"
-                      onclick="return confirm('Verify this request and add the organization to the table?');">
-                Verify
+                      onclick="return confirm('Accept this request and add the organization to the table?');">
+                Accept
               </button>
             </form>
 
@@ -136,7 +136,7 @@
           {% else %}
             <div class="empty-state">
               <div class="big">{% if sr.status == 'approved' %}✓{% else %}✕{% endif %}</div>
-              <p>This request was {% if sr.status == 'approved' %}verified{% else %}rejected{% endif %} on {{ sr.reviewed_at | dt }}.<br>
+              <p>This request was {% if sr.status == 'approved' %}accepted{% else %}rejected{% endif %} on {{ sr.reviewed_at | dt }}.<br>
               No further actions are available.</p>
             </div>
           {% endif %}
