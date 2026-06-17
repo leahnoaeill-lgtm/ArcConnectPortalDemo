@@ -134,11 +134,43 @@ def _ensure_org_login_columns():
         conn.close()
 
 
+def _ensure_user_location_access():
+    """Lightweight migration for the explicit location-access model: add the
+    users.all_locations flag and the user_location_access join table on an existing
+    DB, then backfill. Existing admins anchored at a parent (main) org become
+    network-wide group admins (all_locations=1). Location-anchored users keep their
+    implicit single-site scope (no rows, all_locations=0). Idempotent."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        needs_backfill = 'all_locations' not in cols
+        if needs_backfill:
+            conn.execute("ALTER TABLE users ADD COLUMN all_locations INTEGER NOT NULL DEFAULT 0")
+        conn.execute("""CREATE TABLE IF NOT EXISTS user_location_access (
+            user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            location_org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            PRIMARY KEY (user_id, location_org_id)
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_loc_access_user ON user_location_access(user_id)")
+        if needs_backfill:
+            # Existing group admins (admin in a parent/main org) → network-wide.
+            conn.execute("""UPDATE users SET all_locations = 1
+                            WHERE role = 'admin'
+                              AND organization_id IN
+                                  (SELECT id FROM organizations WHERE type = 'parent')""")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 _ensure_heatmap_schema()
 _ensure_org_verification_columns()
 _ensure_signup_request_columns()
 _ensure_org_country_column()
 _ensure_org_login_columns()
+_ensure_user_location_access()
 
 
 # ── Optional HTTP Basic Auth gate (set AUTH_USERNAME + AUTH_PASSWORD env vars to enable) ──
@@ -214,16 +246,30 @@ def current_user():
 
 
 def current_org_id():
-    """The org the user is CURRENTLY acting within. For parent-org admins who've
-    switched into a location, this is the location id. For location users, this
-    is their user's organization_id. For super admins drilled into a customer
-    org, this returns that customer org's id (read-only context)."""
+    """The org the user is CURRENTLY acting within. A user who has switched into one
+    of their accessible sites gets that site; a parent admin at rollup gets their
+    anchor (parent) org; a roaming non-admin with no selection defaults to their
+    first accessible site (never the data-less parent); a single-site user gets
+    their own org. Super admins drilled into a customer org get that org.
+
+    The acting_org_id is validated against the user's accessible set on every call,
+    so a stale or forged session value can never widen scope."""
     u = current_user()
     if not u:
         return None
     if is_super_admin() and session.get('super_acting_org_id'):
         return session['super_acting_org_id']
-    return session.get('acting_org_id') or u['organization_id']
+    acting = session.get('acting_org_id')
+    accessible = accessible_location_ids(u)
+    if acting and acting in accessible:
+        return acting
+    # No (valid) site selected. Parent admins operate from their parent anchor at
+    # rollup; any other user anchored above their sites (a roaming user whose anchor
+    # is the parent) falls back to a concrete accessible site so they never land on
+    # the parent org (which owns no patients/devices).
+    if not is_parent_admin() and accessible and u['organization_id'] not in accessible:
+        return accessible[0]
+    return u['organization_id']
 
 
 def current_org():
@@ -234,10 +280,16 @@ def current_org():
 
 
 def is_parent_admin():
+    """A 'rollup' admin: an admin who manages more than one site — network-wide
+    (all_locations) or a multi-site subset. Under the main location model a parent org is ALSO
+    an operating location, so merely being anchored at a parent no longer implies
+    rollup scope; an admin scoped to a single site (even the main location itself) is a site
+    admin, not a rollup admin. The identifier is kept (CLAUDE.md) but now means
+    'roaming admin'."""
     u = current_user()
-    if not u:
+    if not u or u['role'] != 'admin':
         return False
-    return u['role'] == 'admin' and u['org_type'] == 'parent'
+    return bool(u['all_locations']) or len(accessible_location_ids(u)) > 1
 
 
 def is_super_admin():
@@ -256,11 +308,59 @@ def super_acting_org_id():
     return session.get('super_acting_org_id')
 
 
+def accessible_location_ids(user):
+    """The location org ids a user may act within — the single source of truth for
+    location scope under the explicit-access model.
+
+    - all_locations=1 → every CURRENT satellite under the user's network root (the
+      parent/main org). Dynamic: a site added later is automatically included.
+    - else → the explicit set in user_location_access (a subset, or one site).
+    - else (no rows) → the user's own organization_id. Covers a legacy single-site
+      user and a standalone single-location org that has no parent.
+
+    Always returns a list of ints. Super admins are NOT handled here — their
+    cross-org reach is governed separately by an active BAA per customer org.
+    """
+    if not user:
+        return []
+    if user['all_locations']:
+        # Network root: the parent the user is anchored under, or their own org if
+        # they are anchored directly at the main location/parent org.
+        root = (user['org_parent'] if 'org_parent' in user.keys() else None) or user['organization_id']
+        # The main location (root) is itself an operating location, so it belongs to the network
+        # alongside its branches.
+        rows = q_all("""SELECT id FROM organizations
+                        WHERE id = ? OR (parent_id = ? AND type = 'location')""",
+                     (root, root))
+        return [r['id'] for r in rows]
+    rows = q_all("SELECT location_org_id FROM user_location_access WHERE user_id = ?",
+                 (user['id'],))
+    if rows:
+        return [r['location_org_id'] for r in rows]
+    return [user['organization_id']]
+
+
+def is_roaming(user=None):
+    """True when the user can act in more than one site (all_locations, or an
+    explicit multi-site subset) and therefore needs a location switcher / rollup.
+    A single-site user is NOT roaming."""
+    u = user or current_user()
+    if not u:
+        return False
+    return bool(u['all_locations']) or len(accessible_location_ids(u)) > 1
+
+
+def can_access_org(user, org_id):
+    """Whether the user may act within org_id (one of their accessible sites)."""
+    return org_id in accessible_location_ids(user)
+
+
 def scope_org_ids():
-    """Return the list of org ids the current user's list-style queries
-    should span. For a parent admin at rollup, that's every child location.
-    For a super admin drilled into a customer org, it's the customer parent +
-    its child locations. For everyone else, just their current acting org."""
+    """Return the list of org ids the current user's list-style queries should span.
+    A super admin drilled into a customer org → the customer parent + its children.
+    A user who has switched into one accessible site → just that site. A roaming
+    user at rollup (no site selected) → their whole accessible set. Otherwise the
+    single site they're scoped to."""
     u = current_user()
     if not u:
         return []
@@ -271,10 +371,15 @@ def scope_org_ids():
             "SELECT id FROM organizations WHERE id = ? OR parent_id = ?",
             (oid, oid))
         return [r['id'] for r in rows]
-    if is_parent_admin() and not session.get('acting_org_id'):
-        rows = q_all("SELECT id FROM organizations WHERE parent_id = ? AND type = 'location'",
-                     (u['organization_id'],))
-        return [r['id'] for r in rows]
+    acting = session.get('acting_org_id')
+    accessible = accessible_location_ids(u)
+    # Switched into one specific (still-accessible) site → scope to it.
+    if acting and acting in accessible:
+        return [acting]
+    # Roaming with no site selected → span the whole accessible set.
+    if is_roaming(u):
+        return accessible
+    # Single-site user.
     return [current_org_id()]
 
 
@@ -533,19 +638,25 @@ def inject_globals():
     org = current_org()
     parent_org = None
     sibling_locations = []
-    if u and u['org_type'] == 'location' and u['org_parent']:
-        parent_org = q_one('SELECT * FROM organizations WHERE id = ?',
-                           (u['org_parent'],))
-        sibling_locations = q_all(
-            'SELECT * FROM organizations WHERE parent_id = ? AND type = "location" ORDER BY name',
-            (u['org_parent'],))
-    elif is_parent_admin():
-        # Parent admin — see all child locations
-        parent_org = q_one('SELECT * FROM organizations WHERE id = ?',
-                           (u['organization_id'],))
-        sibling_locations = q_all(
-            'SELECT * FROM organizations WHERE parent_id = ? AND type = "location" ORDER BY name',
-            (u['organization_id'],))
+    can_switch = False
+    if u and not is_super_admin():
+        # The location switcher lists exactly the sites this user may act in — their
+        # accessible set (all_locations → every child; subset → granted sites;
+        # single → just their own). Switching is offered only when roaming.
+        ids = accessible_location_ids(u)
+        if ids:
+            ph = ','.join('?' * len(ids))
+            sibling_locations = q_all(
+                f'SELECT * FROM organizations WHERE id IN ({ph}) ORDER BY name', ids)
+        can_switch = is_roaming(u)
+        # Anchor (parent/main) org backs the "All locations" rollup link — admins
+        # who roam the whole network.
+        if is_parent_admin():
+            parent_org = q_one('SELECT * FROM organizations WHERE id = ?',
+                               (u['organization_id'],))
+        elif u['org_parent']:
+            parent_org = q_one('SELECT * FROM organizations WHERE id = ?',
+                               (u['org_parent'],))
     from datetime import datetime as _dt_now
     # Inbox unread count (only meaningful when messaging is on for this location)
     inbox_unread = 0
@@ -566,6 +677,7 @@ def inject_globals():
         'current_org': org,
         'parent_org': parent_org,
         'sibling_locations': sibling_locations,
+        'can_switch_location': can_switch,
         'is_parent_admin': is_parent_admin(),
         'is_super_admin': is_super_admin(),
         'super_acting_org_id': super_acting_org_id(),
@@ -612,6 +724,19 @@ def logout():
     return redirect(url_for('login'))
 
 
+@app.route('/rollup')
+@require_login
+def go_rollup():
+    """Return a roaming admin to the network rollup, clearing any acting site. Needed
+    as a distinct action because under the main location model the anchor org (the main location) is itself
+    an accessible site — so 'All locations' can't be expressed as switching into the
+    anchor org id."""
+    session.pop('acting_org_id', None)
+    if is_parent_admin():
+        return redirect(url_for('parent_overview'))
+    return redirect(url_for('dashboard'))
+
+
 @app.route('/switch-location/<int:org_id>')
 @require_login
 def switch_location(org_id):
@@ -624,12 +749,13 @@ def switch_location(org_id):
     # Optional deep-link: after switching, land on this path instead of /dashboard
     next_url = request.args.get('next', '')
     safe_next = next_url if next_url.startswith('/') and '//' not in next_url else None
-    # Allow if parent admin and target is a child of their parent org
-    if is_parent_admin() and target['parent_id'] == u['organization_id']:
+    # Allow switching into any site in the user's accessible set (all_locations,
+    # subset, or single). This is the authorization gate for location scope.
+    if can_access_org(u, org_id):
         session['acting_org_id'] = org_id
         return redirect(safe_next or url_for('dashboard'))
-    # Allow if the user's own org (clears any switch). For parent admins that
-    # means returning to group-wide rollup, so default to the parent overview.
+    # Returning to the anchor org clears any switch. For parent admins that means
+    # group-wide rollup; for everyone else, back to their default site/dashboard.
     if org_id == u['organization_id']:
         session.pop('acting_org_id', None)
         if is_parent_admin():
@@ -658,10 +784,10 @@ def home():
 # ── Parent-org rollup ────────────────────────────────────────────────────────
 
 def _child_location_ids(user):
-    """All child location IDs under this parent admin's org."""
-    rows = q_all("SELECT id FROM organizations WHERE parent_id = ? AND type = 'location'",
-                 (user['organization_id'],))
-    return [r['id'] for r in rows]
+    """The location IDs this admin's rollup spans — their accessible set. For a
+    network (all_locations) admin that's every child of their parent org; for a
+    subset admin it's only their granted sites."""
+    return accessible_location_ids(user)
 
 
 def _require_parent_rollup_scope():
@@ -688,8 +814,22 @@ def parent_overview():
     if not parent_id or not (is_parent_admin() or
                              (is_super_admin() and session.get('super_acting_org_id'))):
         return redirect(url_for('dashboard'))
+    # The rollup lists the main location (an operating location too) alongside its branches. A
+    # customer admin sees only their accessible set (all_locations → main location + every
+    # branch; subset → their subset); a super admin drilled in sees the main location + every
+    # branch under the org.
+    if is_super_admin() and session.get('super_acting_org_id'):
+        where_sql = "(o.id = ? OR (o.parent_id = ? AND o.type = 'location'))"
+        where_params = (parent_id, parent_id)
+    else:
+        allowed = accessible_location_ids(u)
+        if not allowed:
+            where_sql, where_params = '0 = 1', ()
+        else:
+            ph = ','.join('?' * len(allowed))
+            where_sql, where_params = f'o.id IN ({ph})', tuple(allowed)
     locations = q_all(
-        """SELECT o.*,
+        f"""SELECT o.*,
            (SELECT COUNT(*) FROM patients p WHERE p.organization_id = o.id AND p.status = 'active') AS patient_count,
            (SELECT COUNT(*) FROM patients p WHERE p.organization_id = o.id AND p.status = 'active'
                 AND p.adherence_pct_30d IS NOT NULL AND p.adherence_pct_30d < 80) AS at_risk_count,
@@ -700,8 +840,8 @@ def parent_overview():
            (SELECT ROUND(AVG(p.adherence_pct_30d)) FROM patients p
                 WHERE p.organization_id = o.id AND p.status = 'active') AS avg_adherence,
            (SELECT COUNT(*) FROM users u2 WHERE u2.organization_id = o.id AND u2.is_active = 1) AS user_count
-           FROM organizations o WHERE o.parent_id = ? AND o.type = 'location' ORDER BY o.name""",
-        (parent_id,))
+           FROM organizations o WHERE {where_sql} ORDER BY (o.id = {parent_id}) DESC, o.name""",
+        where_params)
     totals = {
         'patients': sum(l['patient_count'] for l in locations),
         'devices': sum(l['device_count'] for l in locations),
@@ -983,73 +1123,106 @@ def parent_alerts():
 # ── Parent admin: location management ──────────────────────────────────────
 
 def _require_parent_admin():
-    u = current_user()
-    if not is_parent_admin():
-        flash('Only the parent group admin can manage locations.', 'error')
+    """Gate for managing the location roster — restricted to a network (all_locations)
+    main location admin. A subset admin manages users within their sites but not the network's
+    locations."""
+    if not _is_network_admin(current_user()):
+        flash('Only a main location admin can manage locations.', 'error')
         return redirect(url_for('home'))
     return None
+
+
+def _is_standalone_admin(u):
+    """An admin of a single-location org that has no parent yet — the persona who
+    promotes their org into a main location by adding its first branch."""
+    return bool(u and u['role'] == 'admin' and u['org_type'] == 'location'
+                and not u['org_parent'] and not u['all_locations'])
 
 
 @app.route('/parent/locations/new', methods=['GET', 'POST'])
 @require_login
 def parent_location_new():
-    bounce = _require_parent_admin()
-    if bounce: return bounce
-    if not _account_active():
-        flash("Your account is pending activation — you can't add satellite locations yet.", 'error')
-        return redirect(url_for('parent_overview'))
     u = current_user()
-    parent_id = u['organization_id']
+    is_net = _is_network_admin(u)
+    standalone = _is_standalone_admin(u)
+    # A network main location admin adds another branch; a standalone-org admin adds their FIRST
+    # branch, which promotes their org to a main location in place.
+    if not (is_net or standalone):
+        flash('Only a main location admin can manage locations.', 'error')
+        return redirect(url_for('home'))
+    if not _account_active():
+        flash("Your account is pending activation — you can't add locations yet.", 'error')
+        return redirect(url_for('home'))
+    promoting = standalone and not is_net
+    hq_id = u['organization_id']   # the org that is (or becomes) the main location
     if request.method == 'POST':
         name = (request.form.get('name') or '').strip()
         if not name:
             flash('Location name is required.', 'error')
             return redirect(url_for('parent_location_new'))
-
-        # Satellite-location admin invite fields (mirrors super_signup_approve /
-        # super_org_new pattern — create org + invitation atomically).
         invite_email = (request.form.get('invite_email') or '').strip().lower()
         invite_first = (request.form.get('invite_first_name') or '').strip()
         invite_last  = (request.form.get('invite_last_name')  or '').strip()
         if '@' not in invite_email or '.' not in invite_email.split('@')[-1]:
-            flash('A valid satellite-location admin email is required.', 'error')
+            flash('A valid location-admin email is required.', 'error')
             return redirect(url_for('parent_location_new'))
         if not invite_first or not invite_last:
-            flash('Satellite-location admin first and last name are required.', 'error')
+            flash('Location-admin first and last name are required.', 'error')
             return redirect(url_for('parent_location_new'))
-
-        q_exec("""INSERT INTO organizations
-                  (name, parent_id, type, address_line1, address_line2, city, state,
-                   zip, country, phone, npi, timezone)
-                  VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-               (name, parent_id,
-                request.form.get('address_line1') or None,
-                request.form.get('address_line2') or None,
-                request.form.get('city') or None,
-                request.form.get('state') or None,
-                request.form.get('zip') or None,
-                request.form.get('country') or 'US',
-                request.form.get('phone') or None,
-                request.form.get('npi') or None,
-                request.form.get('timezone') or 'America/New_York'))
-        new_id = q_one('SELECT last_insert_rowid() AS id')['id']
 
         import secrets
         from datetime import timedelta as _td
         token = secrets.token_urlsafe(24)
         expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
-        q_exec("""INSERT INTO org_invitations
-                  (organization_id, email, first_name, last_name, token,
-                   invited_by_user_id, expires_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)""",
-               (new_id, invite_email, invite_first, invite_last, token,
-                u['id'], expires_at))
+        # Promotion + child + invite must be atomic — roll back on any failure so we
+        # never leave an org half-promoted.
+        db = get_db()
+        try:
+            if promoting:
+                # Promote the standalone org to main location IN PLACE: it keeps its
+                # row/id and all its patients, devices, users, BAA and login policy —
+                # it simply becomes the parent. Its existing admins become network
+                # (all_locations) admins. No synthetic group org, no reparenting.
+                db.execute("UPDATE organizations SET type = 'parent' WHERE id = ?", (hq_id,))
+                db.execute("""UPDATE users SET all_locations = 1
+                              WHERE organization_id = ? AND role = 'admin'""", (hq_id,))
+            cur = db.execute("""INSERT INTO organizations
+                      (name, parent_id, type, address_line1, address_line2, city, state,
+                       zip, country, phone, npi, timezone)
+                      VALUES (?, ?, 'location', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (name, hq_id,
+                    request.form.get('address_line1') or None,
+                    request.form.get('address_line2') or None,
+                    request.form.get('city') or None,
+                    request.form.get('state') or None,
+                    request.form.get('zip') or None,
+                    request.form.get('country') or 'US',
+                    request.form.get('phone') or None,
+                    request.form.get('npi') or None,
+                    request.form.get('timezone') or 'America/New_York'))
+            new_id = cur.lastrowid
+            db.execute("""INSERT INTO org_invitations
+                      (organization_id, email, first_name, last_name, token,
+                       invited_by_user_id, expires_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (new_id, invite_email, invite_first, invite_last, token, u['id'], expires_at))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            app.logger.warning(f'location add/promote failed: {e}')
+            flash('Could not add the location. Please try again.', 'error')
+            return redirect(url_for('parent_location_new'))
 
-        _log_access('location_create', ref_type='organization', ref_id=new_id,
-                    detail=f'Created location: {name}; invited {invite_email}')
-        flash(f'Location "{name}" added. Satellite-admin invite sent to {invite_email}.', 'success')
+        if promoting:
+            _log_access('location_create', ref_type='organization', ref_id=new_id,
+                        detail=f'Promoted org {hq_id} to main location in place; created first location: {name}; invited {invite_email}')
+            flash(f'"{name}" added. {u["org_name"]} is now your main location, with "{name}" as its first branch.', 'success')
+        else:
+            _log_access('location_create', ref_type='organization', ref_id=new_id,
+                        detail=f'Created location: {name}; invited {invite_email}')
+            flash(f'Location "{name}" added. Location-admin invite sent to {invite_email}.', 'success')
         return redirect(url_for('parent_overview'))
-    return render_template('parent_location_form.html', location=None)
+    return render_template('parent_location_form.html', location=None, promoting=promoting)
 
 
 @app.route('/parent/locations/<int:org_id>/edit', methods=['GET', 'POST'])
@@ -1410,7 +1583,7 @@ def super_signup_approve(signup_id):
         flash('Submitter name on this request is missing first/last; cannot send invite.', 'error')
         return redirect(url_for('super_signup_detail', signup_id=signup_id))
 
-    # Create the customer main organization with submitted fields prefilled.
+    # Create the customer main location with submitted fields prefilled.
     db = get_db()
     cur = db.execute("""INSERT INTO organizations
                         (name, type, status, address_line1, address_line2, city, state, zip, country)
@@ -1616,13 +1789,13 @@ def _org_group_admin(org_id):
 @require_login
 def super_org_overview(org_id):
     """Read-only ABMRC overview of one customer organization, including its
-    satellite locations rolled up with per-location patient/device/alert counts."""
+    branch locations rolled up with per-location patient/device/alert counts."""
     bounce = _require_super_admin()
     if bounce: return bounce
     org = q_one('SELECT * FROM organizations WHERE id = ?', (org_id,))
     if not org or org['type'] == 'internal':
         abort(404)
-    # Rolled-up counts across this org + any satellite locations under it.
+    # Rolled-up counts across this org + any branch locations under it.
     rollup = q_one("""SELECT
         (SELECT COUNT(*) FROM patients p JOIN organizations co ON co.id = p.organization_id
            WHERE co.id = ? OR co.parent_id = ?) AS patients,
@@ -1975,12 +2148,12 @@ def super_org_update(org_id):
 @app.route('/super/orgs/<int:org_id>/group-admin', methods=['POST'])
 @require_login
 def super_org_group_admin_new(org_id):
-    """Super admin adds a new group admin (role='admin') to a main organization."""
+    """Super admin adds a new group admin (role='admin') to a main location."""
     bounce = _require_super_admin()
     if bounce: return bounce
     org = q_one("SELECT * FROM organizations WHERE id = ? AND type = 'parent'", (org_id,))
     if not org:
-        flash('Group admins can only be added to a main organization.', 'error')
+        flash('Group admins can only be added to a main location.', 'error')
         return redirect(url_for('super_org_update', org_id=org_id))
     email = (request.form.get('email') or '').strip().lower()
     first = (request.form.get('first_name') or '').strip()
@@ -2104,7 +2277,7 @@ def super_map():
 # A ZIP-3 proportional-symbol map with a 12-month timelapse. Per-org admins
 # pick which layers (metrics) to expose under Settings → Heat map layers.
 # Tenant scoping reuses scope_org_ids() so:
-#   • Group admin at rollup → all satellite locations
+#   • Group admin at rollup → all branch locations
 #   • Satellite admin       → only their satellite
 #   • ABMRC drilled into a customer → that customer's tree, de-identified
 # ZIP-3 cells with patient_count below the user-selected suppression floor
@@ -2252,7 +2425,7 @@ def heatmap():
 
     # Scope label for the page header
     if is_parent_admin() and not session.get('acting_org_id'):
-        scope_label = 'Network rollup — all satellite locations'
+        scope_label = 'Network rollup — all branch locations'
     elif is_super_admin() and session.get('super_acting_org_id'):
         scope_label = 'ABMRC support view — de-identified'
     else:
@@ -4739,14 +4912,127 @@ def api_patient_features(patient_id):
 
 # ── Settings: users ──────────────────────────────────────────────────────────
 
+def _is_network_admin(user):
+    """A group admin with network-wide (all_locations) reach — the persona that
+    manages users across every site and may grant any scope."""
+    return bool(user and user['role'] == 'admin' and user['all_locations'])
+
+
+def _network_family_ids(mgr):
+    """[main location/parent] + all branch locations — the org ids a network admin manages
+    users across."""
+    root = mgr['org_parent'] or mgr['organization_id']
+    kids = [r['id'] for r in q_all(
+        "SELECT id FROM organizations WHERE parent_id = ? AND type = 'location'", (root,))]
+    return [root] + kids
+
+
+def _grantable_site_rows(mgr):
+    """The orgs this admin may assign a user to — their accessible set (the main location is
+    included, since under the main location model it is an operating location too)."""
+    ids = accessible_location_ids(mgr)
+    if not ids:
+        return []
+    ph = ','.join('?' * len(ids))
+    return q_all(f"SELECT id, name, type FROM organizations WHERE id IN ({ph}) ORDER BY (type='parent') DESC, name", ids)
+
+
+def _user_scope_label(user_row):
+    """Human-readable location scope for a user row: 'All locations', a comma list
+    of granted sites, or (single-site) their own org name."""
+    if user_row['all_locations']:
+        return 'All locations'
+    rows = q_all("""SELECT o.name FROM user_location_access a
+                    JOIN organizations o ON o.id = a.location_org_id
+                    WHERE a.user_id = ? ORDER BY o.name""", (user_row['id'],))
+    if rows:
+        return ', '.join(r['name'] for r in rows)
+    o = q_one('SELECT name FROM organizations WHERE id = ?', (user_row['organization_id'],))
+    return o['name'] if o else '—'
+
+
+def _user_scope_site_ids(user_row):
+    """The granted site ids for a user (empty for all_locations; their own org for a
+    single-site user anchored at their site)."""
+    if user_row['all_locations']:
+        return []
+    rows = q_all('SELECT location_org_id FROM user_location_access WHERE user_id = ?',
+                 (user_row['id'],))
+    if rows:
+        return [r['location_org_id'] for r in rows]
+    return [user_row['organization_id']]
+
+
+def _apply_user_scope(user_id, parent_root, mode, site_ids):
+    """Write a user's location scope + anchor. mode='all' → network-wide (anchored at
+    the main location/parent). mode='sites' with one id → single-site (anchored at that site, so
+    the user stays site-tier). mode='sites' with several → subset (anchored at the
+    main location/parent with explicit access rows)."""
+    q_exec('DELETE FROM user_location_access WHERE user_id = ?', (user_id,))
+    if mode == 'all':
+        q_exec('UPDATE users SET organization_id = ?, all_locations = 1 WHERE id = ?',
+               (parent_root, user_id))
+        return
+    site_ids = list(dict.fromkeys(site_ids))
+    if len(site_ids) == 1:
+        q_exec('UPDATE users SET organization_id = ?, all_locations = 0 WHERE id = ?',
+               (site_ids[0], user_id))
+        return
+    q_exec('UPDATE users SET organization_id = ?, all_locations = 0 WHERE id = ?',
+           (parent_root, user_id))
+    for sid in site_ids:
+        q_exec('INSERT OR IGNORE INTO user_location_access (user_id, location_org_id) VALUES (?, ?)',
+               (user_id, sid))
+
+
+def _manageable_user(user_id):
+    """The target user row if the current admin may manage them, else None. A network
+    admin manages everyone in their org family; any other admin manages only users at
+    their current acting site."""
+    target = q_one('SELECT * FROM users WHERE id = ?', (user_id,))
+    if not target:
+        return None
+    mgr = current_user()
+    if _is_network_admin(mgr):
+        fam = _network_family_ids(mgr)
+        if target['organization_id'] in fam:
+            return target
+        ph = ','.join('?' * len(fam))
+        if q_one(f"""SELECT 1 FROM user_location_access
+                     WHERE user_id = ? AND location_org_id IN ({ph})""",
+                 (user_id, *fam)):
+            return target
+        return None
+    return target if target['organization_id'] == current_org_id() else None
+
+
 @app.route('/settings/users')
 @require_login
 @require_admin
 def users():
-    oid = current_org_id()
-    rows = q_all("""SELECT * FROM users WHERE organization_id = ?
-                    ORDER BY is_active DESC, role, last_name""", (oid,))
-    return render_template('users.html', users=rows)
+    mgr = current_user()
+    network = _is_network_admin(mgr)
+    if network:
+        # Network admin → every user across the org family (main location + all branches),
+        # whether anchored at the main location (network/subset users) or at a site.
+        fam = _network_family_ids(mgr)
+        ph = ','.join('?' * len(fam))
+        rows = q_all(f"""SELECT DISTINCT us.* FROM users us
+                         LEFT JOIN user_location_access a ON a.user_id = us.id
+                         WHERE us.organization_id IN ({ph})
+                            OR a.location_org_id IN ({ph})
+                         ORDER BY us.is_active DESC, us.role, us.last_name""",
+                     (*fam, *fam))
+    else:
+        # Single-site / site admin → users at their current acting site.
+        rows = q_all("""SELECT * FROM users WHERE organization_id = ?
+                        ORDER BY is_active DESC, role, last_name""", (current_org_id(),))
+    user_rows = []
+    for r in rows:
+        d = dict(r)
+        d['scope_label'] = _user_scope_label(r)
+        user_rows.append(d)
+    return render_template('users.html', users=user_rows, network_scope=network)
 
 
 @app.route('/settings/users/new', methods=['GET', 'POST'])
@@ -4756,111 +5042,141 @@ def user_new():
     if not _account_active():
         flash("Your account is pending activation — you can't add users yet.", 'error')
         return redirect(url_for('users'))
-    # Parent admins may pre-target a specific child location via ?location=<id>.
-    # Otherwise the new user is scoped to the admin's current acting org.
-    target_org_id = current_org_id()
-    target_location = None
+    mgr = current_user()
+    network = _is_network_admin(mgr)
+    grantable = _grantable_site_rows(mgr) if network else []
+    grantable_ids = {g['id'] for g in grantable}
+    parent_root = (mgr['org_parent'] or mgr['organization_id'])
+    # A network admin may pre-target one site via ?location=<id> (checked by default).
     requested_loc = request.values.get('location', type=int)
-    if requested_loc and is_parent_admin():
-        u = current_user()
-        target_location = q_one(
-            """SELECT * FROM organizations
-               WHERE id = ? AND parent_id = ? AND type = 'location'""",
-            (requested_loc, u['organization_id']))
-        if target_location:
-            target_org_id = target_location['id']
-    # Role options depend on the target org's tier: a main organization (parent)
-    # only takes Group admins; a satellite location takes admin or user.
-    _torg = q_one('SELECT type FROM organizations WHERE id = ?', (target_org_id,))
-    target_is_parent = bool(_torg and _torg['type'] == 'parent')
-    allowed_roles = ('admin',) if target_is_parent else ('admin', 'user')
+    preselected = [requested_loc] if (requested_loc in grantable_ids) else []
+
     if request.method == 'POST':
-        email = request.form.get('email', '').strip().lower()
-        existing = q_one('SELECT id FROM users WHERE email = ?', (email,))
-        if existing:
+        first = (request.form.get('first_name') or '').strip()
+        last  = (request.form.get('last_name')  or '').strip()
+        email = (request.form.get('email') or '').strip().lower()
+        phone = (request.form.get('phone') or '').strip() or None
+        role  = request.form.get('role')
+        if '@' not in email or '.' not in email.split('@')[-1]:
+            flash('A valid email is required.', 'error')
+            return redirect(url_for('user_new'))
+        if q_one('SELECT id FROM users WHERE email = ?', (email,)):
             flash('A user with that email already exists.', 'error')
-            return redirect(url_for('user_new', location=requested_loc or None))
-        role = request.form.get('role')
-        if role not in allowed_roles:
-            flash('Invalid role.', 'error')
-            return redirect(url_for('user_new', location=requested_loc or None))
-        q_exec("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, is_active)
-                  VALUES (?, ?, ?, ?, ?, ?, 1)""",
-               (target_org_id, email, request.form.get('first_name'),
-                request.form.get('last_name'), role,
-                request.form.get('phone')))
-        new_uid = q_one('SELECT last_insert_rowid() AS id')['id']
+            return redirect(url_for('user_new'))
+
+        if network:
+            # Scope selector drives the anchor + access set.
+            mode = 'all' if request.form.get('scope_mode') == 'all' else 'sites'
+            site_ids = [int(s) for s in request.form.getlist('sites') if s.isdigit()]
+            site_ids = [s for s in site_ids if s in grantable_ids]   # never beyond grant
+            if mode == 'sites' and not site_ids:
+                flash('Select at least one location, or choose All locations.', 'error')
+                return redirect(url_for('user_new'))
+            # All-locations is admin-only; specific sites take admin or user.
+            allowed = ('admin',) if mode == 'all' else ('admin', 'user')
+            if role not in allowed:
+                flash('All-locations access requires the Admin role.' if mode == 'all'
+                      else 'Invalid role.', 'error')
+                return redirect(url_for('user_new'))
+            q_exec("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, is_active)
+                      VALUES (?, ?, ?, ?, ?, ?, 1)""",
+                   (parent_root, email, first, last, role, phone))
+            new_uid = q_one('SELECT last_insert_rowid() AS id')['id']
+            _apply_user_scope(new_uid, parent_root, mode, site_ids)
+            scope_desc = 'all locations' if mode == 'all' else f'{len(site_ids)} location(s)'
+        else:
+            # Site admin → a single-site user at their current acting location.
+            if role not in ('admin', 'user'):
+                flash('Invalid role.', 'error')
+                return redirect(url_for('user_new'))
+            target_org_id = current_org_id()
+            q_exec("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, is_active)
+                      VALUES (?, ?, ?, ?, ?, ?, 1)""",
+                   (target_org_id, email, first, last, role, phone))
+            new_uid = q_one('SELECT last_insert_rowid() AS id')['id']
+            scope_desc = f'org {target_org_id}'
         _log_access('user_create', ref_type='user', ref_id=new_uid,
-                    detail=f'Created {email} at org {target_org_id}')
+                    detail=f'Created {email} ({role}, {scope_desc})')
         flash(f'User {email} added.', 'success')
-        if target_location:
-            return redirect(url_for('parent_overview'))
         return redirect(url_for('users'))
+
     return render_template('user_form.html', user=None,
-                           target_location=target_location,
-                           target_is_parent=target_is_parent)
+                           network_scope=network, grantable_sites=grantable,
+                           can_grant_all=network, scope_mode='sites',
+                           selected_site_ids=preselected)
 
 
 @app.route('/settings/users/<int:user_id>/edit', methods=['GET', 'POST'])
 @require_login
 @require_admin
 def user_edit(user_id):
-    oid = current_org_id()
-    u = q_one('SELECT * FROM users WHERE id = ? AND organization_id = ?',
-              (user_id, oid))
+    u = _manageable_user(user_id)
     if not u: abort(404)
-    # Role options depend on the org tier: a main organization (parent) only takes
-    # Group admins; a satellite location takes admin or user.
-    _torg = q_one('SELECT type FROM organizations WHERE id = ?', (oid,))
-    target_is_parent = bool(_torg and _torg['type'] == 'parent')
-    allowed_roles = ('admin',) if target_is_parent else ('admin', 'user')
+    mgr = current_user()
+    network = _is_network_admin(mgr)
+    grantable = _grantable_site_rows(mgr) if network else []
+    grantable_ids = {g['id'] for g in grantable}
+    parent_root = (mgr['org_parent'] or mgr['organization_id'])
     if request.method == 'POST':
+        first = (request.form.get('first_name') or '').strip()
+        last  = (request.form.get('last_name')  or '').strip()
         email = (request.form.get('email') or '').strip().lower()
-        # Email must remain unique across the system (excluding this user's
-        # own row, since they may be saving without changing their email).
-        conflict = q_one('SELECT id FROM users WHERE email = ? AND id != ?',
-                         (email, user_id))
+        phone = (request.form.get('phone') or '').strip() or None
+        role  = request.form.get('role')
+        conflict = q_one('SELECT id FROM users WHERE email = ? AND id != ?', (email, user_id))
         if conflict:
             flash('Another user already has that email.', 'error')
             return redirect(url_for('user_edit', user_id=user_id))
-        role = request.form.get('role')
-        # Per LD-8: Release 1 role enum is admin / user only at the customer tier.
-        # A main organization (parent) only takes Group admins.
-        if role not in allowed_roles:
-            flash('Invalid role.', 'error')
-            return redirect(url_for('user_edit', user_id=user_id))
-        # Don't let an admin strip the last active admin role from the org —
-        # otherwise the location loses its admin.
-        if u['role'] == 'admin' and role != 'admin':
-            other_admins = q_one("""SELECT COUNT(*) AS n FROM users
-                                    WHERE organization_id = ? AND role = 'admin'
-                                      AND is_active = 1 AND id != ?""",
-                                 (oid, user_id))['n']
-            if other_admins == 0:
-                flash('Cannot change role: this is the only active admin for the location.',
-                      'error')
+
+        if network:
+            mode = 'all' if request.form.get('scope_mode') == 'all' else 'sites'
+            site_ids = [int(s) for s in request.form.getlist('sites') if s.isdigit()]
+            site_ids = [s for s in site_ids if s in grantable_ids]
+            if mode == 'sites' and not site_ids:
+                flash('Select at least one location, or choose All locations.', 'error')
                 return redirect(url_for('user_edit', user_id=user_id))
-        q_exec("""UPDATE users SET first_name = ?, last_name = ?, email = ?,
-                  role = ?, phone = ? WHERE id = ?""",
-               (request.form.get('first_name'),
-                request.form.get('last_name'),
-                email, role,
-                request.form.get('phone') or None,
-                user_id))
+            allowed = ('admin',) if mode == 'all' else ('admin', 'user')
+            if role not in allowed:
+                flash('All-locations access requires the Admin role.' if mode == 'all'
+                      else 'Invalid role.', 'error')
+                return redirect(url_for('user_edit', user_id=user_id))
+        else:
+            mode, site_ids = None, None
+            if role not in ('admin', 'user'):
+                flash('Invalid role.', 'error')
+                return redirect(url_for('user_edit', user_id=user_id))
+            # Don't strip the last active admin from a single site.
+            if u['role'] == 'admin' and role != 'admin':
+                other = q_one("""SELECT COUNT(*) AS n FROM users
+                                 WHERE organization_id = ? AND role = 'admin'
+                                   AND is_active = 1 AND id != ?""",
+                              (u['organization_id'], user_id))['n']
+                if other == 0:
+                    flash('Cannot change role: this is the only active admin for the location.', 'error')
+                    return redirect(url_for('user_edit', user_id=user_id))
+
+        q_exec("""UPDATE users SET first_name = ?, last_name = ?, email = ?, role = ?, phone = ?
+                  WHERE id = ?""", (first, last, email, role, phone, user_id))
+        if network:
+            _apply_user_scope(user_id, parent_root, mode, site_ids)
         _log_access('user_update', ref_type='user', ref_id=user_id,
                     detail=f'Updated {email} (role={role})')
         flash(f'User {email} updated.', 'success')
         return redirect(url_for('users'))
-    return render_template('user_form.html', user=u, target_is_parent=target_is_parent)
+
+    cur_all = bool(u['all_locations'])
+    return render_template('user_form.html', user=u,
+                           network_scope=network, grantable_sites=grantable,
+                           can_grant_all=network,
+                           scope_mode='all' if cur_all else 'sites',
+                           selected_site_ids=([] if cur_all else _user_scope_site_ids(u)))
 
 
 @app.route('/settings/users/<int:user_id>/deactivate', methods=['POST'])
 @require_login
 @require_admin
 def user_deactivate(user_id):
-    oid = current_org_id()
-    u = q_one('SELECT * FROM users WHERE id = ? AND organization_id = ?',
-              (user_id, oid))
+    u = _manageable_user(user_id)
     if not u:
         abort(404)
     if u['id'] == current_user()['id']:
@@ -4875,11 +5191,10 @@ def user_deactivate(user_id):
 @require_login
 @require_admin
 def user_activate(user_id):
-    oid = current_org_id()
-    if not q_one('SELECT id FROM users WHERE id = ? AND organization_id = ?', (user_id, oid)):
+    u = _manageable_user(user_id)
+    if not u:
         abort(404)
-    q_exec('UPDATE users SET is_active = 1 WHERE id = ? AND organization_id = ?',
-           (user_id, oid))
+    q_exec('UPDATE users SET is_active = 1 WHERE id = ?', (user_id,))
     flash('User reactivated.', 'success')
     return redirect(url_for('users'))
 

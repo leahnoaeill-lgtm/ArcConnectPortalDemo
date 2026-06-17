@@ -8,7 +8,7 @@
 <div class="page pd-soft">
 
   {# ── Identity band: org logo/name (left) · 4 KPI stats (right) — mirrors the patient detail header ── #}
-  {% set _org_type_label = {'parent': 'Main organization', 'location': 'Satellite location', 'internal': 'ABMRC'}.get(current_org.type, '') %}
+  {% set _org_type_label = {'parent': 'Main location', 'location': 'Branch location', 'internal': 'ABMRC'}.get(current_org.type, '') %}
   <div class="idband">
     <div class="idband-left">
       {% if current_org.logo_path %}

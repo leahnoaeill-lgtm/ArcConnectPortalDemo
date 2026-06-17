@@ -10,24 +10,34 @@ A multi-tenant web portal for HME and Home Health organizations to manage patien
 
 Tenant tiers:
 - **ABMRC** — manufacturer / super-admin tenant; view-only oversight, BAA management, onboarding.
-- **Customer main organization** (e.g., "Adapt Respiratory") — group/regional account that rolls up multiple satellite locations.
-- **Customer satellite location** (e.g., "Adapt — Denver") — the operational tier where clinical workflows actually happen.
+- **Customer main location** (e.g., "Adapt Respiratory") — an operating location that ALSO rolls up its branch locations. It is a real site (has its own patients/devices/users) *and* the network root — there is no separate location-less "group" tier.
+- **Customer branch location** (e.g., "Adapt — Denver") — an operational site that rolls up under a main location.
 - **Patient mobile app** — separate codebase already in production; portal exposes a feature-gating endpoint for it.
 
 ## Canonical user-facing terminology (don't drift)
 
 | Schema / code term | User-facing copy |
 |---|---|
-| `organizations.type='parent'` | **Main organization** |
-| `organizations.type='location'` (with `parent_id`) | **Satellite location** (or "satellite") |
+| `organizations.type='parent'` | **Main location** |
+| `organizations.type='location'` (with `parent_id`) | **Branch location** (or "branch") |
 | `organizations.type='internal'` | **ABMRC** (super-admin tenant) |
 | `users.role='admin'` in a parent org | **Group admin** |
-| `users.role='admin'` in a location org | **Satellite-location admin** |
+| `users.role='admin'` in a location org | **Branch-location admin** |
 | Parent rollup view | **Network rollup** |
 
-**Why this matters:** "parent / child" is internal jargon that confuses customer-facing screens. The product team explicitly chose "main organization" and "satellite location" as the canonical wording.
+**Why this matters:** "parent / child" and "headquarters" are jargon that confuses customer-facing screens. The product team explicitly chose **"main location"** and **"branch location"** as the canonical wording (and explicitly rejected "headquarters" and "satellite").
 
 **How to apply:** Use this wording in all user-facing copy (templates, button labels, dropdowns, banners, page titles, help text). **Do not rename schema columns or function identifiers** — `parent_id`, `is_parent_admin()`, `parent_overview` route, `alert_rules_source ∈ {'location','parent'}` etc. all stay; the rename would be an expensive refactor with zero user-visible benefit.
+
+## Location-access model (the main-location / branch model)
+
+A user's location scope is explicit, not implied by `organization_id`:
+- `users.all_locations = 1` → **All locations**: every current and future branch under their main location, plus the main location itself. Admin-only. Dynamic (new branches auto-included).
+- otherwise → the explicit set in **`user_location_access(user_id, location_org_id)`** — a **subset** of sites (several rows) or a **single** site (one row, or a legacy single-site user anchored at their own org).
+
+`accessible_location_ids(user)` is the single source of truth — every scope chokepoint (`scope_org_ids`, `_child_location_ids`, `switch_location`, `current_org_id`, the `/parent` rollup, the location switcher) routes through it. `is_parent_admin()` now means **"a roaming admin"** (manages >1 site) — not "anchored at a parent org," because a main location is itself a selectable site.
+
+**Promotion is in place:** when a standalone single-location org adds its first branch, that org *becomes* the main location in the same row (`type` flips to `'parent'`) — it keeps its patients/devices/users/BAA/login policy, its admins become `all_locations` network admins, and the new branch attaches under it. No synthetic group org, no reparenting.
 
 ## v1 locked decisions (R&D-reviewed — do not relitigate)
 

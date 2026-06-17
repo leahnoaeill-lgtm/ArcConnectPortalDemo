@@ -11,7 +11,7 @@
       <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Customer organizations</a>
       <h1 class="mt-2">{{ org.name }} {{ org_status_badge(org.status) }}</h1>
       <div class="subtitle">
-        {% if is_main %}Main organization{% elif is_satellite %}Satellite location of
+        {% if is_main %}Main location{% elif is_satellite %}Branch location of
           <a href="{{ url_for('super_org_overview', org_id=parent.id) }}">{{ parent.name }}</a>
         {% else %}Single-location organization{% endif %}
         {% if org.city %} · {{ org.city }}{% if org.state %}, {{ org.state }}{% endif %}{% endif %}
@@ -60,17 +60,17 @@
       <div class="value">{{ rollup.alerts or 0 }}</div>
     </div>
     <div class="kpi">
-      <div class="label">Satellite locations</div>
+      <div class="label">Branch locations</div>
       <div class="value">{{ satellites | length }}</div>
     </div>
   </div>
 
   <div class="two-col">
-    <!-- Satellite locations (main organizations only) -->
+    <!-- Branch locations (main locations only) -->
     <div>
       {% if is_main %}
       <div class="card">
-        <div class="card-header"><h2>Satellite locations <span class="muted">— {{ satellites | length }}</span></h2></div>
+        <div class="card-header"><h2>Branch locations <span class="muted">— {{ satellites | length }}</span></h2></div>
         <div class="card-body no-pad">
           {% if satellites %}
           <table class="table table-nowrap">
@@ -105,7 +105,7 @@
           {% else %}
             <div class="empty-state">
               <div class="big">🏢</div>
-              <p>No satellite locations under this organization yet.</p>
+              <p>No branch locations under this organization yet.</p>
             </div>
           {% endif %}
         </div>
@@ -150,7 +150,7 @@
               {% elif org.status in ('new', 'pending', 'ready') %}<span class="status-yellow">Pending</span>
               {% else %}<span class="muted">— none on file —</span>{% endif %}
             </div>
-            {% if is_satellite %}<div class="small muted" style="margin-top:4px;">Inherited from the main organization.</div>{% endif %}
+            {% if is_satellite %}<div class="small muted" style="margin-top:4px;">Inherited from the main location.</div>{% endif %}
           </div>
           <div class="form-group mb-2">
             <label>Account verification</label>

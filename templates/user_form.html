@@ -8,17 +8,11 @@
     <div>
       <a href="{{ url_for('users') }}" class="btn btn-sm">← Back</a>
       <h1 class="mt-2">{{ 'Edit user' if is_edit else 'Add user' }}</h1>
-      {% if not is_edit and target_location %}
-        <div class="subtitle">Will be added to <strong>{{ target_location.name }}</strong></div>
-      {% endif %}
     </div>
   </div>
 
   <div class="card">
     <form method="POST" class="card-body" action="{{ url_for('user_edit', user_id=user.id) if is_edit else url_for('user_new') }}">
-      {% if not is_edit and target_location %}
-        <input type="hidden" name="location" value="{{ target_location.id }}">
-      {% endif %}
       <div class="form-grid">
         <div class="form-group required">
           <label>First name</label>
@@ -35,25 +29,46 @@
         </div>
         <div class="form-group required">
           <label>Role</label>
-          {% if target_is_parent %}
-            {# Main organization (parent) — only Group admins. #}
-            <select name="role" required>
-              <option value="admin" selected>Group admin</option>
-            </select>
-          {% else %}
-            {# Satellite location — admin or user. #}
-            <select name="role" required>
-              <option value="">— select —</option>
-              <option value="admin" {% if is_edit and user.role == 'admin' %}selected{% endif %}>Admin</option>
-              <option value="user"  {% if is_edit and user.role == 'user' %}selected{% endif %}>User</option>
-            </select>
-          {% endif %}
+          <select name="role" id="roleSelect" required>
+            <option value="">— select —</option>
+            <option value="admin" {% if is_edit and user.role == 'admin' %}selected{% endif %}>Admin</option>
+            <option value="user"  {% if is_edit and user.role == 'user' %}selected{% endif %}>User</option>
+          </select>
+          {% if network_scope %}<div class="help" id="roleHelp"></div>{% endif %}
         </div>
         <div class="form-group">
           <label>Phone</label>
           {{ phone_field('phone', (user.phone if is_edit else '')) }}
         </div>
       </div>
+
+      {% if network_scope %}
+      <div class="form-group span-2" style="margin-top: 8px;">
+        <label>Location access</label>
+        <div class="help">Where this person can work. Admins can cover all locations; anyone can be scoped to one or several sites.</div>
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
+          {% if can_grant_all %}
+          <label class="scope-radio" style="display:flex; align-items:flex-start; gap:8px;">
+            <input type="radio" name="scope_mode" value="all" id="scopeAll" {% if scope_mode == 'all' %}checked{% endif %}>
+            <span><strong>All locations</strong><br><span class="small muted">Every current and future site (Admin only).</span></span>
+          </label>
+          {% endif %}
+          <label class="scope-radio" style="display:flex; align-items:flex-start; gap:8px;">
+            <input type="radio" name="scope_mode" value="sites" id="scopeSites" {% if scope_mode != 'all' %}checked{% endif %}>
+            <span><strong>Specific location(s)</strong><br><span class="small muted">Pick one site, or several for a roaming user.</span></span>
+          </label>
+          <div id="siteList" style="margin-left: 26px; display:flex; flex-direction:column; gap:6px;">
+            {% for s in grantable_sites %}
+              <label style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" name="sites" value="{{ s.id }}" {% if s.id in selected_site_ids %}checked{% endif %}>
+                <span>{{ s.name }}{% if s.type == 'parent' %} <span class="badge badge-soft">Main location</span>{% endif %}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
       <div class="form-actions">
         <a href="{{ url_for('users') }}" class="btn">Cancel</a>
         <button type="submit" class="btn btn-primary">{{ 'Save changes' if is_edit else 'Add user' }}</button>
@@ -61,4 +76,32 @@
     </form>
   </div>
 </div>
+
+{% if network_scope %}
+<script>
+(function() {
+  var roleSel = document.getElementById('roleSelect');
+  var roleHelp = document.getElementById('roleHelp');
+  var scopeAll = document.getElementById('scopeAll');
+  var scopeSites = document.getElementById('scopeSites');
+  var siteList = document.getElementById('siteList');
+  var userOpt = roleSel ? roleSel.querySelector('option[value="user"]') : null;
+  function sync() {
+    var allMode = scopeAll && scopeAll.checked;
+    // All-locations is admin-only.
+    if (userOpt) userOpt.disabled = allMode;
+    if (allMode) {
+      if (roleSel.value === 'user') roleSel.value = 'admin';
+      if (roleHelp) roleHelp.textContent = 'All-locations access is Admin only.';
+      siteList.style.opacity = '0.4'; siteList.style.pointerEvents = 'none';
+    } else {
+      if (roleHelp) roleHelp.textContent = '';
+      siteList.style.opacity = ''; siteList.style.pointerEvents = '';
+    }
+  }
+  [scopeAll, scopeSites].forEach(function(el){ if (el) el.addEventListener('change', sync); });
+  sync();
+})();
+</script>
+{% endif %}
 {% endblock %}

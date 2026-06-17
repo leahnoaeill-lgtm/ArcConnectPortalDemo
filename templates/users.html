@@ -28,6 +28,7 @@
             <th>Name</th>
             <th>Email</th>
             <th>Role</th>
+            {% if network_scope %}<th>Location access</th>{% endif %}
             <th>Phone</th>
             <th>Last login</th>
             <th>Status</th>
@@ -45,6 +46,13 @@
               <td style="font-weight: 600;">{{ u.first_name }} {{ u.last_name }}</td>
               <td class="mono">{{ u.email }}</td>
               <td><span class="badge role-{{ u.role }}">{{ u.role | replace('_',' ') | title }}</span></td>
+              {% if network_scope %}
+                <td class="small">
+                  {% if u.scope_label == 'All locations' %}
+                    <span class="badge badge-soft">All locations</span>
+                  {% else %}{{ u.scope_label }}{% endif %}
+                </td>
+              {% endif %}
               <td class="small">{{ u.phone or '—' }}</td>
               <td class="small">{{ u.last_login_at | dt if u.last_login_at else '—' }}</td>
               <td>

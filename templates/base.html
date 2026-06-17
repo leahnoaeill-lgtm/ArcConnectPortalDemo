@@ -91,7 +91,7 @@
       {% set secondary_label = None %}
     {% endif %}
 
-    {% if is_parent_admin %}
+    {% if can_switch_location %}
       <details class="topbar-switcher topbar-loc-switcher">
         <summary>
           <span class="topbar-loc-stack">
@@ -101,13 +101,17 @@
         </summary>
         <div class="dropdown">
           <div class="label">Switch location</div>
-          <a href="{{ url_for('switch_location', org_id=parent_org.id) }}">
-            {% if at_rollup %}✓ {% endif %}All locations
-          </a>
-          <div class="divider"></div>
+          {% if is_parent_admin %}
+            {# Rollup across the whole accessible set — a distinct action from acting
+               in the main location as a single site. #}
+            <a href="{{ url_for('go_rollup') }}">
+              {% if at_rollup %}✓ {% endif %}All locations
+            </a>
+            <div class="divider"></div>
+          {% endif %}
           {% for loc in sibling_locations %}
             <a href="{{ url_for('switch_location', org_id=loc.id) }}">
-              {% if not at_rollup and loc.id == current_org.id %}✓ {% endif %}{{ loc.name }}
+              {% if not at_rollup and current_org and loc.id == current_org.id %}✓ {% endif %}{{ loc.name }}{% if loc.type == 'parent' %} <span class="muted small">(Main location)</span>{% endif %}
             </a>
           {% endfor %}
         </div>

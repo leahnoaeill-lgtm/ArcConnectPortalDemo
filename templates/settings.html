@@ -4,7 +4,7 @@
 {% block title %}Settings · {{ org.name }}{% endblock %}
 {% block body %}
 {% set is_parent_org = org.type == 'parent' %}
-{% set scope_label = 'Main organization' if is_parent_org else 'Satellite location' %}
+{% set scope_label = 'Main location' if is_parent_org else 'Branch location' %}
 <style>
   /* Compact organization-settings layout: cap the width so the forms don't leave
      a wide empty band, let the grid fill its card, and tighten field/card spacing. */
@@ -20,7 +20,21 @@
     <div>
       <h1>Settings</h1>
     </div>
+    {% if account_active and current_user.role == 'admin' and org.type == 'location' and not org.parent_id %}
+      <div class="actions">
+        <a href="{{ url_for('parent_location_new') }}" class="btn btn-primary">+ Add a location</a>
+      </div>
+    {% endif %}
   </div>
+  {% if account_active and current_user.role == 'admin' and org.type == 'location' and not org.parent_id %}
+    <div class="card" style="border-left: 3px solid var(--ac-teal);">
+      <div class="card-body small">
+        Adding a location turns <strong>{{ org.name }}</strong> into your <strong>main location</strong>: it keeps all of
+        its patients, devices, users and BAA, and the new site becomes its first branch. You'll then be able to roll up
+        across every location.
+      </div>
+    </div>
+  {% endif %}
 
   <div class="tabs">
     <a href="{{ url_for('settings') }}" class="active">{{ 'Organization info' if is_parent_org else 'Location info' }}</a>
@@ -153,8 +167,8 @@
   {# ── Parent-only: manage child locations (placed above engagement). ── #}
   <div class="card mt-3">
     <div class="card-header">
-      <h2>Satellite locations</h2>
-      <a href="{{ url_for('parent_location_new') }}" class="btn btn-sm btn-primary">+ Add Satellite location</a>
+      <h2>Branch locations</h2>
+      <a href="{{ url_for('parent_location_new') }}" class="btn btn-sm btn-primary">+ Add Branch location</a>
     </div>
   </div>
   {% endif %}
@@ -164,7 +178,7 @@
     <div class="card-header">
       <h2>Patient engagement features</h2>
       {% if parent_override_on %}
-        <span class="badge status-inactive">Disabled by main organization</span>
+        <span class="badge status-inactive">Disabled by main location</span>
       {% endif %}
     </div>
     <form method="POST" action="{{ url_for('settings_engagement') }}" class="card-body">
@@ -200,8 +214,8 @@
       </div>
       {% if parent_override_on %}
         <div class="flash info mt-2" style="margin-bottom:0;">
-          The main organization has disabled this feature. Contact your group
-          administrator to turn it on before changing this satellite location's setting.
+          The main location has disabled this feature. Contact your group
+          administrator to turn it on before changing this branch location's setting.
         </div>
       {% endif %}
       <div class="form-actions">
@@ -223,7 +237,7 @@
         {% if is_parent_admin %}
           As {{ org.name }}'s group admin, your selection applies to the network rollup view.
         {% else %}
-          Your selection applies to this satellite location's heat map.
+          Your selection applies to this branch location's heat map.
         {% endif %}
       </div>
       <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 10px 24px;">
@@ -254,9 +268,9 @@
           <input type="radio" name="alert_rules_source" value="location"
                  {% if org.alert_rules_source != 'parent' %}checked{% endif %}>
           <div>
-            <strong>Each satellite location manages its own alert rules</strong>
+            <strong>Each branch location manages its own alert rules</strong>
             <div class="help">
-              Satellite-location admins can add, edit, and deactivate their own
+              Branch-location admins can add, edit, and deactivate their own
               rules under Settings → Alert rules at their location.
             </div>
           </div>
@@ -267,10 +281,10 @@
           <input type="radio" name="alert_rules_source" value="parent"
                  {% if org.alert_rules_source == 'parent' %}checked{% endif %}>
           <div>
-            <strong>Main organization manages alert rules for all satellite locations</strong>
+            <strong>Main location manages alert rules for all branch locations</strong>
             <div class="help">
-              Only the group admin can change alert rules. Satellite-location
-              admins see the main organization's rules as read-only and cannot
+              Only the group admin can change alert rules. Branch-location
+              admins see the main location's rules as read-only and cannot
               add or modify them.
             </div>
           </div>

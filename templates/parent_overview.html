@@ -17,7 +17,7 @@
       <a class="idband-stat" href="#locations">
         <div class="v">{{ locations|length }}</div>
         <div class="l">Locations</div>
-        <div class="sub">satellites</div>
+        <div class="sub">branches</div>
       </a>
       <a class="idband-stat" href="{{ url_for('parent_patients') }}">
         <div class="v">{{ totals.patients }}</div>
@@ -39,7 +39,7 @@
 
   {% if account_active %}
   <div class="text-right" style="margin: -8px 0 14px;">
-    <a href="{{ url_for('parent_location_new') }}" class="btn btn-primary">+ Add Satellite location</a>
+    <a href="{{ url_for('parent_location_new') }}" class="btn btn-primary">+ Add Branch location</a>
   </div>
   {% endif %}
 
@@ -192,7 +192,7 @@
 
   <div class="flex-between mb-2" id="locations">
     <h2 style="margin: 0;">Locations</h2>
-    {% if account_active %}<a href="{{ url_for('parent_location_new') }}" class="btn btn-sm btn-primary">+ Add Satellite location</a>{% endif %}
+    {% if account_active %}<a href="{{ url_for('parent_location_new') }}" class="btn btn-sm btn-primary">+ Add Branch location</a>{% endif %}
   </div>
   <div class="location-grid">
     {% for loc in locations %}

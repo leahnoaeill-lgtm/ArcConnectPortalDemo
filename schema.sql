@@ -69,6 +69,13 @@ CREATE TABLE IF NOT EXISTS users (
     -- user = everyone else, undifferentiated. Granular roles (clinician/billing/etc.)
     -- deferred to Release 2 (see URS §3.3 Won't-do).
     role TEXT NOT NULL CHECK(role IN ('admin', 'user', 'super_admin')),
+    -- Location-access scope (see user_location_access). all_locations=1 means
+    -- network-wide (every current AND future satellite under the user's parent org)
+    -- and is admin-only. all_locations=0 means the user is scoped to the explicit
+    -- set of satellites in user_location_access (a subset, or a single site). For a
+    -- standalone single-location org with no parent, neither applies and the user is
+    -- simply scoped to organization_id.
+    all_locations INTEGER NOT NULL DEFAULT 0,
     phone TEXT,
     is_active INTEGER DEFAULT 1,
     last_login_at TIMESTAMP,
@@ -79,6 +86,18 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_org ON users(organization_id);
+
+-- Explicit per-user location access. Each row grants the user the right to act in
+-- one satellite location. Used when users.all_locations=0 to express a SUBSET of
+-- sites (multiple rows) or a SINGLE site (one row). Ignored when all_locations=1.
+-- organization_id on the user remains the network anchor (the parent/main org for
+-- roaming users; the location itself for a legacy single-site user with no rows).
+CREATE TABLE IF NOT EXISTS user_location_access (
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    location_org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, location_org_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_loc_access_user ON user_location_access(user_id);
 
 -- Tasks (assigned follow-up work, optionally spawned from an alert)
 CREATE TABLE IF NOT EXISTS tasks (

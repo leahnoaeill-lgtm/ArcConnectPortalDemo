@@ -108,7 +108,7 @@
                 <div class="small muted">
                   {% if o.city %}{{ o.city }}{% if o.state %}, {{ o.state }}{% endif %}{% endif %}
                   {% if o.satellite_count and o.satellite_count > 0 %}
-                    <span class="badge badge-soft" style="margin-left:6px;">+{{ o.satellite_count }} satellite{{ '' if o.satellite_count == 1 else 's' }}</span>
+                    <span class="badge badge-soft" style="margin-left:6px;">+{{ o.satellite_count }} branch{{ '' if o.satellite_count == 1 else 'es' }}</span>
                   {% endif %}
                 </div>
               </td>

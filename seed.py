@@ -231,6 +231,31 @@ def seed():
                  VALUES (?, ?, ?, ?, 'admin', ?)""",
               (bigsky_id, 'admin@bigskyhh.com', 'Reed', 'Calloway', '406-555-0190'))
 
+    # ── Location-access scope (explicit model) ───────────────────────────
+    # Group admins (admin anchored at a parent/main org) manage the whole network
+    # — every current and future satellite.
+    c.execute("""UPDATE users SET all_locations = 1
+                 WHERE role = 'admin'
+                   AND organization_id IN (SELECT id FROM organizations WHERE type = 'parent')""")
+    # Demo SUBSET admin: a regional manager anchored at the Adapt parent who covers
+    # Denver + Boulder only (not Phoenix). Exercises the subset path for an admin.
+    c.execute("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, all_locations)
+                 VALUES (?, ?, ?, ?, 'admin', ?, 0)""",
+              (adap_id, 'regional.co@adapt.com', 'Nina', 'Brooks', '303-555-0150'))
+    nina_id = c.lastrowid
+    for _loc in (adap_denver, adap_boulder):
+        c.execute("INSERT INTO user_location_access (user_id, location_org_id) VALUES (?, ?)",
+                  (nina_id, _loc))
+    # Demo SUBSET clinician (non-admin): a float RT covering Denver + Phoenix.
+    # Exercises the roaming-but-not-admin path.
+    c.execute("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, all_locations)
+                 VALUES (?, ?, ?, ?, 'user', ?, 0)""",
+              (adap_id, 'float.rt@adapt.com', 'Owen', 'Diaz', '303-555-0151'))
+    owen_id = c.lastrowid
+    for _loc in (adap_denver, adap_phoenix):
+        c.execute("INSERT INTO user_location_access (user_id, location_org_id) VALUES (?, ?)",
+                  (owen_id, _loc))
+
     # ── Patients (Adapt Denver — the main demo location) ─────────────
     # Seed patterned after the PPT clickable demo
     # target_adherence is the DESIRED 30-day adherence — we'll generate sessions
