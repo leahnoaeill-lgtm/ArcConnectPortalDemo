@@ -200,6 +200,23 @@ def _ensure_org_status_rejected():
         conn.close()
 
 
+def _ensure_invitation_user_fields():
+    """Lightweight migration: add the role/phone/scope columns to org_invitations so
+    invitations can carry the user identity to materialize on acceptance. Idempotent."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(org_invitations)").fetchall()}
+        for name, decl in [('role', 'TEXT'), ('phone', 'TEXT'),
+                           ('all_locations', 'INTEGER DEFAULT 0'), ('location_ids', 'TEXT')]:
+            if name not in cols:
+                conn.execute(f"ALTER TABLE org_invitations ADD COLUMN {name} {decl}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 _ensure_heatmap_schema()
 _ensure_org_verification_columns()
 _ensure_signup_request_columns()
@@ -207,6 +224,7 @@ _ensure_org_country_column()
 _ensure_org_login_columns()
 _ensure_user_location_access()
 _ensure_org_status_rejected()
+_ensure_invitation_user_fields()
 
 
 # ── Optional HTTP Basic Auth gate (set AUTH_USERNAME + AUTH_PASSWORD env vars to enable) ──
@@ -2213,7 +2231,7 @@ def super_org_update(org_id):
     # Pending group-admin invitations — the submitter who self-registered is the group
     # admin of record from the moment the org is created as 'new', before they accept
     # their portal invite, so surface (and allow editing of) the open invitation here.
-    pending_invites = q_all("""SELECT id, first_name, last_name, email, invited_at, expires_at
+    pending_invites = q_all("""SELECT id, first_name, last_name, email, token, invited_at, expires_at
                                FROM org_invitations
                                WHERE organization_id = ? AND accepted_at IS NULL
                                ORDER BY invited_at DESC, id DESC""", (org['id'],))
@@ -5228,6 +5246,56 @@ def user_invite_revoke(invite_id):
     return redirect(url_for('users'))
 
 
+def _accept_invitation(inv):
+    """Materialize an org invitation into an active user — applying the role + location
+    scope it carries — and mark it accepted. Returns the new user id, or None if the
+    email already belongs to a user. Legacy admin invites (no role/scope) become a
+    group admin (parent org) or a single-site branch admin (location org)."""
+    if q_one('SELECT id FROM users WHERE email = ?', (inv['email'],)):
+        return None
+    keys = inv.keys()
+    role = (inv['role'] if 'role' in keys and inv['role'] else 'admin')
+    phone = inv['phone'] if 'phone' in keys else None
+    q_exec("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, is_active)
+              VALUES (?, ?, ?, ?, ?, ?, 1)""",
+           (inv['organization_id'], inv['email'], inv['first_name'], inv['last_name'], role, phone))
+    uid = q_one('SELECT last_insert_rowid() AS id')['id']
+    org = q_one('SELECT type, parent_id FROM organizations WHERE id = ?', (inv['organization_id'],))
+    root = (org['parent_id'] or inv['organization_id']) if org else inv['organization_id']
+    all_loc = inv['all_locations'] if 'all_locations' in keys else 0
+    loc_csv = inv['location_ids'] if 'location_ids' in keys else None
+    if all_loc:
+        _apply_user_scope(uid, root, 'all', [])
+    elif loc_csv:
+        ids = [int(x) for x in str(loc_csv).split(',') if x.strip().isdigit()]
+        if ids:
+            _apply_user_scope(uid, root, 'sites', ids)
+    elif org and org['type'] == 'parent' and role == 'admin':
+        q_exec('UPDATE users SET all_locations = 1 WHERE id = ?', (uid,))   # legacy group admin
+    q_exec("""UPDATE org_invitations SET accepted_at = CURRENT_TIMESTAMP, accepted_user_id = ?
+              WHERE id = ?""", (uid, inv['id']))
+    return uid
+
+
+@app.route('/accept/<token>', methods=['GET', 'POST'])
+def accept_invite(token):
+    """Public invitation-acceptance page. In production this is where the invitee sets
+    up passwordless auth; in this prototype, accepting materializes the user account so
+    they appear in the sign-in picker."""
+    inv = q_one("""SELECT i.*, o.name AS org_name
+                   FROM org_invitations i JOIN organizations o ON o.id = i.organization_id
+                   WHERE i.token = ?""", (token,))
+    if not inv or inv['accepted_at']:
+        return render_template('accept_invite.html', inv=None, reason='invalid')
+    if q_one('SELECT id FROM users WHERE email = ?', (inv['email'],)):
+        return render_template('accept_invite.html', inv=None, reason='exists')
+    if request.method == 'POST':
+        _accept_invitation(inv)
+        flash('Invitation accepted — you can now sign in.', 'success')
+        return redirect(url_for('login'))
+    return render_template('accept_invite.html', inv=inv, reason=None)
+
+
 @app.route('/settings/users/new', methods=['GET', 'POST'])
 @require_login
 @require_admin
@@ -5256,9 +5324,12 @@ def user_new():
         if q_one('SELECT id FROM users WHERE email = ?', (email,)):
             flash('A user with that email already exists.', 'error')
             return redirect(url_for('user_new'))
+        if q_one('SELECT id FROM org_invitations WHERE email = ? AND accepted_at IS NULL', (email,)):
+            flash('There is already a pending invitation for that email.', 'error')
+            return redirect(url_for('user_new'))
 
         if network:
-            # Scope selector drives the anchor + access set.
+            # Scope selector drives the access set granted on acceptance.
             mode = 'all' if request.form.get('scope_mode') == 'all' else 'sites'
             site_ids = [int(s) for s in request.form.getlist('sites') if s.isdigit()]
             site_ids = [s for s in site_ids if s in grantable_ids]   # never beyond grant
@@ -5271,26 +5342,37 @@ def user_new():
                 flash('All-locations access requires the Admin role.' if mode == 'all'
                       else 'Invalid role.', 'error')
                 return redirect(url_for('user_new'))
-            q_exec("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, is_active)
-                      VALUES (?, ?, ?, ?, ?, ?, 1)""",
-                   (parent_root, email, first, last, role, phone))
-            new_uid = q_one('SELECT last_insert_rowid() AS id')['id']
-            _apply_user_scope(new_uid, parent_root, mode, site_ids)
+            invite_org = parent_root
+            all_loc = 1 if mode == 'all' else 0
+            loc_csv = '' if mode == 'all' else ','.join(str(s) for s in site_ids)
             scope_desc = 'all locations' if mode == 'all' else f'{len(site_ids)} location(s)'
         else:
             # Site admin → a single-site user at their current acting location.
             if role not in ('admin', 'user'):
                 flash('Invalid role.', 'error')
                 return redirect(url_for('user_new'))
-            target_org_id = current_org_id()
-            q_exec("""INSERT INTO users (organization_id, email, first_name, last_name, role, phone, is_active)
-                      VALUES (?, ?, ?, ?, ?, ?, 1)""",
-                   (target_org_id, email, first, last, role, phone))
-            new_uid = q_one('SELECT last_insert_rowid() AS id')['id']
-            scope_desc = f'org {target_org_id}'
-        _log_access('user_create', ref_type='user', ref_id=new_uid,
-                    detail=f'Created {email} ({role}, {scope_desc})')
-        flash(f'User {email} added.', 'success')
+            invite_org = current_org_id()
+            all_loc, loc_csv = 0, str(invite_org)
+            scope_desc = 'this location'
+
+        # Invitation-based: create a pending invitation that becomes a user account
+        # only when the invitee accepts it (carrying the role + scope chosen here).
+        import secrets
+        from datetime import timedelta as _td
+        token = secrets.token_urlsafe(24)
+        expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
+        q_exec("""INSERT INTO org_invitations
+                  (organization_id, email, first_name, last_name, token, invited_by_user_id,
+                   expires_at, role, phone, all_locations, location_ids)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (invite_org, email, first, last, token, mgr['id'], expires_at,
+                role, phone, all_loc, loc_csv))
+        new_id = q_one('SELECT last_insert_rowid() AS id')['id']
+        _log_access('user_create', ref_type='organization', ref_id=invite_org,
+                    detail=f'Invited {email} ({role}, {scope_desc})')
+        print(f'[INVITE NOTIFY] portal invite to {email} — {role}, {scope_desc}; '
+              f'accept link: /accept/{token}', flush=True)
+        flash(f'Invitation sent to {email}.', 'success')
         return redirect(url_for('users'))
 
     return render_template('user_form.html', user=None,

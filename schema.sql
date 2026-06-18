@@ -615,7 +615,13 @@ CREATE TABLE IF NOT EXISTS org_invitations (
     invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP NOT NULL,
     accepted_at TIMESTAMP,
-    accepted_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+    accepted_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    -- Role + location scope to grant when the invitation is accepted (invitation-based
+    -- user creation). role NULL = a legacy admin invite (group / branch admin).
+    role TEXT,
+    phone TEXT,
+    all_locations INTEGER DEFAULT 0,
+    location_ids TEXT          -- CSV of accessible location org ids (subset / single)
 );
 CREATE INDEX IF NOT EXISTS idx_invite_org ON org_invitations(organization_id, accepted_at);
 

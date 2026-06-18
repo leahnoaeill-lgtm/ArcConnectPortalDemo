@@ -288,6 +288,7 @@
           {# Resend / Revoke are separate POST actions, so they live in their own
              forms beside the edit form (HTML forms can't nest). #}
           <div class="form-actions" style="gap:8px; border-top:1px solid var(--ac-slate-light); padding-top:10px; margin-top:6px;">
+            <a href="{{ url_for('accept_invite', token=inv.token) }}" class="btn" target="_blank">Accept (demo)</a>
             <form method="POST" action="{{ url_for('super_org_invite_resend', org_id=org.id, invite_id=inv.id) }}" style="display:inline;">
               <button type="submit" class="btn">Resend invite</button>
             </form>

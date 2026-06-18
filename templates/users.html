@@ -108,6 +108,7 @@
               {% if network_scope %}<td class="small">{{ inv.org_name }}</td>{% endif %}
               <td>
                 <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                  <a href="{{ url_for('accept_invite', token=inv.token) }}" class="btn btn-sm" target="_blank">Accept (demo)</a>
                   <form method="POST" action="{{ url_for('user_invite_resend', invite_id=inv.id) }}" style="display:inline;">
                     <button type="submit" class="btn btn-sm">Resend</button>
                   </form>

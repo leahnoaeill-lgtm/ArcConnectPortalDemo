@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% from "_phone.html" import phone_field %}
 {% set is_edit = user is not none %}
-{% block title %}{{ 'Edit user' if is_edit else 'Add user' }} · Arc Connect Portal{% endblock %}
+{% block title %}{{ 'Edit user' if is_edit else 'Invite user' }} · Arc Connect Portal{% endblock %}
 {% block body %}
 <div class="page">
   <div class="page-header">
     <div>
       <a href="{{ url_for('users') }}" class="btn btn-sm">← Back</a>
-      <h1 class="mt-2">{{ 'Edit user' if is_edit else 'Add user' }}</h1>
+      <h1 class="mt-2">{{ 'Edit user' if is_edit else 'Invite user' }}</h1>
     </div>
   </div>
 
@@ -71,7 +71,7 @@
 
       <div class="form-actions">
         <a href="{{ url_for('users') }}" class="btn">Cancel</a>
-        <button type="submit" class="btn btn-primary">{{ 'Save changes' if is_edit else 'Add user' }}</button>
+        <button type="submit" class="btn btn-primary">{{ 'Save changes' if is_edit else 'Send invitation' }}</button>
       </div>
     </form>
   </div>
