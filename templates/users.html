@@ -86,5 +86,43 @@
       </table>
     </div>
   </div>
+
+  {% if pending_invites %}
+  <div class="card">
+    <div class="card-header"><h2>Pending invitations <span class="badge status-yellow">Invited</span></h2></div>
+    <div class="card-body no-pad">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            {% if network_scope %}<th>Location</th>{% endif %}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for inv in pending_invites %}
+            <tr>
+              <td style="font-weight: 600;">{{ inv.first_name }} {{ inv.last_name }}</td>
+              <td class="mono">{{ inv.email }}</td>
+              {% if network_scope %}<td class="small">{{ inv.org_name }}</td>{% endif %}
+              <td>
+                <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                  <form method="POST" action="{{ url_for('user_invite_resend', invite_id=inv.id) }}" style="display:inline;">
+                    <button type="submit" class="btn btn-sm">Resend</button>
+                  </form>
+                  <form method="POST" action="{{ url_for('user_invite_revoke', invite_id=inv.id) }}" style="display:inline;"
+                        onsubmit="return confirm('Revoke the invitation to {{ inv.email }}?');">
+                    <button type="submit" class="btn btn-sm btn-danger">Revoke</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

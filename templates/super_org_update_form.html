@@ -264,9 +264,6 @@
     <div class="card-body" style="border-top: 1px solid var(--ac-slate-light);">
       <h3 class="mt-0 mb-2">Pending invitation{{ '' if pending_invites | length == 1 else 's' }}
         <span class="badge status-yellow">Invited</span></h3>
-      <p class="small muted mb-2">The submitter who self-registered is the group admin of record
-        while this organization is onboarding. Edit their details below before they accept the
-        portal invite — they become an active account on acceptance.</p>
       {% for inv in pending_invites %}
         <div class="mb-3" style="border:1px solid var(--ac-slate-light); border-radius:8px; padding:12px;">
           <form method="POST" action="{{ url_for('super_org_invite_update', org_id=org.id, invite_id=inv.id) }}">
@@ -285,7 +282,7 @@
               </div>
             </div>
             <div class="form-actions">
-              <button type="submit" class="btn btn-primary">Save group admin</button>
+              <button type="submit" class="btn btn-primary">Save changes</button>
             </div>
           </form>
           {# Resend / Revoke are separate POST actions, so they live in their own

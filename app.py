@@ -5136,6 +5136,20 @@ def _manageable_user(user_id):
     return target if target['organization_id'] == current_org_id() else None
 
 
+def _manageable_invite(invite_id):
+    """A still-open invitation the current admin may manage, else None. A network
+    admin manages invitations anywhere in their org family; any other admin manages
+    invitations at their current acting site."""
+    inv = q_one("SELECT * FROM org_invitations WHERE id = ? AND accepted_at IS NULL",
+                (invite_id,))
+    if not inv:
+        return None
+    mgr = current_user()
+    if _is_network_admin(mgr):
+        return inv if inv['organization_id'] in _network_family_ids(mgr) else None
+    return inv if inv['organization_id'] == current_org_id() else None
+
+
 @app.route('/settings/users')
 @require_login
 @require_admin
@@ -5153,16 +5167,65 @@ def users():
                             OR a.location_org_id IN ({ph})
                          ORDER BY us.is_active DESC, us.role, us.last_name""",
                      (*fam, *fam))
+        pend = q_all(f"""SELECT i.*, o.name AS org_name FROM org_invitations i
+                         JOIN organizations o ON o.id = i.organization_id
+                         WHERE i.accepted_at IS NULL AND i.organization_id IN ({ph})
+                         ORDER BY i.invited_at DESC""", tuple(fam))
     else:
-        # Single-site / site admin → users at their current acting site.
+        # Single-site / site admin → users + open invitations at their acting site.
+        oid = current_org_id()
         rows = q_all("""SELECT * FROM users WHERE organization_id = ?
-                        ORDER BY is_active DESC, role, last_name""", (current_org_id(),))
+                        ORDER BY is_active DESC, role, last_name""", (oid,))
+        pend = q_all("""SELECT i.*, o.name AS org_name FROM org_invitations i
+                        JOIN organizations o ON o.id = i.organization_id
+                        WHERE i.accepted_at IS NULL AND i.organization_id = ?
+                        ORDER BY i.invited_at DESC""", (oid,))
     user_rows = []
     for r in rows:
         d = dict(r)
         d['scope_label'] = _user_scope_label(r)
         user_rows.append(d)
-    return render_template('users.html', users=user_rows, network_scope=network)
+    return render_template('users.html', users=user_rows, network_scope=network,
+                           pending_invites=pend)
+
+
+@app.route('/settings/users/invitations/<int:invite_id>/resend', methods=['POST'])
+@require_login
+@require_admin
+def user_invite_resend(invite_id):
+    """Re-send a pending invitation — fresh token + new 14-day expiry, re-notify."""
+    inv = _manageable_invite(invite_id)
+    if not inv:
+        flash('That invitation no longer exists or has been accepted.', 'error')
+        return redirect(url_for('users'))
+    import secrets
+    from datetime import timedelta as _td
+    token = secrets.token_urlsafe(24)
+    expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
+    q_exec("""UPDATE org_invitations
+              SET token = ?, expires_at = ?, invited_at = CURRENT_TIMESTAMP
+              WHERE id = ?""", (token, expires_at, invite_id))
+    _log_access('user_update', ref_type='organization', ref_id=inv['organization_id'],
+                detail=f'Resent invitation {invite_id} to {inv["email"]}')
+    print(f'[INVITE NOTIFY] invitation resent to {inv["email"]} — fresh 14-day token.', flush=True)
+    flash(f'Invitation resent to {inv["email"]}.', 'success')
+    return redirect(url_for('users'))
+
+
+@app.route('/settings/users/invitations/<int:invite_id>/revoke', methods=['POST'])
+@require_login
+@require_admin
+def user_invite_revoke(invite_id):
+    """Revoke a pending invitation — the link can no longer be accepted."""
+    inv = _manageable_invite(invite_id)
+    if not inv:
+        flash('That invitation no longer exists or has been accepted.', 'error')
+        return redirect(url_for('users'))
+    q_exec('DELETE FROM org_invitations WHERE id = ?', (invite_id,))
+    _log_access('user_update', ref_type='organization', ref_id=inv['organization_id'],
+                detail=f'Revoked invitation {invite_id} ({inv["email"]})')
+    flash(f'Invitation to {inv["email"]} revoked.', 'success')
+    return redirect(url_for('users'))
 
 
 @app.route('/settings/users/new', methods=['GET', 'POST'])
