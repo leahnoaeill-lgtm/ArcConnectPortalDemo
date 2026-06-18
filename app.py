@@ -519,7 +519,7 @@ SUPER_ADMIN_WRITE_ALLOWLIST = {
     'login', 'logout', 'super_org_new', 'super_org_suspend', 'super_org_activate',
     'super_org_reject', 'super_org_reinstate',
     'super_baa_new', 'super_user_invite', 'super_org_group_admin_new',
-    'super_org_invite_update',
+    'super_org_invite_update', 'super_org_invite_resend', 'super_org_invite_revoke',
     'super_set_acting_org', 'super_clear_acting_org',
     'super_org_login_update', 'super_org_update',
     # REQ-3.9 self-service signup review actions
@@ -2291,6 +2291,57 @@ def super_org_invite_update(org_id, invite_id):
                 detail=f'Super admin updated pending group-admin invite {invite_id} '
                        f'for org {org_id} → {email}')
     flash(f'Group admin invitation updated to {first} {last} ({email}).', 'success')
+    return redirect(url_for('super_org_update', org_id=org_id))
+
+
+def _pending_invite(org_id, invite_id):
+    """A still-open (un-accepted) invitation for this org, or None."""
+    return q_one("""SELECT * FROM org_invitations
+                    WHERE id = ? AND organization_id = ? AND accepted_at IS NULL""",
+                 (invite_id, org_id))
+
+
+@app.route('/super/orgs/<int:org_id>/invitations/<int:invite_id>/resend', methods=['POST'])
+@require_login
+def super_org_invite_resend(org_id, invite_id):
+    """Re-send a pending group-admin invitation — issues a fresh token and a new
+    14-day expiry, then re-dispatches the notification."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    inv = _pending_invite(org_id, invite_id)
+    if not inv:
+        flash('That group-admin invitation no longer exists or has been accepted.', 'error')
+        return redirect(url_for('super_org_update', org_id=org_id))
+    import secrets
+    from datetime import timedelta as _td
+    token = secrets.token_urlsafe(24)
+    expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
+    q_exec("""UPDATE org_invitations
+              SET token = ?, expires_at = ?, invited_at = CURRENT_TIMESTAMP
+              WHERE id = ?""", (token, expires_at, invite_id))
+    _log_access('location_update', ref_type='organization', ref_id=org_id,
+                detail=f'Super admin resent group-admin invite {invite_id} to {inv["email"]}')
+    print(f'[INVITE NOTIFY] group-admin invite resent to {inv["email"]} — '
+          f'fresh 14-day token issued. org_id={org_id}', flush=True)
+    flash(f'Invitation resent to {inv["email"]}.', 'success')
+    return redirect(url_for('super_org_update', org_id=org_id))
+
+
+@app.route('/super/orgs/<int:org_id>/invitations/<int:invite_id>/revoke', methods=['POST'])
+@require_login
+def super_org_invite_revoke(org_id, invite_id):
+    """Revoke a pending group-admin invitation — the link can no longer be accepted.
+    Leaves the org with no group admin of record until a new one is invited/added."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    inv = _pending_invite(org_id, invite_id)
+    if not inv:
+        flash('That group-admin invitation no longer exists or has been accepted.', 'error')
+        return redirect(url_for('super_org_update', org_id=org_id))
+    q_exec('DELETE FROM org_invitations WHERE id = ?', (invite_id,))
+    _log_access('location_update', ref_type='organization', ref_id=org_id,
+                detail=f'Super admin revoked group-admin invite {invite_id} ({inv["email"]})')
+    flash(f'Invitation to {inv["email"]} revoked.', 'success')
     return redirect(url_for('super_org_update', org_id=org_id))
 
 

@@ -268,26 +268,38 @@
         while this organization is onboarding. Edit their details below before they accept the
         portal invite — they become an active account on acceptance.</p>
       {% for inv in pending_invites %}
-        <form method="POST" action="{{ url_for('super_org_invite_update', org_id=org.id, invite_id=inv.id) }}"
-              class="mb-3" style="border:1px solid var(--ac-slate-light); border-radius:8px; padding:12px;">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>First name</label>
-              <input type="text" name="first_name" value="{{ inv.first_name or '' }}" required>
+        <div class="mb-3" style="border:1px solid var(--ac-slate-light); border-radius:8px; padding:12px;">
+          <form method="POST" action="{{ url_for('super_org_invite_update', org_id=org.id, invite_id=inv.id) }}">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>First name</label>
+                <input type="text" name="first_name" value="{{ inv.first_name or '' }}" required>
+              </div>
+              <div class="form-group">
+                <label>Last name</label>
+                <input type="text" name="last_name" value="{{ inv.last_name or '' }}" required>
+              </div>
+              <div class="form-group span-2">
+                <label>Email</label>
+                <input type="email" name="email" value="{{ inv.email or '' }}" required>
+              </div>
             </div>
-            <div class="form-group">
-              <label>Last name</label>
-              <input type="text" name="last_name" value="{{ inv.last_name or '' }}" required>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Save group admin</button>
             </div>
-            <div class="form-group span-2">
-              <label>Email</label>
-              <input type="email" name="email" value="{{ inv.email or '' }}" required>
-            </div>
+          </form>
+          {# Resend / Revoke are separate POST actions, so they live in their own
+             forms beside the edit form (HTML forms can't nest). #}
+          <div class="form-actions" style="gap:8px; border-top:1px solid var(--ac-slate-light); padding-top:10px; margin-top:6px;">
+            <form method="POST" action="{{ url_for('super_org_invite_resend', org_id=org.id, invite_id=inv.id) }}" style="display:inline;">
+              <button type="submit" class="btn">Resend invite</button>
+            </form>
+            <form method="POST" action="{{ url_for('super_org_invite_revoke', org_id=org.id, invite_id=inv.id) }}" style="display:inline;"
+                  onsubmit="return confirm('Revoke the invitation to {{ inv.email }}? They will no longer be able to accept it.');">
+              <button type="submit" class="btn btn-danger">Revoke</button>
+            </form>
           </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Save group admin</button>
-          </div>
-        </form>
+        </div>
       {% endfor %}
     </div>
     {% endif %}
