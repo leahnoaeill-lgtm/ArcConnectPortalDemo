@@ -2107,6 +2107,11 @@ body.super-readonly .super-admin-banner button {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  box-sizing: border-box;
+  /* Pin a common height + a sensible minimum width so buttons read as one family.
+     Width still grows to fit longer labels; short labels no longer render tiny. */
+  min-height: 34px;
+  min-width: 84px;
   padding: 8px 16px;
   border: 1px solid var(--ac-border-strong);
   border-radius: 8px;
@@ -2275,6 +2280,8 @@ body.super-readonly .super-admin-banner button {
 .btn-sm {
   padding: 4px 10px;
   font-size: 11px;
+  min-height: 26px;
+  min-width: 60px;
 }
 
 .btn-link {
