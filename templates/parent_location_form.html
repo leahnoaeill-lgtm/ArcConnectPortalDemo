@@ -81,9 +81,9 @@
           <label>ZIP code</label>
           <input type="text" name="zip" required pattern="[0-9]{5}" maxlength="5" inputmode="numeric" placeholder="5 digits" value="{{ location.zip or '' if is_edit else '' }}">
         </div>
-        <div class="form-group required">
+        <div class="form-group">
           <label>Phone</label>
-          {{ phone_field('phone', (location.phone if is_edit else ''), required=True) }}
+          {{ phone_field('phone', (location.phone if is_edit else '')) }}
         </div>
         <div class="form-group required span-2">
           <label>NPI Number</label>

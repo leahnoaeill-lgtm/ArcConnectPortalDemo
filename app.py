@@ -1976,11 +1976,12 @@ def super_org_activate(org_id):
     org = q_one('SELECT * FROM organizations WHERE id = ?', (org_id,))
     if not org:
         abort(404)
-    # All the fields that are optional at creation become required to activate.
+    # All the fields that are optional at creation become required to activate —
+    # except phone, which is never required for an organization.
     missing = []
     for field, label in (('name', 'organization name'), ('address_line1', 'address'),
                          ('city', 'city'), ('state', 'state'), ('zip', 'ZIP'),
-                         ('phone', 'phone'), ('npi', 'NPI')):
+                         ('npi', 'NPI')):
         if not org[field]:
             missing.append(label)
     has_invite = q_one(
