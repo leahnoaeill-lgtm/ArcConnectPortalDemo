@@ -1,25 +1,33 @@
 {# User Login policy — shared editable fields + read-only summary.
-   login_mode: 'domain' (restrict to org email domain) or 'sso' (allow providers). #}
+   Policy: ADMINS always sign in with the organization email domain. The login_mode
+   below governs only how regular USERS sign in — 'domain' (org email domain) or
+   'sso' (allowed providers). #}
 
 {% macro login_policy_fields(org) %}
 {% set mode = (org.login_mode or 'sso') if org else 'sso' %}
 {% set provs = org.sso_providers.split(',') if (org and org.sso_providers) else ['google', 'facebook', 'apple'] %}
 <div class="login-policy">
   <div class="form-group span-2">
-    <label>User login method</label>
+    <div class="help" style="margin-bottom:8px;">
+      <strong>Administrators always sign in with your organization's email domain.</strong>
+      The setting below controls how your regular <strong>users</strong> sign in.
+    </div>
+  </div>
+  <div class="form-group span-2">
+    <label>User sign-in method</label>
     <label class="lp-radio" style="display:flex; gap:8px; align-items:center; font-weight:400;">
       <input type="radio" name="login_mode" value="domain" {{ 'checked' if mode != 'sso' else '' }}>
       Organization email domain only
     </label>
     <label class="lp-radio" style="display:flex; gap:8px; align-items:center; font-weight:400; margin-top:4px;">
       <input type="radio" name="login_mode" value="sso" {{ 'checked' if mode == 'sso' else '' }}>
-      Single Sign-On Allowed
+      Single Sign-On allowed (Google / Facebook / Apple)
     </label>
   </div>
   <div class="form-group span-2 lp-domain">
-    <label>Allowed email domain</label>
+    <label>Organization email domain</label>
     <input type="text" name="login_domain" value="{{ (org.login_domain or '') if org else '' }}" placeholder="e.g. adapt.com">
-    <div class="help">Only users with an email at this domain may sign in.</div>
+    <div class="help">Used for all admin sign-ins, and for user sign-ins when "Organization email domain only" is selected.</div>
   </div>
   <div class="form-group span-2 lp-sso">
     <label>Single Sign-On providers</label>
@@ -28,17 +36,18 @@
       <label class="lp-check" style="display:flex; gap:6px; align-items:center; font-weight:400;"><input type="checkbox" name="sso_facebook" {{ 'checked' if 'facebook' in provs else '' }}> Facebook</label>
       <label class="lp-check" style="display:flex; gap:6px; align-items:center; font-weight:400;"><input type="checkbox" name="sso_apple" {{ 'checked' if 'apple' in provs else '' }}> Apple</label>
     </div>
-    <div class="help">Users sign in with the selected provider(s).</div>
+    <div class="help">Regular users sign in with the selected provider(s).</div>
   </div>
 </div>
 <script>
 (function(){
   document.querySelectorAll('.login-policy').forEach(function(box){
-    var dom = box.querySelector('.lp-domain'), sso = box.querySelector('.lp-sso');
+    var sso = box.querySelector('.lp-sso');
     function sync(){
       var checked = box.querySelector('input[name="login_mode"]:checked');
       var isSso = checked && checked.value === 'sso';
-      if (dom) dom.style.opacity = isSso ? '0.5' : '1';
+      // The org email domain always applies (admins always use it), so it never
+      // dims. Only the SSO-providers list dims when users are domain-only.
       if (sso) sso.style.opacity = isSso ? '1' : '0.5';
     }
     box.querySelectorAll('input[name="login_mode"]').forEach(function(r){ r.addEventListener('change', sync); });
@@ -49,10 +58,13 @@
 {% endmacro %}
 
 {% macro login_policy_summary(org) %}
+<div>Admins: <strong>Organization email domain</strong>{% if org.login_domain %} — <span class="mono">@{{ org.login_domain }}</span>{% else %} — <span class="muted">no domain set</span>{% endif %}</div>
+<div>Users:
 {% if org.login_mode == 'sso' %}
   {% set provs = (org.sso_providers or '').split(',') if org.sso_providers else [] %}
-  <strong>Single Sign-On Allowed</strong>{% if provs %} — {{ provs | map('capitalize') | join(', ') }}{% else %} — <span class="muted">no providers selected</span>{% endif %}
+  <strong>Single Sign-On</strong>{% if provs %} — {{ provs | map('capitalize') | join(', ') }}{% else %} — <span class="muted">no providers selected</span>{% endif %}
 {% else %}
   <strong>Organization email domain only</strong>{% if org.login_domain %} — <span class="mono">@{{ org.login_domain }}</span>{% else %} — <span class="muted">no domain set</span>{% endif %}
 {% endif %}
+</div>
 {% endmacro %}
