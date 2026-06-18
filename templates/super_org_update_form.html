@@ -151,7 +151,6 @@
           <div class="small mb-2">
             <strong>Current BAA:</strong>
             <a href="{{ url_for('static', filename=current_baa.file_path) }}" target="_blank" rel="noopener">{{ current_baa.file_name }}</a>
-            · signed {{ current_baa.signed_date | date_only }}
           </div>
           <div class="small muted mb-2">Upload a new BAA to be active for this account. The previous BAA will be preserved for audit purposes.</div>
         {% else %}
@@ -161,10 +160,6 @@
           <div class="form-group span-2">
             <label>Signed BAA (PDF)</label>
             <input type="file" name="baa_document" accept=".pdf,application/pdf">
-          </div>
-          <div class="form-group">
-            <label>Signed date</label>
-            <input type="date" name="signed_date">
           </div>
         </div>
       </div>

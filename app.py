@@ -1694,7 +1694,7 @@ def super_dashboard():
     for o in orgs:
         baa = q_one("""SELECT * FROM organization_baas
                        WHERE organization_id = ? AND revoked_at IS NULL
-                       ORDER BY effective_from DESC LIMIT 1""", (o['id'],))
+                       ORDER BY id DESC LIMIT 1""", (o['id'],))
         baa_state, days_left = _baa_status(baa)
         rows.append({**dict(o), 'baa': dict(baa) if baa else None,
                      'baa_state': baa_state, 'baa_days_left': days_left,
@@ -1805,7 +1805,7 @@ def super_org_overview(org_id):
            WHERE (co.id = ? OR co.parent_id = ?) AND a.resolved_at IS NULL) AS alerts
         """, (org_id, org_id, org_id, org_id, org_id, org_id))
     baa = q_one("""SELECT * FROM organization_baas WHERE organization_id = ? AND revoked_at IS NULL
-                   ORDER BY effective_from DESC LIMIT 1""", (org_id,))
+                   ORDER BY id DESC LIMIT 1""", (org_id,))
     baa_state, baa_days_left = _baa_status(baa)
     parent = q_one('SELECT id, name FROM organizations WHERE id = ?', (org['parent_id'],)) if org['parent_id'] else None
     satellites = q_all("""SELECT s.*,
@@ -1843,14 +1843,10 @@ def super_org_new():
         # flip the org to 'active' until a BAA exists.
         baa_file = request.files.get('baa_document')
         baa_provided = bool(baa_file and baa_file.filename)
-        signed_date = request.form.get('signed_date')
         if baa_provided:
             ext = baa_file.filename.rsplit('.', 1)[-1].lower() if '.' in baa_file.filename else ''
             if ext not in ALLOWED_BAA_EXT:
                 flash('BAA upload must be a PDF.', 'error')
-                return redirect(url_for('super_org_new'))
-            if not signed_date:
-                flash('BAA signed date is required when a BAA is uploaded.', 'error')
                 return redirect(url_for('super_org_new'))
 
         u = current_user()
@@ -1882,13 +1878,17 @@ def super_org_new():
             ts = datetime.now().strftime('%Y%m%d%H%M%S')
             safe_name = secure_filename(f'org{new_org_id}_baa_{ts}.{ext}')
             baa_file.save(BAA_DIR / safe_name)
+            # No signed date is collected — uploading the document is sufficient. The
+            # NOT NULL date columns are auto-filled with the upload date and are not
+            # surfaced anywhere in the UI.
+            baa_dt = datetime.now().strftime('%Y-%m-%d')
             q_exec("""INSERT INTO organization_baas (organization_id, file_path, file_name,
                       signed_date, effective_from, expires_on,
                       signed_by_name, signed_by_title, uploaded_by_user_id)
                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                    (new_org_id, f'uploads/baas/{safe_name}',
                     secure_filename(baa_file.filename),
-                    signed_date, signed_date, None,
+                    baa_dt, baa_dt, None,
                     request.form.get('signed_by_name') or None,
                     request.form.get('signed_by_title') or None, u['id']))
 
@@ -1932,7 +1932,7 @@ def super_set_acting_org(org_id):
     # Require a BAA on file before any data access.
     baa = q_one("""SELECT * FROM organization_baas
                    WHERE organization_id = ?
-                   ORDER BY effective_from DESC LIMIT 1""", (org_id,))
+                   ORDER BY id DESC LIMIT 1""", (org_id,))
     state, _ = _baa_status(baa)
     if state != 'active':
         flash('No BAA on file — access blocked.', 'error')
@@ -2055,15 +2055,11 @@ def super_org_update(org_id):
         # status, and optionally upload a new BAA.
         baa_file = request.files.get('baa_document')
         baa_provided = bool(baa_file and baa_file.filename)
-        signed_date = request.form.get('signed_date')
 
         if baa_provided:
             ext = baa_file.filename.rsplit('.', 1)[-1].lower() if '.' in baa_file.filename else ''
             if ext not in ALLOWED_BAA_EXT:
                 flash('BAA upload must be a PDF.', 'error')
-                return redirect(url_for('super_org_update', org_id=org_id))
-            if not signed_date:
-                flash('BAA signed date is required when a BAA is uploaded.', 'error')
                 return redirect(url_for('super_org_update', org_id=org_id))
 
         u = current_user()
@@ -2100,13 +2096,16 @@ def super_org_update(org_id):
             ts = datetime.now().strftime('%Y%m%d%H%M%S')
             safe_name = secure_filename(f'org{org_id}_baa_{ts}.{ext}')
             baa_file.save(BAA_DIR / safe_name)
+            # No signed date is collected — the NOT NULL date columns are auto-filled
+            # with the upload date and never surfaced in the UI.
+            baa_dt = datetime.now().strftime('%Y-%m-%d')
             q_exec("""INSERT INTO organization_baas (organization_id, file_path, file_name,
                       signed_date, effective_from, expires_on,
                       signed_by_name, signed_by_title, uploaded_by_user_id)
                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                    (org_id, f'uploads/baas/{safe_name}',
                     secure_filename(baa_file.filename),
-                    signed_date, signed_date, None,
+                    baa_dt, baa_dt, None,
                     None, None, u['id']))
 
         # Re-evaluate the lifecycle: new → pending (BAA or verification) → ready (both).

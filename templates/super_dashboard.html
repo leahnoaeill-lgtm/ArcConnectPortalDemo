@@ -128,7 +128,7 @@
               <td>{{ org_status_badge(o.status) }}</td>
               <td class="small">
                 {% if o.baa_state == 'active' %}
-                  <span class="status-green">✓ {{ o.baa.signed_date | date_only }}</span>
+                  <span class="status-green">✓ On file</span>
                 {% else %}
                   <span class="muted">— none on file —</span>
                 {% endif %}

@@ -145,7 +145,6 @@
             <div>
               {% if baa_state == 'active' %}
                 <span class="status-green">On file</span>
-                · signed {{ baa.signed_date | date_only }}
                 {% if baa.file_path %}· <a href="{{ url_for('static', filename=baa.file_path) }}" target="_blank" rel="noopener">{{ baa.file_name }}</a>{% endif %}
               {% elif org.status in ('new', 'pending', 'ready') %}<span class="status-yellow">Pending</span>
               {% else %}<span class="muted">— none on file —</span>{% endif %}
