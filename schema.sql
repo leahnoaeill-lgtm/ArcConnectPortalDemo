@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     -- Customer-org lifecycle: new (verified from a submission) → pending (BAA or
     -- verification saved) → ready (both saved) → active (super admin activates);
     -- suspended is a manual pause.
-    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('new', 'pending', 'ready', 'active', 'suspended')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('new', 'pending', 'ready', 'active', 'suspended', 'rejected')),
     logo_path TEXT,
     address_line1 TEXT,
     address_line2 TEXT,

@@ -165,12 +165,48 @@ def _ensure_user_location_access():
         conn.close()
 
 
+def _ensure_org_status_rejected():
+    """Allow organizations.status='rejected' (decline a pre-activation org). SQLite
+    can't ALTER a CHECK constraint, so rebuild the table from its own stored DDL with
+    'rejected' added to the allowed set, preserving all rows + the one index.
+    Idempotent; skips DBs whose constraint shape differs."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='organizations'").fetchone()
+        if not row or "'rejected'" in row[0]:
+            return
+        old_check = "CHECK(status IN ('new', 'pending', 'ready', 'active', 'suspended'))"
+        new_check = "CHECK(status IN ('new', 'pending', 'ready', 'active', 'suspended', 'rejected'))"
+        if old_check not in row[0]:
+            return  # unexpected constraint shape — don't risk a rewrite
+        # Rename only the table name (first 'organizations'); the self-FK reference
+        # stays pointing at 'organizations' so it resolves after the rename.
+        new_ddl = row[0].replace(old_check, new_check).replace(
+            'organizations', 'organizations_new', 1)
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.executescript(
+            "BEGIN;"
+            f"{new_ddl};"
+            "INSERT INTO organizations_new SELECT * FROM organizations;"
+            "DROP TABLE organizations;"
+            "ALTER TABLE organizations_new RENAME TO organizations;"
+            "CREATE INDEX IF NOT EXISTS idx_org_parent ON organizations(parent_id);"
+            "COMMIT;")
+        conn.execute("PRAGMA foreign_keys=ON")
+    finally:
+        conn.close()
+
+
 _ensure_heatmap_schema()
 _ensure_org_verification_columns()
 _ensure_signup_request_columns()
 _ensure_org_country_column()
 _ensure_org_login_columns()
 _ensure_user_location_access()
+_ensure_org_status_rejected()
 
 
 # ── Optional HTTP Basic Auth gate (set AUTH_USERNAME + AUTH_PASSWORD env vars to enable) ──
@@ -481,6 +517,7 @@ def feature_enabled(flag_name, org_id=None):
 # is read-only; submitting a form refuses with 403.
 SUPER_ADMIN_WRITE_ALLOWLIST = {
     'login', 'logout', 'super_org_new', 'super_org_suspend', 'super_org_activate',
+    'super_org_reject', 'super_org_reinstate',
     'super_baa_new', 'super_user_invite', 'super_org_group_admin_new',
     'super_org_invite_update',
     'super_set_acting_org', 'super_clear_acting_org',
@@ -1285,7 +1322,7 @@ def _recompute_org_status(org_id):
     """Pre-activation lifecycle: new → pending (BAA *or* verification saved) →
     ready (both saved). Never changes an 'active' or 'suspended' org."""
     org = q_one('SELECT status, verification_complete FROM organizations WHERE id = ?', (org_id,))
-    if not org or org['status'] in ('active', 'suspended'):
+    if not org or org['status'] in ('active', 'suspended', 'rejected'):
         return
     has_baa = q_one('SELECT 1 FROM organization_baas WHERE organization_id = ? LIMIT 1', (org_id,)) is not None
     has_verif = bool(org['verification_complete'])
@@ -1966,6 +2003,48 @@ def super_org_suspend(org_id):
                 detail='Org suspended by super admin')
     flash('Organization suspended.', 'success')
     return redirect(url_for('super_dashboard'))
+
+
+@app.route('/super/orgs/<int:org_id>/reject', methods=['POST'])
+@require_login
+def super_org_reject(org_id):
+    """Decline a customer organization any time before activation (status new /
+    pending / ready). Data is preserved; the org can be reinstated."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    org = q_one('SELECT * FROM organizations WHERE id = ?', (org_id,))
+    if not org:
+        abort(404)
+    if org['status'] not in ('new', 'pending', 'ready'):
+        flash('Only an organization that has not been activated can be rejected.', 'error')
+        return redirect(url_for('super_org_overview', org_id=org_id))
+    reason = (request.form.get('reason') or '').strip() or None
+    q_exec("UPDATE organizations SET status = 'rejected' WHERE id = ?", (org_id,))
+    _log_access('location_update', ref_type='organization', ref_id=org_id,
+                detail='Org rejected by super admin' + (f': {reason}' if reason else ''))
+    flash(f'"{org["name"]}" rejected.', 'success')
+    return redirect(url_for('super_dashboard'))
+
+
+@app.route('/super/orgs/<int:org_id>/reinstate', methods=['POST'])
+@require_login
+def super_org_reinstate(org_id):
+    """Undo a rejection — return the org to the pre-activation pipeline (its status
+    is recomputed to new / pending / ready from its BAA + verification)."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    org = q_one('SELECT * FROM organizations WHERE id = ?', (org_id,))
+    if not org:
+        abort(404)
+    if org['status'] != 'rejected':
+        flash('Only a rejected organization can be reinstated.', 'error')
+        return redirect(url_for('super_org_overview', org_id=org_id))
+    q_exec("UPDATE organizations SET status = 'new' WHERE id = ?", (org_id,))
+    _recompute_org_status(org_id)
+    _log_access('location_update', ref_type='organization', ref_id=org_id,
+                detail='Org reinstated by super admin')
+    flash(f'"{org["name"]}" reinstated.', 'success')
+    return redirect(url_for('super_org_overview', org_id=org_id))
 
 
 @app.route('/super/orgs/<int:org_id>/activate', methods=['POST'])

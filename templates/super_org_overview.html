@@ -24,6 +24,12 @@
         </form>
       {% endif %}
       <a href="{{ url_for('super_org_update', org_id=org.id) }}" class="btn">Edit</a>
+      {% if not is_satellite and org.status in ('new', 'pending', 'ready') %}
+        <form method="POST" action="{{ url_for('super_org_reject', org_id=org.id) }}" style="display:inline;"
+              onsubmit="return confirm('Reject {{ org.name }}? This declines the organization before activation. You can reinstate it later.');">
+          <button type="submit" class="btn btn-danger">Reject</button>
+        </form>
+      {% endif %}
       {% if not is_satellite %}
         {% if org.status == 'active' %}
           <form method="POST" action="{{ url_for('super_org_suspend', org_id=org.id) }}" style="display:inline;"
@@ -37,6 +43,10 @@
         {% elif org.status == 'ready' %}
           <form method="POST" action="{{ url_for('super_org_activate', org_id=org.id) }}" style="display:inline;">
             <button type="submit" class="btn btn-primary">Activate</button>
+          </form>
+        {% elif org.status == 'rejected' %}
+          <form method="POST" action="{{ url_for('super_org_reinstate', org_id=org.id) }}" style="display:inline;">
+            <button type="submit" class="btn">Reinstate</button>
           </form>
         {% else %}
           <span class="muted small" style="align-self:center;">Add a BAA and verification to enable activation</span>
