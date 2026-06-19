@@ -2113,7 +2113,7 @@ body.super-readonly .super-admin-banner button {
   min-height: 34px;
   min-width: 84px;
   padding: 8px 16px;
-  border: 1px solid var(--ac-border-strong);
+  border: 1px solid var(--ac-gray);
   border-radius: 8px;
   background: white;
   color: var(--ac-slate-deep);
@@ -2132,10 +2132,13 @@ body.super-readonly .super-admin-banner button {
 .btn:hover {
   background: var(--ac-slate-light);
   text-decoration: none;
-  border-color: var(--ac-gray);
+  border-color: var(--ac-slate-deep);
   color: var(--ac-slate-deep);
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  /* Universal hover-darken: the inset overlay darkens whatever fill the button has
+     (any variant) without recolouring it or affecting the label; plus the soft lift.
+     Variant :hover rules only change background/border, so this applies to them all. */
+  box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.07), 0 2px 6px rgba(0,0,0,0.08);
 }
 
 .btn:active { transform: translateY(0); box-shadow: none; }
@@ -2145,7 +2148,7 @@ body.super-readonly .super-admin-banner button {
 .btn-primary {
   background: #DFF2FB;
   color: #1B5E7A;
-  border-color: #C7E9F8;
+  border-color: #7FC4E6;
 }
 
 .btn-primary:hover {
