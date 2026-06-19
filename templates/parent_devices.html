@@ -44,7 +44,10 @@
     </div>
   </div>
 
-  <div class="filter-bar">
+  <div class="filter-bar" id="parentDeviceFilterBar">
+    <div class="filter-search">
+      <input type="search" id="parentDeviceSearch" placeholder="Search serial, model, patient, ID…" autocomplete="off">
+    </div>
     <label class="small muted">Status</label>
     <select class="filter-select" onchange="location = updateQuery({status: this.value})">
       <option value="all"         {% if status_filter == 'all' %}selected{% endif %}>All</option>
@@ -65,6 +68,7 @@
     {% if status_filter != 'all' or filter_location %}
       <a href="{{ url_for('parent_devices') }}" class="filter-clear">Reset</a>
     {% endif %}
+    <span class="filter-count" id="parentDeviceCount"></span>
   </div>
 
   {% if devices %}
@@ -88,6 +92,7 @@
               {% set next_path = '/devices/' + (d.id | string) %}
               {% set row_href = url_for('switch_location', org_id=d.loc_id, next=next_path) %}
               <tr class="clickable"
+                  data-search="{{ (d.serial_number ~ ' ' ~ (d.model or '') ~ ' ' ~ (d.firmware_version or '') ~ ' ' ~ (d.loc_name or '') ~ ' ' ~ (d.first_name or '') ~ ' ' ~ (d.last_name or '') ~ ' ' ~ (d.mrn or '')) | lower }}"
                   data-sort-serial="{{ d.serial_number }}"
                   data-sort-model="{{ d.model or '' }}"
                   data-sort-firmware="{{ d.firmware_version or '' }}"
@@ -143,5 +148,25 @@ function updateQuery(overrides) {
   }
   return u.pathname + (u.search || '');
 }
+</script>
+<script>
+(function() {
+  const search = document.getElementById('parentDeviceSearch');
+  if (!search) return;
+  const count = document.getElementById('parentDeviceCount');
+  const rows  = document.querySelectorAll('tbody tr[data-search]');
+  const total = rows.length;
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(r => {
+      const show = !q || (r.dataset.search || '').includes(q);
+      r.classList.toggle('filter-hidden', !show);
+      if (show) visible += 1;
+    });
+    if (count) count.textContent = q ? (visible + ' of ' + total + ' devices') : '';
+  }
+  search.addEventListener('input', apply);
+})();
 </script>
 {% endblock %}
