@@ -17,7 +17,10 @@
     {% set loc_fg_palette = ['#2E8BAD','#C46212','#6D4CA6','#2E7D32','#8B6E00','#4A5058'] %}
   {% endif %}
 
-  <div class="filter-bar">
+  <div class="filter-bar" id="taskFilterBar">
+    <div class="filter-search">
+      <input type="search" id="taskSearch" placeholder="Search title, patient, assignee…" autocomplete="off">
+    </div>
     <label class="small muted">View</label>
     <select class="filter-select" onchange="location = updateQuery({view: this.value})">
       <option value="my"               {% if view == 'my'               %}selected{% endif %}>My tasks ({{ counts.my or 0 }})</option>
@@ -36,6 +39,7 @@
         {% endfor %}
       </select>
     {% endif %}
+    <span class="filter-count" id="taskSearchCount"></span>
   </div>
 
   {% if view == 'my' and assigned_alerts %}
@@ -150,6 +154,7 @@
             {% set is_overdue = t.due_at and t.due_at < now_iso and t.status not in ('completed','cancelled') %}
             {% set _sev_rank = {'critical': 1, 'warning': 2, 'info': 3} %}
             <tr class="clickable {{ 'row-overdue' if is_overdue else '' }}"
+                data-search="{{ ((t.title or '') ~ ' ' ~ (t.description or '') ~ ' ' ~ (t.pt_first or '') ~ ' ' ~ (t.pt_last or '') ~ ' ' ~ (t.pt_mrn or '') ~ ' ' ~ (t.assignee_first or '') ~ ' ' ~ (t.assignee_last or '') ~ ' ' ~ (t.loc_name or '')) | lower }}"
                 data-sort-status="{{ _status_rank.get(t.status, 9) }}"
                 data-sort-title="{{ (t.title or '') | lower }}"
                 data-sort-patient="{{ ((t.pt_last or '') ~ ' ' ~ (t.pt_first or '')) | trim | lower }}"
@@ -243,5 +248,25 @@ function updateQuery(overrides) {
   }
   return u.pathname + (u.search || '');
 }
+</script>
+<script>
+(function() {
+  const search = document.getElementById('taskSearch');
+  if (!search) return;
+  const count = document.getElementById('taskSearchCount');
+  const els = document.querySelectorAll('tbody tr[data-search]');
+  const total = els.length;
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    els.forEach(el => {
+      const show = !q || (el.dataset.search || '').includes(q);
+      el.classList.toggle('filter-hidden', !show);
+      if (show) visible += 1;
+    });
+    if (count) count.textContent = q ? (visible + ' of ' + total + ' tasks') : '';
+  }
+  search.addEventListener('input', apply);
+})();
 </script>
 {% endblock %}

@@ -15,20 +15,25 @@
     <a href="?status=all" class="{{ 'active' if status == 'all' else '' }}">All</a>
   </div>
 
-  <div class="filter-bar">
+  <div class="filter-bar" id="inboxFilterBar">
+    <div class="filter-search">
+      <input type="search" id="inboxSearch" placeholder="Search patient, ID…" autocomplete="off">
+    </div>
     <label class="small muted" for="kindFilter">Type:</label>
     <select id="kindFilter" class="filter-select" onchange="location = updateQuery({kind: this.value});">
       {% for k, lbl in [('all','All types'),('message','Messages'),('survey','Surveys'),('mood','Mood notes')] %}
         <option value="{{ k }}" {% if kind == k %}selected{% endif %}>{{ lbl }}</option>
       {% endfor %}
     </select>
+    <span class="filter-count" id="inboxSearchCount"></span>
   </div>
 
   {% if items %}
     <div class="inbox-list">
       {% for item in items %}
         {% set p_href = url_for('patient_detail', patient_id=item.patient_id) %}
-        <div class="inbox-item inbox-kind-{{ item.kind }} {% if item.status == 'todo' %}is-unread{% endif %}">
+        <div class="inbox-item inbox-kind-{{ item.kind }} {% if item.status == 'todo' %}is-unread{% endif %}"
+             data-search="{{ ((item.first_name or '') ~ ' ' ~ (item.last_name or '') ~ ' ' ~ (item.mrn or '') ~ ' ' ~ kind_labels[item.kind]) | lower }}">
           <div class="inbox-item-head">
             <div class="inbox-kind-badge inbox-kind-{{ item.kind }}">{{ kind_labels[item.kind] }}</div>
             <a href="{{ p_href }}" class="inbox-patient">{{ item.first_name }} {{ item.last_name }}</a>
@@ -149,5 +154,25 @@ function updateQuery(overrides) {
   }
   return u.pathname + (u.search || '');
 }
+</script>
+<script>
+(function() {
+  const search = document.getElementById('inboxSearch');
+  if (!search) return;
+  const count = document.getElementById('inboxSearchCount');
+  const els = document.querySelectorAll('.inbox-list .inbox-item[data-search]');
+  const total = els.length;
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    els.forEach(el => {
+      const show = !q || (el.dataset.search || '').includes(q);
+      el.style.display = show ? '' : 'none';
+      if (show) visible += 1;
+    });
+    if (count) count.textContent = q ? (visible + ' of ' + total + ' items') : '';
+  }
+  search.addEventListener('input', apply);
+})();
 </script>
 {% endblock %}

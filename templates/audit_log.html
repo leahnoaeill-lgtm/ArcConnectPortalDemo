@@ -22,7 +22,10 @@
   {% endif %}
 
 
-  <div class="filter-bar">
+  <div class="filter-bar" id="auditFilterBar">
+    <div class="filter-search">
+      <input type="search" id="auditSearch" placeholder="Search user, event, patient, detail…" autocomplete="off">
+    </div>
     {% if is_parent and locations %}
       <select class="filter-select" onchange="location = updateQuery({location: this.value, user: 0})">
         <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
@@ -65,7 +68,7 @@
         </thead>
         <tbody>
           {% for e in events %}
-            <tr>
+            <tr data-search="{{ ((e.user_first or '') ~ ' ' ~ (e.user_last or '') ~ ' ' ~ event_labels.get(e.event, e.event) ~ ' ' ~ (e.pt_first or '') ~ ' ' ~ (e.pt_last or '') ~ ' ' ~ (e.pt_mrn or '') ~ ' ' ~ (e.org_name or '') ~ ' ' ~ (e.detail or '')) | lower }}">
               <td class="small muted">{{ e.occurred_at | dt }}</td>
               <td class="small">
                 {% if e.user_first %}{{ e.user_first }} {{ e.user_last or '' }}{% else %}<span class="muted">System</span>{% endif %}
@@ -101,5 +104,25 @@ function updateQuery(overrides) {
   }
   return u.pathname + (u.search || '');
 }
+</script>
+<script>
+(function() {
+  const search = document.getElementById('auditSearch');
+  if (!search) return;
+  const count = document.getElementById('auditSearchCount');
+  const els = document.querySelectorAll('tbody tr[data-search]');
+  const total = els.length;
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    els.forEach(el => {
+      const show = !q || (el.dataset.search || '').includes(q);
+      el.classList.toggle('filter-hidden', !show);
+      if (show) visible += 1;
+    });
+    if (count) count.textContent = q ? (visible + ' of ' + total + ' events') : '';
+  }
+  search.addEventListener('input', apply);
+})();
 </script>
 {% endblock %}
