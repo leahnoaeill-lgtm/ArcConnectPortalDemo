@@ -92,7 +92,7 @@
                   data-sort-last-comm="{{ d.last_communication or '' }}"
                   data-sort-status="{{ d.status }}"
                   onclick="window.location='{{ row_href }}'">
-                <td class="mono" style="font-weight: 600;">{{ d.serial_number }}</td>
+                <td class="mono" style="font-weight: 600; font-size: 12px; white-space: nowrap;">{{ d.serial_number }}</td>
                 <td>{{ d.model | model_label }}</td>
                 <td class="mono small">{{ d.firmware_version or '—' }}</td>
                 <td>{{ loc_chip(d.loc_id, d.loc_name) }}</td>
