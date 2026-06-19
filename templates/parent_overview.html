@@ -192,7 +192,7 @@
 
   <div class="flex-between mb-2" id="locations">
     <h2 style="margin: 0;">Locations</h2>
-    {% if account_active %}<a href="{{ url_for('parent_location_new') }}" class="btn btn-sm btn-primary">+ Add Branch location</a>{% endif %}
+    {% if account_active %}<a href="{{ url_for('parent_location_new') }}" class="btn btn-primary">+ Add Branch location</a>{% endif %}
   </div>
   <div class="location-grid">
     {% for loc in locations %}
