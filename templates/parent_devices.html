@@ -47,9 +47,13 @@
   <div class="filter-bar">
     <label class="small muted">Status</label>
     <select class="filter-select" onchange="location = updateQuery({status: this.value})">
-      <option value="all"        {% if status_filter == 'all' %}selected{% endif %}>All</option>
-      <option value="assigned"   {% if status_filter == 'assigned' %}selected{% endif %}>Assigned</option>
-      <option value="unassigned" {% if status_filter == 'unassigned' %}selected{% endif %}>Unassigned</option>
+      <option value="all"         {% if status_filter == 'all' %}selected{% endif %}>All</option>
+      <option value="in_use"      {% if status_filter == 'in_use' %}selected{% endif %}>In use</option>
+      <option value="in_stock"    {% if status_filter == 'in_stock' %}selected{% endif %}>In stock</option>
+      <option value="maintenance" {% if status_filter == 'maintenance' %}selected{% endif %}>Maintenance</option>
+      <option value="retired"     {% if status_filter == 'retired' %}selected{% endif %}>Retired</option>
+      <option value="assigned"    {% if status_filter == 'assigned' %}selected{% endif %}>Assigned</option>
+      <option value="unassigned"  {% if status_filter == 'unassigned' %}selected{% endif %}>Unassigned</option>
     </select>
     <label class="small muted">Location</label>
     <select class="filter-select" onchange="location = updateQuery({location: this.value})">

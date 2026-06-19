@@ -1068,7 +1068,8 @@ def parent_devices():
                                status_filter='all', filter_location=0, locations=[],
                                kpis={'total':0,'in_use':0,'in_stock':0,'maintenance':0})
     status_filter = request.args.get('status', 'all')
-    if status_filter not in ('all', 'assigned', 'unassigned'):
+    _dev_statuses = ('in_use', 'in_stock', 'maintenance', 'retired')
+    if status_filter not in ('all', 'assigned', 'unassigned') + _dev_statuses:
         status_filter = 'all'
     filter_location = request.args.get('location', type=int) or 0
     if filter_location and filter_location in ids:
@@ -1098,12 +1099,17 @@ def parent_devices():
                                            WHERE da.device_id = d.id AND da.returned_date IS NULL)""",
                      tuple(query_ids))
     else:
+        # 'all' or a specific device status (in_use / in_stock / maintenance / retired)
+        status_clause, extra = '', ()
+        if status_filter in _dev_statuses:
+            status_clause, extra = ' AND d.status = ?', (status_filter,)
         rows = q_all(f"""SELECT {base_cols}
                          FROM devices d
                          JOIN organizations o ON o.id = d.organization_id
                          LEFT JOIN device_assignments da ON da.device_id = d.id AND da.returned_date IS NULL
                          LEFT JOIN patients p ON p.id = da.patient_id
-                         WHERE d.organization_id IN ({ph})""", tuple(query_ids))
+                         WHERE d.organization_id IN ({ph}){status_clause}""",
+                     tuple(query_ids) + extra)
     # KPIs always reflect the whole rollup scope (not the selected filter), so
     # the admin keeps a stable frame of reference when narrowing the view.
     kpi_ph = ','.join('?' * len(ids))
