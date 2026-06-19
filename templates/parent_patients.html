@@ -31,7 +31,10 @@
     </div>
   </div>
 
-  <div class="filter-bar">
+  <div class="filter-bar" id="parentPatientFilterBar">
+    <div class="filter-search">
+      <input type="search" id="parentPatientSearch" placeholder="Search name, ID, location, city, disease…" autocomplete="off">
+    </div>
     <label class="small muted">Status</label>
     <select class="filter-select" onchange="location = updateQuery({status: this.value})">
       <option value="active"   {% if status == 'active'   %}selected{% endif %}>Active</option>
@@ -57,6 +60,7 @@
     {% if filter_location or status != 'active' or filter_city or filter_state %}
       <a href="{{ url_for('parent_patients') }}" class="filter-clear">Reset</a>
     {% endif %}
+    <span class="filter-count" id="parentPatientCount"></span>
   </div>
 
   {% if patients %}
@@ -91,7 +95,9 @@
             {% for p in patients %}
               {% set next_path = '/patients/' + (p.id | string) %}
               {% set row_href = url_for('switch_location', org_id=p.loc_id, next=next_path) %}
-              <tr class="clickable" onclick="window.location='{{ row_href }}'">
+              <tr class="clickable"
+                  data-search="{{ (p.first_name ~ ' ' ~ p.last_name ~ ' ' ~ (p.mrn or '') ~ ' ' ~ (p.loc_name or '') ~ ' ' ~ (p.city or '') ~ ' ' ~ (p.state or '') ~ ' ' ~ (p.diagnosis or '')) | lower }}"
+                  onclick="window.location='{{ row_href }}'">
                 <td><span class="dot {{ p.adherence_pct_30d | adherence_class }}"></span></td>
                 <td style="font-weight: 600;">
                   {{ p.first_name }} {{ p.last_name }}
@@ -141,5 +147,25 @@ function updateQuery(overrides) {
   }
   return u.pathname + (u.search || '');
 }
+</script>
+<script>
+(function() {
+  const search = document.getElementById('parentPatientSearch');
+  if (!search) return;
+  const count = document.getElementById('parentPatientCount');
+  const rows  = document.querySelectorAll('tbody tr[data-search]');
+  const total = rows.length;
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(r => {
+      const show = !q || (r.dataset.search || '').includes(q);
+      r.classList.toggle('filter-hidden', !show);
+      if (show) visible += 1;
+    });
+    if (count) count.textContent = q ? (visible + ' of ' + total + ' patients') : '';
+  }
+  search.addEventListener('input', apply);
+})();
 </script>
 {% endblock %}
