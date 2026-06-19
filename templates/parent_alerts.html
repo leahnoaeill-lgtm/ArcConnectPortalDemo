@@ -23,7 +23,10 @@
     </div>
   </div>
 
-  <div class="filter-bar">
+  <div class="filter-bar" id="parentAlertFilterBar">
+    <div class="filter-search">
+      <input type="search" id="parentAlertSearch" placeholder="Search patient, ID, message, location…" autocomplete="off">
+    </div>
     <label class="small muted">Show</label>
     <select class="filter-select" onchange="location = updateQuery({show: this.value})">
       <option value="active" {% if show == 'active' %}selected{% endif %}>Active only</option>
@@ -46,6 +49,7 @@
     {% if show != 'active' or filter_sev != 'all' or filter_location %}
       <a href="{{ url_for('parent_alerts') }}" class="filter-clear">Reset</a>
     {% endif %}
+    <span class="filter-count" id="parentAlertCount"></span>
   </div>
 
   {% if alerts %}
@@ -68,6 +72,7 @@
             {% for a in alerts %}
               {% set patient_href = url_for('switch_location', org_id=a.loc_id, next='/patients/' + (a.patient_id | string)) %}
               <tr class="clickable {% if a.acknowledged_at %}row-muted{% endif %}"
+                  data-search="{{ (a.severity ~ ' ' ~ (a.first_name or '') ~ ' ' ~ (a.last_name or '') ~ ' ' ~ (a.mrn or '') ~ ' ' ~ (a.loc_name or '') ~ ' ' ~ (a.message or '') ~ ' ' ~ (a.detail or '') ~ ' ' ~ (a.rule_name or '')) | lower }}"
                   data-sort-severity="{{ _sev_rank.get(a.severity, 9) }}"
                   data-sort-triggered="{{ a.triggered_at or '' }}"
                   data-sort-patient="{{ ((a.last_name or '') ~ ' ' ~ (a.first_name or '')) | trim | lower }}"
@@ -119,5 +124,25 @@ function updateQuery(overrides) {
   }
   return u.pathname + (u.search || '');
 }
+</script>
+<script>
+(function() {
+  const search = document.getElementById('parentAlertSearch');
+  if (!search) return;
+  const count = document.getElementById('parentAlertCount');
+  const rows  = document.querySelectorAll('tbody tr[data-search]');
+  const total = rows.length;
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(r => {
+      const show = !q || (r.dataset.search || '').includes(q);
+      r.classList.toggle('filter-hidden', !show);
+      if (show) visible += 1;
+    });
+    if (count) count.textContent = q ? (visible + ' of ' + total + ' alerts') : '';
+  }
+  search.addEventListener('input', apply);
+})();
 </script>
 {% endblock %}
