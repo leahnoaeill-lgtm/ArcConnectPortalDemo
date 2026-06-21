@@ -23,6 +23,11 @@
     <div class="filter-search">
       <input type="search" id="userSearch" placeholder="Search name, email, role…" autocomplete="off">
     </div>
+    <select class="filter-select" id="userStatusFilter">
+      <option value="">All statuses</option>
+      <option value="active">Active</option>
+      <option value="inactive">Deactivated</option>
+    </select>
     <span class="filter-count" id="userSearchCount"></span>
   </div>
 
@@ -44,7 +49,8 @@
         </thead>
         <tbody>
           {% for u in users %}
-            <tr data-search="{{ ((u.first_name or '') ~ ' ' ~ (u.last_name or '') ~ ' ' ~ (u.email or '') ~ ' ' ~ (u.role or '') ~ ' ' ~ (u.phone or '') ~ ' ' ~ (u.scope_label or '')) | lower }}">
+            <tr data-search="{{ ((u.first_name or '') ~ ' ' ~ (u.last_name or '') ~ ' ' ~ (u.email or '') ~ ' ' ~ (u.role or '') ~ ' ' ~ (u.phone or '') ~ ' ' ~ (u.scope_label or '')) | lower }}"
+                data-status="{{ 'active' if u.is_active else 'inactive' }}">
               <td>
                 <div class="user-avatar" style="width: 32px; height: 32px; background: var(--ac-teal-light); color: var(--ac-teal-deep); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px;">
                   {{ u.first_name[0] if u.first_name else '?' }}{{ u.last_name[0] if u.last_name else '' }}
@@ -133,20 +139,25 @@
 (function() {
   const search = document.getElementById('userSearch');
   if (!search) return;
+  const status = document.getElementById('userStatusFilter');
   const count = document.getElementById('userSearchCount');
   const els = document.querySelectorAll('tbody tr[data-search]');
   const total = els.length;
   function apply() {
     const q = (search.value || '').trim().toLowerCase();
+    const s = status ? status.value : '';
     let visible = 0;
     els.forEach(el => {
-      const show = !q || (el.dataset.search || '').includes(q);
+      const matchSearch = !q || (el.dataset.search || '').includes(q);
+      const matchStatus = !s || el.dataset.status === s;
+      const show = matchSearch && matchStatus;
       el.classList.toggle('filter-hidden', !show);
       if (show) visible += 1;
     });
-    if (count) count.textContent = q ? (visible + ' of ' + total + ' users') : '';
+    if (count) count.textContent = (q || s) ? (visible + ' of ' + total + ' users') : '';
   }
   search.addEventListener('input', apply);
+  if (status) status.addEventListener('change', apply);
 })();
 </script>
 {% endblock %}
