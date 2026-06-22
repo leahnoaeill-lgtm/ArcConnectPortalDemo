@@ -37,19 +37,16 @@
       <option value="active"   {% if status == 'active'   %}selected{% endif %}>Active</option>
       <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option>
     </select>
-    <label class="small muted">Location</label>
     <select class="filter-select" onchange="location = updateQuery({location: this.value})">
       <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
       {% for l in locations %}
         <option value="{{ l.id }}" {% if filter_location == l.id %}selected{% endif %}>{{ l.name }}</option>
       {% endfor %}
     </select>
-    <label class="small muted">City</label>
     <select class="filter-select" onchange="location = updateQuery({city: this.value})">
       <option value="">All cities</option>
       {% for c in cities %}<option value="{{ c }}" {% if filter_city == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
     </select>
-    <label class="small muted">State</label>
     <select class="filter-select" onchange="location = updateQuery({state: this.value})">
       <option value="">All states</option>
       {% for s in states %}<option value="{{ s }}" {% if filter_state == s %}selected{% endif %}>{{ s }}</option>{% endfor %}

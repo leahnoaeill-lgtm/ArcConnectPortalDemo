@@ -37,7 +37,6 @@
       <option value="warning"  {% if filter_sev == 'warning'  %}selected{% endif %}>Warning</option>
       <option value="info"     {% if filter_sev == 'info'     %}selected{% endif %}>Info</option>
     </select>
-    <label class="small muted">Location</label>
     <select class="filter-select" onchange="location = updateQuery({location: this.value})">
       <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
       {% for l in locations %}

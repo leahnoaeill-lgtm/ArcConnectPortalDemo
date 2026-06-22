@@ -55,7 +55,6 @@
       <option value="assigned"    {% if status_filter == 'assigned' %}selected{% endif %}>Assigned</option>
       <option value="unassigned"  {% if status_filter == 'unassigned' %}selected{% endif %}>Unassigned</option>
     </select>
-    <label class="small muted">Location</label>
     <select class="filter-select" onchange="location = updateQuery({location: this.value})">
       <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
       {% for l in locations %}

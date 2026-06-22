@@ -31,7 +31,6 @@
       <option value="all"              {% if view == 'all'              %}selected{% endif %}>All</option>
     </select>
     {% if rollup %}
-      <label class="small muted">Location</label>
       <select class="filter-select" onchange="location = updateQuery({location: this.value})">
         <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
         {% for l in locations %}
