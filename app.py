@@ -5761,15 +5761,20 @@ def referring_clinic_delete(clinic_id):
 @app.route('/settings/referring-providers')
 @require_login
 def referring_providers():
-    oid = current_org_id()
-    rows = q_all("""SELECT rp.*, c.name AS clinic_name,
+    scope_ids = scope_org_ids()
+    rollup = is_rollup_scope()
+    if not scope_ids:
+        return render_template('referring_providers.html', providers=[], rollup=rollup)
+    ph = ','.join('?' * len(scope_ids))
+    rows = q_all(f"""SELECT rp.*, c.name AS clinic_name, o.id AS loc_id, o.name AS loc_name,
                     (SELECT COUNT(*) FROM patients p
                        WHERE p.referring_provider_id = rp.id AND p.status = 'active') AS patient_count
                     FROM referring_providers rp
                     JOIN referring_clinics c ON c.id = rp.clinic_id
-                    WHERE rp.organization_id = ?
-                    ORDER BY c.name, rp.is_active DESC, rp.last_name""", (oid,))
-    return render_template('referring_providers.html', providers=rows)
+                    JOIN organizations o ON o.id = rp.organization_id
+                    WHERE rp.organization_id IN ({ph})
+                    ORDER BY c.name, rp.is_active DESC, rp.last_name""", tuple(scope_ids))
+    return render_template('referring_providers.html', providers=rows, rollup=rollup)
 
 
 @app.route('/settings/referring-providers/<int:provider_id>/view')

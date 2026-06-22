@@ -49,6 +49,7 @@
             <th data-sort-key="credentials">Credentials</th>
             <th data-sort-key="specialty">Specialty</th>
             <th data-sort-key="clinic">Clinic</th>
+            {% if rollup %}<th data-sort-key="location">Location</th>{% endif %}
             <th data-sort-key="npi">NPI</th>
             <th>Contact</th>
             <th class="num-col" data-sort-key="patients">Patients</th>
@@ -59,13 +60,14 @@
         <tbody>
           {% for p in providers %}
             <tr class="provider-row"
-                data-search="{{ ((p.first_name or '') ~ ' ' ~ (p.last_name or '') ~ ' ' ~ (p.credentials or '') ~ ' ' ~ (p.specialty or '') ~ ' ' ~ (p.npi or '') ~ ' ' ~ (p.clinic_name or '')) | lower }}"
+                data-search="{{ ((p.first_name or '') ~ ' ' ~ (p.last_name or '') ~ ' ' ~ (p.credentials or '') ~ ' ' ~ (p.specialty or '') ~ ' ' ~ (p.npi or '') ~ ' ' ~ (p.clinic_name or '') ~ ' ' ~ (p.loc_name or '')) | lower }}"
                 data-clinic="{{ p.clinic_name or '' }}"
                 data-active="{{ 'active' if p.is_active else 'inactive' }}"
                 data-sort-name="{{ ((p.last_name or '') ~ ' ' ~ (p.first_name or '')) | trim | lower }}"
                 data-sort-credentials="{{ (p.credentials or '') | lower }}"
                 data-sort-specialty="{{ (p.specialty or '') | lower }}"
                 data-sort-clinic="{{ (p.clinic_name or '') | lower }}"
+                data-sort-location="{{ (p.loc_name or '') | lower }}"
                 data-sort-npi="{{ p.npi or '' }}"
                 data-sort-patients="{{ p.patient_count }}"
                 data-sort-status="{{ 'active' if p.is_active else 'inactive' }}">
@@ -77,6 +79,7 @@
                   <a href="{{ url_for('referring_clinic_detail', clinic_id=p.clinic_id) }}">{{ p.clinic_name }}</a>
                 {% else %}<span class="muted">—</span>{% endif %}
               </td>
+              {% if rollup %}<td class="small">{{ p.loc_name }}</td>{% endif %}
               <td class="mono small">{{ p.npi or '—' }}</td>
               <td class="small">
                 {% if p.phone %}<div><a href="tel:{{ p.phone }}">{{ p.phone }}</a></div>{% endif %}
@@ -93,6 +96,7 @@
               <td>
                 <div class="flex gap-1">
                   <a href="{{ url_for('referring_provider_detail', provider_id=p.id) }}" class="btn btn-sm">Open ▸</a>
+                  {% if not rollup %}
                   <a href="{{ url_for('referring_provider_edit', provider_id=p.id, next=url_for('referring_providers')) }}" class="btn btn-sm">Edit</a>
                   {% if p.is_active %}
                     <form method="POST" action="{{ url_for('referring_provider_deactivate', provider_id=p.id) }}" style="display:inline;">
@@ -108,6 +112,7 @@
                           onsubmit="return confirm('Delete {{ p.first_name }} {{ p.last_name }}? Any patients linked to this provider will lose the referral reference. This cannot be undone.');">
                       <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                     </form>
+                  {% endif %}
                   {% endif %}
                 </div>
               </td>
