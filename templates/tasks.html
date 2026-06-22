@@ -186,8 +186,7 @@
                 {% else %}<span class="muted">—</span>{% endif %}
               </td>
               {% if rollup %}
-                {% set i = t.loc_id % (loc_palette | length) %}
-                <td><span class="loc-chip" style="background: {{ loc_palette[i] }}; color: {{ loc_fg_palette[i] }};">{{ t.loc_name }}</span></td>
+                <td>{{ t.loc_name }}</td>
               {% endif %}
               <td class="small">
                 {% if t.alert_id %}

@@ -5,9 +5,7 @@
 {# Stable location chip color — same palette used on other rollup screens. #}
 {% set loc_palette = ['#E3F5FC','#FDEFE2','#EFE7F7','#E6F4EA','#FEF6DB','#E8ECEF'] %}
 {% set loc_fg_palette = ['#2E8BAD','#C46212','#6D4CA6','#2E7D32','#8B6E00','#4A5058'] %}
-{% macro loc_chip(loc_id, loc_name) %}
-  {% set i = loc_id % (loc_palette | length) %}
-  <span class="loc-chip" style="background: {{ loc_palette[i] }}; color: {{ loc_fg_palette[i] }};">{{ loc_name }}</span>
+{% macro loc_chip(loc_id, loc_name) %}{{ loc_name }}
 {% endmacro %}
 
 <div class="page pd-soft">
