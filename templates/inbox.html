@@ -103,7 +103,6 @@
           </div>
           <div class="inbox-item-actions">
             <form method="POST" action="{{ url_for('inbox_assign', item_id=item.id) }}" class="inbox-assign-form">
-              <label class="small muted">Assigned to:</label>
               <select name="assigned_to_user_id" onchange="this.form.submit();">
                 <option value="">— unassigned —</option>
                 {% for u in users %}
