@@ -25,12 +25,10 @@
     <div class="filter-search">
       <input type="search" id="parentAlertSearch" placeholder="Search patient, ID, message, location…" autocomplete="off">
     </div>
-    <label class="small muted">Show</label>
     <select class="filter-select" onchange="location = updateQuery({show: this.value})">
       <option value="active" {% if show == 'active' %}selected{% endif %}>Active only</option>
       <option value="all"    {% if show == 'all'    %}selected{% endif %}>All (incl. resolved)</option>
     </select>
-    <label class="small muted">Severity</label>
     <select class="filter-select" onchange="location = updateQuery({severity: this.value})">
       <option value="all"      {% if filter_sev == 'all'      %}selected{% endif %}>All severities</option>
       <option value="critical" {% if filter_sev == 'critical' %}selected{% endif %}>Critical</option>

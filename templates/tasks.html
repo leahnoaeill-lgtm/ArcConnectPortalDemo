@@ -21,7 +21,6 @@
     <div class="filter-search">
       <input type="search" id="taskSearch" placeholder="Search title, patient, assignee…" autocomplete="off">
     </div>
-    <label class="small muted">View</label>
     <select class="filter-select" onchange="location = updateQuery({view: this.value})">
       <option value="my"               {% if view == 'my'               %}selected{% endif %}>My tasks ({{ counts.my or 0 }})</option>
       <option value="open"             {% if view == 'open'             %}selected{% endif %}>All open ({{ counts.open or 0 }})</option>

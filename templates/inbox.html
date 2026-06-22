@@ -19,7 +19,6 @@
     <div class="filter-search">
       <input type="search" id="inboxSearch" placeholder="Search patient, ID…" autocomplete="off">
     </div>
-    <label class="small muted" for="kindFilter">Type:</label>
     <select id="kindFilter" class="filter-select" onchange="location = updateQuery({kind: this.value});">
       {% for k, lbl in [('all','All types'),('message','Messages'),('survey','Surveys'),('mood','Mood notes')] %}
         <option value="{{ k }}" {% if kind == k %}selected{% endif %}>{{ lbl }}</option>
