@@ -19,7 +19,7 @@
 <div class="page signup-detail">
   <div class="page-header">
     <div>
-      <a href="{{ url_for('super_signups') }}" class="btn btn-sm">← Submitted</a>
+      <a href="{{ url_for('super_signups') }}" class="btn btn-sm">← Back to submitted</a>
       <h1 class="mt-2">
         {{ sr.org_name }}
         {% if sr.status == 'pending_review' %}<span class="badge severity-warning">To be reviewed</span>

@@ -33,7 +33,6 @@
     <div class="filter-search">
       <input type="search" id="parentPatientSearch" placeholder="Search name, ID, location, city, disease…" autocomplete="off">
     </div>
-    <label class="small muted">Status</label>
     <select class="filter-select" onchange="location = updateQuery({status: this.value})">
       <option value="active"   {% if status == 'active'   %}selected{% endif %}>Active</option>
       <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option>

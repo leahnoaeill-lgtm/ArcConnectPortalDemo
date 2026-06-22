@@ -4,7 +4,7 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <a href="{{ url_for('patient_clinical_history', patient_id=patient.id) }}" class="btn btn-sm">← Back</a>
+      <a href="{{ url_for('patient_clinical_history', patient_id=patient.id) }}" class="btn btn-sm">← Back to clinical history</a>
       <h1 class="mt-2">{{ 'Edit' if obs else 'Add' }} clinical observation</h1>
       <div class="subtitle">{{ patient.first_name }} {{ patient.last_name }} · Patient ID {{ patient.mrn }}</div>
     </div>

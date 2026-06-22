@@ -150,7 +150,7 @@
 <div class="toolbar">
   <h1>Therapy sessions — {{ patient.first_name }} {{ patient.last_name }} ({{ sessions | length }} selected)</h1>
   <div style="display:flex; gap:8px;">
-    <a href="{{ url_for('patient_sessions', patient_id=patient.id) }}" class="btn">← Back</a>
+    <a href="{{ url_for('patient_sessions', patient_id=patient.id) }}" class="btn">← Back to sessions</a>
     <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
   </div>
 </div>

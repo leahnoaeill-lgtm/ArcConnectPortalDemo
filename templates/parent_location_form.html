@@ -6,7 +6,7 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <a href="{{ url_for('settings') if promoting else url_for('parent_overview') }}" class="btn btn-sm">← Back</a>
+      <a href="{{ url_for('settings') if promoting else url_for('parent_overview') }}" class="btn btn-sm">← {{ 'Back to settings' if promoting else 'Back to dashboard' }}</a>
       <h1 class="mt-2">{{ 'Edit location' if is_edit else 'Add location' }}</h1>
     </div>
   </div>

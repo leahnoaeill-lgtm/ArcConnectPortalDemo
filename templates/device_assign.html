@@ -4,7 +4,7 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <a href="{{ url_for('device_detail', device_id=device.id) }}" class="btn btn-sm">← Back</a>
+      <a href="{{ url_for('device_detail', device_id=device.id) }}" class="btn btn-sm">← Back to device</a>
       <h1 class="mt-2">{{ 'Reassign' if current_assignment else 'Assign' }} device <span class="mono">{{ device.serial_number }}</span></h1>
       <div class="subtitle">{{ device.model | model_label }} · Firmware {{ device.firmware_version or '—' }}</div>
     </div>

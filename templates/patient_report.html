@@ -210,7 +210,7 @@
 <div class="report-toolbar">
   <h1>Therapy Compliance Report — {{ patient.first_name }} {{ patient.last_name }}</h1>
   <div class="toolbar-actions">
-    <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="tb-btn">← Back</a>
+    <a href="{{ url_for('patient_detail', patient_id=patient.id) }}" class="tb-btn">← Back to patient</a>
     <button type="button" class="tb-btn tb-btn-primary" onclick="window.print()">Print / Save as PDF</button>
   </div>
 </div>

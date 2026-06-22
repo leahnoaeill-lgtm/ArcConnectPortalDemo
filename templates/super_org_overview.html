@@ -8,7 +8,7 @@
 <div class="page pd-soft">
   <div class="page-header">
     <div>
-      <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Customer organizations</a>
+      <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Back to organizations</a>
       <h1 class="mt-2">{{ org.name }} {{ org_status_badge(org.status) }}</h1>
       <div class="subtitle">
         {% if is_main %}Main location{% elif is_satellite %}Branch location of

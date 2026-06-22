@@ -9,7 +9,7 @@
 <div class="page pd-soft signups-wide">
   <div class="page-header">
     <div>
-      <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← ABMRC dashboard</a>
+      <a href="{{ url_for('super_dashboard') }}" class="btn btn-sm">← Back to organizations</a>
       <h1 class="mt-2">Submitted</h1>
     </div>
   </div>
@@ -36,7 +36,6 @@
     <div class="filter-search">
       <input type="search" id="signupSearch" placeholder="Search organization, NPI, submitter, city…" autocomplete="off">
     </div>
-    <label class="small muted" for="signupStatus">Status</label>
     <select class="filter-select" id="signupStatus">
       <option value="">All statuses</option>
       <option value="pending_review">To be reviewed</option>

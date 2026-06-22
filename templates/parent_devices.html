@@ -46,7 +46,6 @@
     <div class="filter-search">
       <input type="search" id="parentDeviceSearch" placeholder="Search serial, model, patient, ID…" autocomplete="off">
     </div>
-    <label class="small muted">Status</label>
     <select class="filter-select" onchange="location = updateQuery({status: this.value})">
       <option value="all"         {% if status_filter == 'all' %}selected{% endif %}>All</option>
       <option value="in_use"      {% if status_filter == 'in_use' %}selected{% endif %}>In use</option>

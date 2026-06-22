@@ -7,7 +7,7 @@
       <h1>{{ 'Edit device' if device else 'Add device to inventory' }}</h1>
       <div class="subtitle">{{ 'Update device details' if device else 'Register a new BiWaze device' }}</div>
     </div>
-    <a href="{{ url_for('device_detail', device_id=device.id) if device else url_for('devices') }}" class="btn">← Back</a>
+    <a href="{{ url_for('device_detail', device_id=device.id) if device else url_for('devices') }}" class="btn">← {{ 'Back to device' if device else 'Back to devices' }}</a>
   </div>
 
   <div class="card">

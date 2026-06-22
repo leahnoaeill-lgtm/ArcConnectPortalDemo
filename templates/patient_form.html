@@ -17,7 +17,7 @@
     <div>
       <h1>{{ 'Edit Patient Profile' if editing else 'Add patient' }}</h1>
     </div>
-    <a href="{{ url_for('patient_detail', patient_id=patient.id) if editing else url_for('patients') }}" class="btn">← Back</a>
+    <a href="{{ url_for('patient_detail', patient_id=patient.id) if editing else url_for('patients') }}" class="btn">← {{ 'Back to patient' if editing else 'Back to patients' }}</a>
   </div>
 
   <div class="card">

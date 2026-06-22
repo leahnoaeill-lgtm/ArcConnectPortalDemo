@@ -27,7 +27,6 @@
     <div class="filter-search">
       <input type="search" id="clinicSearch" placeholder="Search clinic, NPI, city…" autocomplete="off">
     </div>
-    <label class="small muted">Status</label>
     <select class="filter-select" onchange="location = updateQuery({status: this.value})">
       <option value="all"      {% if status_filter == 'all' %}selected{% endif %}>All</option>
       <option value="active"   {% if status_filter == 'active' %}selected{% endif %}>Active</option>
