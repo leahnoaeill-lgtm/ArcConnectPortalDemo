@@ -5597,7 +5597,8 @@ def referring_clinics():
     rollup = is_rollup_scope()
     if not scope_ids:
         return render_template('referring_clinics.html', clinics=[], rollup=rollup,
-                               status_filter='all', filter_location=0, locations=[])
+                               status_filter='all', filter_location=0, locations=[],
+                               clinic_total=0, provider_total=0)
     status_filter = request.args.get('status', 'all')
     if status_filter not in ('all', 'active', 'inactive'):
         status_filter = 'all'
@@ -5631,9 +5632,13 @@ def referring_clinics():
         locations = q_all(
             f"SELECT id, name FROM organizations WHERE id IN ({loc_ph}) ORDER BY name",
             tuple(scope_ids))
+    tot_ph = ','.join('?' * len(scope_ids))
+    clinic_total = q_one(f"SELECT COUNT(*) AS n FROM referring_clinics WHERE organization_id IN ({tot_ph})", tuple(scope_ids))['n']
+    provider_total = q_one(f"SELECT COUNT(*) AS n FROM referring_providers WHERE organization_id IN ({tot_ph})", tuple(scope_ids))['n']
     return render_template('referring_clinics.html', clinics=rows, rollup=rollup,
                            status_filter=status_filter,
-                           filter_location=filter_location, locations=locations)
+                           filter_location=filter_location, locations=locations,
+                           clinic_total=clinic_total, provider_total=provider_total)
 
 
 @app.route('/settings/referring-clinics/<int:clinic_id>/view')
@@ -5764,7 +5769,8 @@ def referring_providers():
     scope_ids = scope_org_ids()
     rollup = is_rollup_scope()
     if not scope_ids:
-        return render_template('referring_providers.html', providers=[], rollup=rollup)
+        return render_template('referring_providers.html', providers=[], rollup=rollup,
+                               clinic_total=0, provider_total=0)
     ph = ','.join('?' * len(scope_ids))
     rows = q_all(f"""SELECT rp.*, c.name AS clinic_name, c.city AS clinic_city, c.state AS clinic_state,
                     o.id AS loc_id, o.name AS loc_name,
@@ -5775,7 +5781,10 @@ def referring_providers():
                     JOIN organizations o ON o.id = rp.organization_id
                     WHERE rp.organization_id IN ({ph})
                     ORDER BY c.name, rp.is_active DESC, rp.last_name""", tuple(scope_ids))
-    return render_template('referring_providers.html', providers=rows, rollup=rollup)
+    clinic_total = q_one(f"SELECT COUNT(*) AS n FROM referring_clinics WHERE organization_id IN ({ph})", tuple(scope_ids))['n']
+    provider_total = len(rows)
+    return render_template('referring_providers.html', providers=rows, rollup=rollup,
+                           clinic_total=clinic_total, provider_total=provider_total)
 
 
 @app.route('/settings/referring-providers/<int:provider_id>/view')

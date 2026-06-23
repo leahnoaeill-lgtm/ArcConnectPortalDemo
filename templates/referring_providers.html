@@ -5,7 +5,8 @@
 <div class="page pd-soft ref-area">
   <div class="page-header">
     <div>
-      <h1>Referring providers</h1>
+      <h1>Referring clinics and providers</h1>
+      <div class="subtitle">{{ clinic_total }} {{ 'clinic' if clinic_total == 1 else 'clinics' }} and {{ provider_total }} {{ 'provider' if provider_total == 1 else 'providers' }}</div>
     </div>
     <div class="actions">
       <a href="{{ url_for('referring_provider_new') }}" class="btn btn-primary">+ Add provider</a>
