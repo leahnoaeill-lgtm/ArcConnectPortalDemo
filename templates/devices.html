@@ -98,7 +98,7 @@
                 onclick="window.location='{{ url_for('device_detail', device_id=d.id) }}'">
               <td class="mono" style="font-weight: 600; font-size: 12px; white-space: nowrap;">{{ d.serial_number }}</td>
               <td>{{ d.model | model_label }}</td>
-              <td class="mono small">{{ d.firmware_version or '—' }}</td>
+              <td>{{ d.firmware_version or '—' }}</td>
               <td class="small">{{ d.upload_date | date_only }}</td>
               <td>
                 {% if d.first_name %}
