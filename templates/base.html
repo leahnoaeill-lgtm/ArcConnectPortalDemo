@@ -757,18 +757,33 @@ function renderChipPopover(d) {
     return hint;
   }
   document.querySelectorAll('.card-body.no-pad').forEach(function(scroller) {
-    if (!scroller.querySelector('table.table')) return;
+    var table = scroller.querySelector('table.table');
+    if (!table) return;
     var hint = ensureHint(scroller);
     function update() {
-      var overflowing = scroller.scrollWidth > scroller.clientWidth + 4;
-      var atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 4;
+      // Only flag when the table genuinely can't fit the container (i.e. the
+      // browser is too narrow to show every column) and we're not already at the
+      // right edge. When it fits, scrollWidth ≈ clientWidth and the hint hides.
+      var overflowing = scroller.scrollWidth > scroller.clientWidth + 2;
+      var atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 2;
       hint.classList.toggle('is-visible', overflowing && !atEnd);
     }
-    update();
     scroller.addEventListener('scroll', update, { passive: true });
+    // Recompute whenever the container or table is resized (covers browser
+    // resizing, column/content changes, and zoom) — not just window resize.
+    if (window.ResizeObserver) {
+      var ro = new ResizeObserver(update);
+      ro.observe(scroller);
+      ro.observe(table);
+    }
     updaters.push(update);
   });
-  window.addEventListener('resize', function() { updaters.forEach(function(u) { u(); }); });
+  function updateAll() { updaters.forEach(function(u) { u(); }); }
+  window.addEventListener('resize', updateAll);
+  // Measure after layout settles so a table that fits is never briefly flagged.
+  requestAnimationFrame(updateAll);
+  window.addEventListener('load', updateAll);
+  if (document.fonts && document.fonts.ready) { document.fonts.ready.then(updateAll); }
 })();
 </script>
 </body>
