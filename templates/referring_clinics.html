@@ -32,6 +32,18 @@
       <option value="active"   {% if status_filter == 'active' %}selected{% endif %}>Active</option>
       <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
     </select>
+    <select class="filter-select" id="cityFilter">
+      <option value="">All cities</option>
+      {% for ct in clinics | map(attribute='city') | select | unique | sort %}
+        <option value="{{ ct }}">{{ ct }}</option>
+      {% endfor %}
+    </select>
+    <select class="filter-select" id="stateFilter">
+      <option value="">All states</option>
+      {% for st in clinics | map(attribute='state') | select | unique | sort %}
+        <option value="{{ st }}">{{ st }}</option>
+      {% endfor %}
+    </select>
     {% if rollup %}
       <select class="filter-select" onchange="location = updateQuery({location: this.value})">
         <option value="0" {% if not filter_location %}selected{% endif %}>All locations</option>
@@ -72,6 +84,8 @@
                 data-sort-npi="{{ c.npi or '' }}"
                 data-sort-city="{{ (c.city or '') | lower }}"
                 data-sort-state="{{ (c.state or '') | lower }}"
+                data-city="{{ c.city or '' }}"
+                data-state="{{ c.state or '' }}"
                 data-sort-location="{{ (c.loc_name or '') | lower }}"
                 data-sort-providers="{{ c.provider_count }}"
                 data-sort-patients="{{ c.patient_count }}"
@@ -122,15 +136,25 @@
 <script>
 // Client-side search over the clinics table (filters visible rows by text).
 (function() {
-  const input = document.getElementById('clinicSearch');
-  if (!input) return;
+  const input  = document.getElementById('clinicSearch');
+  const cityF  = document.getElementById('cityFilter');
+  const stateF = document.getElementById('stateFilter');
   const rows = document.querySelectorAll('tr.clinic-row');
-  input.addEventListener('input', function() {
-    const q = this.value.trim().toLowerCase();
+  if (!rows.length) return;
+  function apply() {
+    const q = (input ? input.value : '').trim().toLowerCase();
+    const c = cityF ? cityF.value : '';
+    const s = stateF ? stateF.value : '';
     rows.forEach(r => {
-      r.classList.toggle('filter-hidden', !(!q || (r.dataset.search || '').includes(q)));
+      const okSearch = !q || (r.dataset.search || '').includes(q);
+      const okCity   = !c || (r.dataset.city || '') === c;
+      const okState  = !s || (r.dataset.state || '') === s;
+      r.classList.toggle('filter-hidden', !(okSearch && okCity && okState));
     });
-  });
+  }
+  if (input)  input.addEventListener('input', apply);
+  if (cityF)  cityF.addEventListener('change', apply);
+  if (stateF) stateF.addEventListener('change', apply);
 })();
 
 function updateQuery(overrides) {
