@@ -19,6 +19,8 @@
 
   {% if providers %}
   {% set clinic_options = providers | map(attribute='clinic_name') | reject('none') | unique | list | sort %}
+  {% set city_options = providers | map(attribute='clinic_city') | select | unique | list | sort %}
+  {% set state_options = providers | map(attribute='clinic_state') | select | unique | list | sort %}
   <div class="filter-bar" id="providerFilterBar">
     <div class="filter-search">
       <input type="search" id="providerSearch" placeholder="Search name, specialty, NPI, or clinic…" autocomplete="off" autofocus>
@@ -27,6 +29,18 @@
       <option value="">All clinics</option>
       {% for name in clinic_options %}
         <option value="{{ name }}">{{ name }}</option>
+      {% endfor %}
+    </select>
+    <select class="filter-select" id="providerCityFilter">
+      <option value="">All cities</option>
+      {% for ct in city_options %}
+        <option value="{{ ct }}">{{ ct }}</option>
+      {% endfor %}
+    </select>
+    <select class="filter-select" id="providerStateFilter">
+      <option value="">All states</option>
+      {% for st in state_options %}
+        <option value="{{ st }}">{{ st }}</option>
       {% endfor %}
     </select>
     <select class="filter-select" id="providerStatusFilter">
@@ -62,6 +76,8 @@
             <tr class="provider-row"
                 data-search="{{ ((p.first_name or '') ~ ' ' ~ (p.last_name or '') ~ ' ' ~ (p.specialty or '') ~ ' ' ~ (p.npi or '') ~ ' ' ~ (p.clinic_name or '') ~ ' ' ~ (p.clinic_city or '') ~ ' ' ~ (p.clinic_state or '') ~ ' ' ~ (p.loc_name or '')) | lower }}"
                 data-clinic="{{ p.clinic_name or '' }}"
+                data-city="{{ p.clinic_city or '' }}"
+                data-state="{{ p.clinic_state or '' }}"
                 data-active="{{ 'active' if p.is_active else 'inactive' }}"
                 data-sort-name="{{ ((p.last_name or '') ~ ' ' ~ (p.first_name or '')) | trim | lower }}"
                 data-sort-specialty="{{ (p.specialty or '') | lower }}"
@@ -136,6 +152,8 @@
   if (!bar) return;
   const search = document.getElementById('providerSearch');
   const clinic = document.getElementById('providerClinicFilter');
+  const city = document.getElementById('providerCityFilter');
+  const state = document.getElementById('providerStateFilter');
   const status = document.getElementById('providerStatusFilter');
   const clearBtn = document.getElementById('providerFilterClear');
   const count = document.getElementById('providerFilterCount');
@@ -145,23 +163,29 @@
   function apply() {
     const q = (search.value || '').trim().toLowerCase();
     const c = clinic.value;
+    const ci = city.value;
+    const st = state.value;
     const s = status.value;
     let visible = 0;
     rows.forEach(row => {
       const matchSearch = !q || row.dataset.search.includes(q);
       const matchClinic = !c || row.dataset.clinic === c;
+      const matchCity = !ci || row.dataset.city === ci;
+      const matchState = !st || row.dataset.state === st;
       const matchStatus = !s || row.dataset.active === s;
-      const show = matchSearch && matchClinic && matchStatus;
+      const show = matchSearch && matchClinic && matchCity && matchState && matchStatus;
       row.classList.toggle('filter-hidden', !show);
       if (show) visible += 1;
     });
-    const active = q || c || s;
+    const active = q || c || ci || st || s;
     clearBtn.style.display = active ? '' : 'none';
     count.textContent = active ? `${visible} of ${total} providers` : '';
   }
-  function reset() { search.value = ''; clinic.value = ''; status.value = ''; apply(); }
+  function reset() { search.value = ''; clinic.value = ''; city.value = ''; state.value = ''; status.value = ''; apply(); }
   search.addEventListener('input', apply);
   clinic.addEventListener('change', apply);
+  city.addEventListener('change', apply);
+  state.addEventListener('change', apply);
   status.addEventListener('change', apply);
   clearBtn.addEventListener('click', reset);
 })();
