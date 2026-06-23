@@ -55,6 +55,7 @@
             <th data-sort-key="npi">NPI</th>
             <th>Contact</th>
             <th data-sort-key="city">City</th>
+            <th data-sort-key="state">State</th>
             {% if rollup %}<th data-sort-key="location">Location</th>{% endif %}
             <th class="num-col" data-sort-key="providers">Providers</th>
             <th class="num-col" data-sort-key="patients">Patients</th>
@@ -70,6 +71,7 @@
                 data-sort-name="{{ (c.name or '') | lower }}"
                 data-sort-npi="{{ c.npi or '' }}"
                 data-sort-city="{{ (c.city or '') | lower }}"
+                data-sort-state="{{ (c.state or '') | lower }}"
                 data-sort-location="{{ (c.loc_name or '') | lower }}"
                 data-sort-providers="{{ c.provider_count }}"
                 data-sort-patients="{{ c.patient_count }}"
@@ -87,9 +89,10 @@
               <td class="small">
                 {% if c.city %}
                   {% set _q = (c.name ~ ' ' ~ c.city ~ (', ' ~ c.state if c.state else '')) | trim %}
-                  <a href="https://www.google.com/maps/search/?api=1&query={{ _q | urlencode }}" target="_blank" rel="noopener" onclick="event.stopPropagation();">{{ c.city }}{% if c.state %}, {{ c.state }}{% endif %}</a>
+                  <a href="https://www.google.com/maps/search/?api=1&query={{ _q | urlencode }}" target="_blank" rel="noopener" onclick="event.stopPropagation();">{{ c.city }}</a>
                 {% else %}—{% endif %}
               </td>
+              <td class="small">{{ c.state or '—' }}</td>
               {% if rollup %}<td>{{ loc_chip(c.loc_id, c.loc_name) }}</td>{% endif %}
               <td class="num-col num">{{ c.provider_count }}</td>
               <td class="num-col num">{{ c.patient_count }}</td>
