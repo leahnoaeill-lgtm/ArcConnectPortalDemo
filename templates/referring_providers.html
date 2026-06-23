@@ -46,12 +46,12 @@
         <thead>
           <tr>
             <th data-sort-key="name">Name</th>
-            <th data-sort-key="credentials">Credentials</th>
             <th data-sort-key="specialty">Specialty</th>
             <th data-sort-key="clinic">Clinic</th>
             {% if rollup %}<th data-sort-key="location">Location</th>{% endif %}
             <th data-sort-key="npi">NPI</th>
-            <th>Contact</th>
+            <th data-sort-key="city">City</th>
+            <th data-sort-key="state">State</th>
             <th class="num-col" data-sort-key="patients">Patients</th>
             <th data-sort-key="status">Status</th>
             <th></th>
@@ -60,19 +60,19 @@
         <tbody>
           {% for p in providers %}
             <tr class="provider-row"
-                data-search="{{ ((p.first_name or '') ~ ' ' ~ (p.last_name or '') ~ ' ' ~ (p.credentials or '') ~ ' ' ~ (p.specialty or '') ~ ' ' ~ (p.npi or '') ~ ' ' ~ (p.clinic_name or '') ~ ' ' ~ (p.loc_name or '')) | lower }}"
+                data-search="{{ ((p.first_name or '') ~ ' ' ~ (p.last_name or '') ~ ' ' ~ (p.specialty or '') ~ ' ' ~ (p.npi or '') ~ ' ' ~ (p.clinic_name or '') ~ ' ' ~ (p.clinic_city or '') ~ ' ' ~ (p.clinic_state or '') ~ ' ' ~ (p.loc_name or '')) | lower }}"
                 data-clinic="{{ p.clinic_name or '' }}"
                 data-active="{{ 'active' if p.is_active else 'inactive' }}"
                 data-sort-name="{{ ((p.last_name or '') ~ ' ' ~ (p.first_name or '')) | trim | lower }}"
-                data-sort-credentials="{{ (p.credentials or '') | lower }}"
                 data-sort-specialty="{{ (p.specialty or '') | lower }}"
                 data-sort-clinic="{{ (p.clinic_name or '') | lower }}"
                 data-sort-location="{{ (p.loc_name or '') | lower }}"
                 data-sort-npi="{{ p.npi or '' }}"
+                data-sort-city="{{ (p.clinic_city or '') | lower }}"
+                data-sort-state="{{ (p.clinic_state or '') | lower }}"
                 data-sort-patients="{{ p.patient_count }}"
                 data-sort-status="{{ 'active' if p.is_active else 'inactive' }}">
               <td style="font-weight: 600;"><a href="{{ url_for('referring_provider_detail', provider_id=p.id) }}">{{ p.last_name }}, {{ p.first_name }}</a></td>
-              <td>{% if p.credentials %}<span class="badge" style="background: var(--ac-slate); color: white;">{{ p.credentials }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
               <td class="small">{{ p.specialty or '—' }}</td>
               <td class="small">
                 {% if p.clinic_id %}
@@ -81,10 +81,8 @@
               </td>
               {% if rollup %}<td class="small">{{ p.loc_name }}</td>{% endif %}
               <td class="mono small">{{ p.npi or '—' }}</td>
-              <td class="small">
-                {% if p.phone %}<div><a href="tel:{{ p.phone }}">{{ p.phone }}</a></div>{% endif %}
-                {% if p.email %}<div class="muted"><a href="mailto:{{ p.email }}">{{ p.email }}</a></div>{% endif %}
-              </td>
+              <td class="small">{{ p.clinic_city or '—' }}</td>
+              <td class="small">{{ p.clinic_state or '—' }}</td>
               <td class="num-col num">{{ p.patient_count }}</td>
               <td>
                 {% if p.is_active %}

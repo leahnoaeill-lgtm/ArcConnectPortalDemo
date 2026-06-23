@@ -5766,7 +5766,8 @@ def referring_providers():
     if not scope_ids:
         return render_template('referring_providers.html', providers=[], rollup=rollup)
     ph = ','.join('?' * len(scope_ids))
-    rows = q_all(f"""SELECT rp.*, c.name AS clinic_name, o.id AS loc_id, o.name AS loc_name,
+    rows = q_all(f"""SELECT rp.*, c.name AS clinic_name, c.city AS clinic_city, c.state AS clinic_state,
+                    o.id AS loc_id, o.name AS loc_name,
                     (SELECT COUNT(*) FROM patients p
                        WHERE p.referring_provider_id = rp.id AND p.status = 'active') AS patient_count
                     FROM referring_providers rp
