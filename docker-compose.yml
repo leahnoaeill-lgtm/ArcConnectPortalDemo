@@ -12,6 +12,10 @@ services:
       AUTH_USERNAME: ${AUTH_USERNAME:-Arc}
       AUTH_PASSWORD: ${AUTH_PASSWORD:-Connect}
       DB_PATH: /app/data/arcconnect.db
+      # Demo kiosk mode: every logout restores the DB + uploads from the
+      # golden snapshot baked into the image, so viewers can't leave the
+      # demo in a messed-up state.
+      DEMO_RESET_ON_LOGOUT: "1"
       PYTHONUNBUFFERED: 1
     ports:
       - "5005:5005"

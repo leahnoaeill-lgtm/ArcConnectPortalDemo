@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import secrets
+import shutil
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, date
@@ -22,6 +23,12 @@ HERE = Path(__file__).parent
 # DB_PATH is env-configurable so the container can point it at a mounted volume
 # (e.g. /app/data/arcconnect.db) that survives image rebuilds.
 DB_PATH = Path(os.environ.get('DB_PATH') or (HERE / 'arcconnect.db'))
+# Demo kiosk mode: when DEMO_RESET_ON_LOGOUT=1, every logout restores the
+# database and uploads from the pristine golden snapshot baked into the image
+# (see Dockerfile), so demo viewers always hand the next person a clean portal.
+DEMO_RESET_ON_LOGOUT = os.environ.get('DEMO_RESET_ON_LOGOUT') == '1'
+GOLDEN_DB_PATH = Path(os.environ.get('GOLDEN_DB_PATH') or (HERE / 'golden' / 'arcconnect.db'))
+GOLDEN_UPLOADS_DIR = Path(os.environ.get('GOLDEN_UPLOADS_DIR') or (HERE / 'golden' / 'uploads'))
 UPLOADS_DIR = HERE / 'static' / 'uploads'
 LOGOS_DIR = UPLOADS_DIR / 'logos'
 CONSENT_DIR = UPLOADS_DIR / 'consent'
@@ -271,6 +278,36 @@ def close_db(_exception):
     db = g.pop('db', None)
     if db is not None:
         db.close()
+
+
+def reset_demo_data():
+    """Restore the live database and uploads from the golden snapshot.
+
+    The DB is restored via the sqlite3 backup API, which rewrites the live
+    file's content in place (same inode) under a proper lock — so open
+    handles in other gunicorn workers see the restored data on their next
+    query instead of a stale/deleted file.
+    """
+    golden = sqlite3.connect(GOLDEN_DB_PATH)
+    live = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        golden.backup(live)
+    finally:
+        live.close()
+        golden.close()
+    # Uploads: restore every golden file, then drop anything a viewer added.
+    if GOLDEN_UPLOADS_DIR.is_dir():
+        golden_files = set()
+        for src in GOLDEN_UPLOADS_DIR.rglob('*'):
+            if src.is_file():
+                rel = src.relative_to(GOLDEN_UPLOADS_DIR)
+                golden_files.add(rel)
+                dest = UPLOADS_DIR / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, dest)
+        for f in UPLOADS_DIR.rglob('*'):
+            if f.is_file() and f.relative_to(UPLOADS_DIR) not in golden_files:
+                f.unlink()
 
 
 def q_one(sql, params=()):
@@ -776,6 +813,13 @@ def login():
 @app.route('/logout')
 def logout():
     session.clear()
+    if DEMO_RESET_ON_LOGOUT and GOLDEN_DB_PATH.exists():
+        try:
+            reset_demo_data()
+            app.logger.info('Demo data reset on logout')
+        except Exception:
+            # A failed reset should never strand the viewer on an error page.
+            app.logger.exception('Demo data reset failed')
     return redirect(url_for('login'))
 
 

@@ -12,12 +12,15 @@ Run after seed.py:
 Re-running is safe — the script detects its own marker satellites and skips.
 """
 import json
+import os
 import random
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / 'arcconnect.db'
+# DB_PATH is env-configurable so the container build can backfill the same
+# mounted-volume path that seed.py writes to (see Dockerfile).
+DB_PATH = Path(os.environ.get('DB_PATH') or (Path(__file__).parent / 'arcconnect.db'))
 SENTINEL = 'HM-DEMO-2026-05'
 
 random.seed(42)  # deterministic demo

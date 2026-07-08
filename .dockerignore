@@ -6,7 +6,6 @@ __pycache__/
 venv/
 .env
 .DS_Store
-static/uploads/logos/*
-static/uploads/consent/*
-static/uploads/prescriptions/*
-!static/uploads/.gitkeep
+# Seeded demo uploads (logos, consents) ship in the image so the golden
+# snapshot can restore them on logout. Local-only artifacts stay out.
+static/uploads/baas/*

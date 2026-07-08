@@ -33,6 +33,8 @@ docker compose up -d --build      # serves on http://localhost:5005 (basic-auth 
 
 The database (`/app/data`) and uploaded files (`/app/static/uploads`) live on **named Docker volumes**, so they **persist across image rebuilds** — a `docker compose up -d --build` no longer wipes data. Schema changes are applied automatically at startup by idempotent column migrations. To intentionally wipe and reseed: `docker compose down -v && docker compose up -d --build`. The DB path is configurable via the `DB_PATH` env var.
 
+**Demo kiosk mode (reset on logout).** With `DEMO_RESET_ON_LOGOUT=1` (on by default in `docker-compose.yml`), every logout restores the database and uploads from the pristine golden snapshot baked into the image at `/app/golden` (fresh `seed.py` + `backfill_heatmap_demo.py` output plus the seeded upload files). Demo viewers therefore can't leave the portal in a messed-up state — anything they change, add, or upload is discarded when they log out. Note the reset is global (one viewer's logout resets the data for everyone currently browsing). Unset the env var to turn it off; running `python app.py` locally is unaffected.
+
 ## Demo users
 
 | Email | Role | Org | Scope |
