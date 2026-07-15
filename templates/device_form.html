@@ -19,7 +19,20 @@
                  value="{{ device.serial_number if device else '' }}"
                  pattern="[CK]NS\d{2}A\d{3}"
                  title="Format: CNSXXAXXX (Cough) or KNSXXAXXX (Clear), where X is a digit.">
-          <div class="help">Format: <span class="mono">CNSXXAXXX</span> for BiWaze Cough, <span class="mono">KNSXXAXXX</span> for BiWaze Clear.</div>
+          {% if not device %}
+          <div class="scan-actions" style="display:flex;gap:8px;margin:8px 0;">
+            <button type="button" class="btn" id="scan-btn">📷 Scan label</button>
+            <button type="button" class="btn" id="photo-btn">Upload label photo</button>
+            <input type="file" id="scan-photo" accept="image/*" capture="environment" hidden>
+          </div>
+          <div id="scan-live" hidden>
+            <video id="scan-video" playsinline muted style="width:100%;max-width:360px;border-radius:8px;display:block;margin:8px 0;"></video>
+            <button type="button" class="btn" id="scan-cancel">Cancel scan</button>
+          </div>
+          <div id="scan-msg" class="help" hidden></div>
+          <input type="hidden" name="intake_method" id="intake-method" value="manual">
+          {% endif %}
+          <div class="help">Scan the barcode on the device label to capture the serial automatically, or type it. Format: <span class="mono">CNSXXAXXX</span> for BiWaze Cough, <span class="mono">KNSXXAXXX</span> for BiWaze Clear.</div>
         </div>
         <div class="form-group required">
           <label>Model</label>
@@ -62,4 +75,114 @@
     </form>
   </div>
 </div>
+
+{% if not device %}
+<script>
+(function () {
+  // Camera-scan device intake (URS_5.1). Live scan uses the browser's
+  // BarcodeDetector over getUserMedia (requires a secure context); the photo
+  // path uploads a label picture for server-side decoding and works anywhere —
+  // on phones/tablets the capture attribute opens the camera directly.
+  const scanBtn = document.getElementById('scan-btn');
+  const photoBtn = document.getElementById('photo-btn');
+  const photoInput = document.getElementById('scan-photo');
+  const live = document.getElementById('scan-live');
+  const video = document.getElementById('scan-video');
+  const cancelBtn = document.getElementById('scan-cancel');
+  const msg = document.getElementById('scan-msg');
+  const serialInput = document.querySelector('input[name=serial_number]');
+  const modelSelect = document.querySelector('select[name=model]');
+  const intake = document.getElementById('intake-method');
+  let stream = null, raf = 0;
+
+  const liveOK = ('BarcodeDetector' in window) && navigator.mediaDevices &&
+                 navigator.mediaDevices.getUserMedia && window.isSecureContext;
+
+  function say(text, ok) {
+    msg.hidden = false;
+    msg.textContent = text;
+    msg.style.color = ok ? '#1D7A46' : '#B23B3B';
+  }
+
+  function apply(data, method) {
+    if (data.error) { say(data.error); return; }
+    if (data.duplicate === 'own') {
+      say(data.message + ' ');
+      const a = document.createElement('a');
+      a.href = data.device_url;
+      a.textContent = 'Open device ▸';
+      msg.appendChild(a);
+      return;
+    }
+    if (data.duplicate === 'other') { say(data.message); return; }
+    serialInput.value = data.serial;
+    if (modelSelect && data.model) modelSelect.value = data.model;
+    intake.value = method;
+    say('Serial ' + data.serial + ' captured from the label — review and save.', true);
+  }
+
+  async function send(fd, method) {
+    try {
+      const r = await fetch('{{ url_for("device_scan_api") }}', { method: 'POST', body: fd });
+      apply(await r.json(), method);
+    } catch (e) {
+      say('Scan failed — try again or type the serial number.');
+    }
+  }
+
+  function stopLive() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    live.hidden = true;
+  }
+
+  async function startLive() {
+    const detector = new BarcodeDetector({
+      formats: ['code_128', 'code_39', 'qr_code', 'data_matrix', 'ean_13', 'upc_a']
+    });
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    } catch (e) {
+      say('Camera unavailable or permission denied — use "Upload label photo" instead.');
+      return;
+    }
+    live.hidden = false;
+    video.srcObject = stream;
+    await video.play();
+    const tick = async () => {
+      if (!stream) return;
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length) {
+          const text = codes[0].rawValue;
+          stopLive();
+          const fd = new FormData();
+          fd.append('serial', text);
+          send(fd, 'portal_camera_scan');
+          return;
+        }
+      } catch (e) { /* keep scanning */ }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  }
+
+  scanBtn.addEventListener('click', () => {
+    msg.hidden = true;
+    if (liveOK) startLive(); else photoInput.click();
+  });
+  photoBtn.addEventListener('click', () => { msg.hidden = true; photoInput.click(); });
+  cancelBtn.addEventListener('click', stopLive);
+  photoInput.addEventListener('change', () => {
+    if (!photoInput.files.length) return;
+    const fd = new FormData();
+    fd.append('photo', photoInput.files[0]);
+    say('Reading label…', true);
+    send(fd, 'photo_scan');
+    photoInput.value = '';
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

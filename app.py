@@ -7,6 +7,7 @@ Open: http://localhost:5001
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import sqlite3
@@ -4501,6 +4502,60 @@ def devices():
     return render_template('devices.html', devices=rows, tab=tab, kpis=kpis)
 
 
+# BiWaze label serial format: CNSXXAXXX (Cough) / KNSXXAXXX (Clear).
+DEVICE_SERIAL_RE = re.compile(r'^[CK]NS\d{2}A\d{3}$')
+
+
+def _scan_serial_response(raw):
+    """Validate a serial captured from a label scan and check for duplicates.
+    Shared by the client-side (BarcodeDetector) and server-side (photo) paths."""
+    serial = (raw or '').strip().upper()
+    if not DEVICE_SERIAL_RE.match(serial):
+        return jsonify(error=f'"{serial}" does not look like a BiWaze serial number '
+                             '(CNSXXAXXX for Cough, KNSXXAXXX for Clear).'), 422
+    model = 'biwaze_cough' if serial.startswith('C') else 'biwaze_clear'
+    existing = q_one('SELECT id, organization_id FROM devices WHERE serial_number = ?',
+                     (serial,))
+    if existing:
+        if existing['organization_id'] == current_org_id():
+            return jsonify(serial=serial, duplicate='own',
+                           device_url=url_for('device_detail', device_id=existing['id']),
+                           message=f'Device {serial} is already in your fleet.')
+        return jsonify(serial=serial, duplicate='other',
+                       message=f'Serial {serial} is registered to another organization — '
+                               'contact ABMRC to arrange a transfer.')
+    return jsonify(serial=serial, model=model)
+
+
+@app.route('/api/devices/scan', methods=['POST'])
+@require_login
+def device_scan_api():
+    """Portal camera-scan device intake (URS_5.1). Accepts either a `serial`
+    decoded client-side by the browser's BarcodeDetector, or a label `photo`
+    decoded server-side — the fallback for browsers without live scanning."""
+    if request.form.get('serial'):
+        return _scan_serial_response(request.form['serial'])
+    f = request.files.get('photo')
+    if not f or not f.filename:
+        return jsonify(error='No barcode or photo received.'), 400
+    try:
+        import zxingcpp
+    except ImportError:
+        return jsonify(error='Photo decoding is not available on this server — '
+                             'type the serial number instead.'), 501
+    try:
+        from PIL import Image
+        img = Image.open(f.stream)
+        img.load()
+    except Exception:
+        return jsonify(error='Could not read that image file.'), 400
+    results = zxingcpp.read_barcodes(img)
+    if not results:
+        return jsonify(error='No barcode found in the photo — retake it closer to '
+                             'the label and make sure the barcode is in focus.'), 422
+    return _scan_serial_response(results[0].text)
+
+
 @app.route('/devices/new', methods=['GET', 'POST'])
 @require_login
 def device_new():
@@ -4509,13 +4564,19 @@ def device_new():
         flash("Your account is pending activation — you can't add devices yet.", 'error')
         return redirect(url_for('devices'))
     if request.method == 'POST':
-        serial = request.form.get('serial_number', '').strip()
+        serial = request.form.get('serial_number', '').strip().upper()
         model = request.form.get('model')
-        existing = q_one('SELECT id FROM devices WHERE serial_number = ?', (serial,))
+        existing = q_one('SELECT id, organization_id FROM devices WHERE serial_number = ?',
+                         (serial,))
         if existing:
-            flash(f'Device with serial {serial} already exists.', 'error')
+            if existing['organization_id'] == oid:
+                flash(f'Device {serial} is already in your fleet — here is its record.',
+                      'error')
+                return redirect(url_for('device_detail', device_id=existing['id']))
+            flash(f'Serial {serial} is registered to another organization — contact '
+                  'ABMRC to arrange a transfer.', 'error')
             return redirect(url_for('device_new'))
-        q_exec("""INSERT INTO devices (organization_id, serial_number, model, firmware_version,
+        new_id = q_exec("""INSERT INTO devices (organization_id, serial_number, model, firmware_version,
                   software_version, upload_date, warranty_end, status, notes)
                   VALUES (?, ?, ?, ?, ?, ?, ?, 'in_stock', ?)""",
                (oid, serial, model, request.form.get('firmware_version'),
@@ -4523,6 +4584,9 @@ def device_new():
                 request.form.get('upload_date') or date.today().isoformat(),
                 request.form.get('warranty_end') or None,
                 request.form.get('notes')))
+        intake = request.form.get('intake_method') or 'manual'
+        _log_access('device_add', ref_type='device', ref_id=new_id,
+                    detail=f'serial {serial} · intake {intake}')
         flash(f'Device {serial} added to inventory.', 'success')
         return redirect(url_for('devices', tab='unassigned'))
     return render_template('device_form.html', device=None)
