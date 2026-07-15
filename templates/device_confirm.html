@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Confirm device · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Confirm device details</h1>
+      <div class="subtitle">Manual entry — check this matches the physical device before adding it</div>
+    </div>
+    <a href="{{ url_for('device_new') }}" class="btn">← Back</a>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <p class="help">You entered this serial number by hand. Confirm it matches the device the patient
+        has. The device will be added as <strong>Unverified</strong>: it holds no
+        patient data and cannot be assigned until you verify device possession.</p>
+
+      {% if model_mismatch %}
+      <div style="margin:12px 0;padding:10px 12px;border-radius:8px;background:#F7ECCB;color:#7A5B12;">
+        ⚠ The serial <span class="mono">{{ serial }}</span> looks like a
+        <strong>{{ serial_model | model_label }}</strong>, but you selected
+        <strong>{{ model | model_label }}</strong>. Double-check the serial number or the model before confirming.
+      </div>
+      {% endif %}
+
+      <div class="form-grid">
+        <div class="form-group mb-2"><label>Serial number</label><div class="mono">{{ serial }}</div></div>
+        <div class="form-group mb-2"><label>Model (from serial)</label><div>{{ serial_model | model_label }}</div></div>
+        <div class="form-group mb-2"><label>Model (you selected)</label><div>{{ model | model_label if model else '—' }}</div></div>
+        <div class="form-group mb-2"><label>Firmware version</label><div>{{ carry.firmware_version or '—' }}</div></div>
+      </div>
+
+      <form method="POST" action="{{ url_for('device_new') }}">
+        <input type="hidden" name="serial_number" value="{{ serial }}">
+        <input type="hidden" name="model" value="{{ model }}">
+        <input type="hidden" name="firmware_version" value="{{ carry.firmware_version }}">
+        <input type="hidden" name="software_version" value="{{ carry.software_version }}">
+        <input type="hidden" name="upload_date" value="{{ carry.upload_date }}">
+        <input type="hidden" name="warranty_end" value="{{ carry.warranty_end }}">
+        <input type="hidden" name="notes" value="{{ carry.notes }}">
+        <input type="hidden" name="intake_method" value="manual">
+        <input type="hidden" name="confirmed" value="1">
+        <div class="form-actions">
+          <a href="{{ url_for('device_new') }}" class="btn">Cancel</a>
+          <button type="submit" class="btn btn-primary">Confirm &amp; add (Unverified)</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

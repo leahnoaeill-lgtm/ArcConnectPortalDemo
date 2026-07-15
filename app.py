@@ -85,6 +85,30 @@ def _ensure_org_verification_columns():
         conn.close()
 
 
+def _ensure_device_verification_columns():
+    """Lightweight migration: add manual-entry verification columns to devices on
+    an existing DB that pre-dates them (URS_5.2). Idempotent. Existing rows default
+    to 'verified' — they were scanned or seeded, so possession is already evidenced;
+    only new manual-entry devices land in 'pending'."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+        wanted = [
+            ('verification_status', "TEXT NOT NULL DEFAULT 'verified'"),
+            ('intake_method',       'TEXT'),
+            ('verified_at',         'TIMESTAMP'),
+            ('verified_by_user_id', 'INTEGER REFERENCES users(id) ON DELETE SET NULL'),
+        ]
+        for name, decl in wanted:
+            if name not in cols:
+                conn.execute(f"ALTER TABLE devices ADD COLUMN {name} {decl}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _ensure_signup_request_columns():
     """Lightweight migration: add address line 2 / country and split-name columns
     to signup_requests on an existing DB that pre-dates them. Idempotent."""
@@ -227,6 +251,7 @@ def _ensure_invitation_user_fields():
 
 _ensure_heatmap_schema()
 _ensure_org_verification_columns()
+_ensure_device_verification_columns()
 _ensure_signup_request_columns()
 _ensure_org_country_column()
 _ensure_org_login_columns()
@@ -4566,6 +4591,15 @@ def device_new():
     if request.method == 'POST':
         serial = request.form.get('serial_number', '').strip().upper()
         model = request.form.get('model')
+        intake = request.form.get('intake_method') or 'manual'
+        manual = (intake == 'manual')
+
+        # Serial-format validation (URS_5.2) — enforced for manual entry too, not only scans.
+        if not DEVICE_SERIAL_RE.match(serial):
+            flash(f'"{serial}" is not a valid BiWaze serial number (CNSXXAXXX for Cough, '
+                  'KNSXXAXXX for Clear).', 'error')
+            return redirect(url_for('device_new'))
+
         existing = q_one('SELECT id, organization_id FROM devices WHERE serial_number = ?',
                          (serial,))
         if existing:
@@ -4576,19 +4610,42 @@ def device_new():
             flash(f'Serial {serial} is registered to another organization — contact '
                   'ABMRC to arrange a transfer.', 'error')
             return redirect(url_for('device_new'))
+
+        # Manual entry (URS_5.2): require an explicit confirmation step that echoes the
+        # device the serial resolves to, so a wrong-but-valid serial surfaces a mismatch
+        # BEFORE it is saved. The device is then created Unverified: it holds no
+        # patient data and cannot be assigned until possession is verified.
+        serial_model = 'biwaze_cough' if serial.startswith('C') else 'biwaze_clear'
+        if manual and not request.form.get('confirmed'):
+            carry = {k: request.form.get(k, '') for k in
+                     ('firmware_version', 'software_version', 'upload_date', 'warranty_end', 'notes')}
+            return render_template('device_confirm.html', serial=serial, model=model,
+                                   serial_model=serial_model,
+                                   model_mismatch=bool(model and model != serial_model),
+                                   carry=carry)
+
+        verification_status = 'pending' if manual else 'verified'
         new_id = q_exec("""INSERT INTO devices (organization_id, serial_number, model, firmware_version,
-                  software_version, upload_date, warranty_end, status, notes)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, 'in_stock', ?)""",
+                  software_version, upload_date, warranty_end, status, verification_status,
+                  intake_method, notes)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, 'in_stock', ?, ?, ?)""",
                (oid, serial, model, request.form.get('firmware_version'),
                 request.form.get('software_version'),
                 request.form.get('upload_date') or date.today().isoformat(),
                 request.form.get('warranty_end') or None,
+                verification_status, intake,
                 request.form.get('notes')))
-        intake = request.form.get('intake_method') or 'manual'
+        if not manual:
+            # Scanning the physical label is itself possession evidence — auto-verified.
+            q_exec("UPDATE devices SET verified_at = datetime('now') WHERE id = ?", (new_id,))
         _log_access('device_add', ref_type='device', ref_id=new_id,
-                    detail=f'serial {serial} · intake {intake}')
-        flash(f'Device {serial} added to inventory.', 'success')
-        return redirect(url_for('devices', tab='unassigned'))
+                    detail=f'serial {serial} · intake {intake} · {verification_status}')
+        if manual:
+            flash(f'Device {serial} added as Unverified. Verify device possession '
+                  'before it can be assigned to a patient.', 'success')
+        else:
+            flash(f'Device {serial} added to inventory.', 'success')
+        return redirect(url_for('device_detail', device_id=new_id))
     return render_template('device_form.html', device=None)
 
 
@@ -4651,6 +4708,13 @@ def device_assign(device_id):
         return redirect(url_for('device_detail', device_id=device_id))
     if d['status'] == 'retired':
         flash(f'Device {d["serial_number"]} is retired and can\'t be assigned.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+    # Manual-entry gate (URS_5.2): an Unverified device cannot be assigned until
+    # device possession is verified, so a wrong-but-valid typed serial never links a patient
+    # to a device they don't have.
+    if d['verification_status'] == 'pending':
+        flash(f'Device {d["serial_number"]} was added by manual entry and must be verified '
+              'before it can be assigned. Verify device possession first.', 'error')
         return redirect(url_for('device_detail', device_id=device_id))
     # Current assignment (if any) — presence means this is a REASSIGNMENT
     active = q_one("""SELECT da.*, p.first_name, p.last_name, p.mrn, p.id AS patient_id
@@ -4723,6 +4787,30 @@ def device_assign(device_id):
     return render_template('device_assign.html', device=d, patients=patients_list,
                            today=date.today().isoformat(),
                            current_assignment=active)
+
+
+@app.route('/devices/<int:device_id>/verify', methods=['POST'])
+@require_login
+def device_verify(device_id):
+    """Mark a manually-entered device as possession-verified (URS_5.2). In production
+    this is driven by the external possession-proof signal — patient app-pairing, a
+    device-displayed code, or HOTP — which lives in the mobile app / telemetry gateway,
+    not the portal. Here it is a manual confirmation standing in for that signal. Until it
+    runs, the device is Unverified and cannot be assigned."""
+    oid = current_org_id()
+    d = q_one('SELECT * FROM devices WHERE id = ? AND organization_id = ?', (device_id, oid))
+    if not d:
+        abort(404)
+    if d['verification_status'] == 'verified':
+        flash(f'Device {d["serial_number"]} is already verified.', 'info')
+        return redirect(url_for('device_detail', device_id=device_id))
+    q_exec("""UPDATE devices SET verification_status = 'verified', verified_at = datetime('now'),
+              verified_by_user_id = ? WHERE id = ?""", (current_user()['id'], device_id))
+    _log_access('device_verify', ref_type='device', ref_id=device_id,
+                detail=f'Device {d["serial_number"]} possession verified')
+    flash(f'Device {d["serial_number"]} verified — possession confirmed. It can now be '
+          'assigned to a patient.', 'success')
+    return redirect(url_for('device_detail', device_id=device_id))
 
 
 @app.route('/devices/<int:device_id>/unassign/<int:assignment_id>', methods=['POST'])

@@ -357,6 +357,10 @@ CREATE TABLE IF NOT EXISTS devices (
     last_communication TIMESTAMP,
     warranty_end DATE,
     status TEXT DEFAULT 'in_stock' CHECK(status IN ('in_stock','in_use','maintenance','retired')),
+    verification_status TEXT NOT NULL DEFAULT 'verified' CHECK(verification_status IN ('verified','pending')),
+    intake_method TEXT,
+    verified_at TIMESTAMP,
+    verified_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
