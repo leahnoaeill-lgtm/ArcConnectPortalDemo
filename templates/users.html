@@ -5,7 +5,7 @@
   <div class="page-header">
     <div>
       <h1>Users</h1>
-      <div class="subtitle">{{ users | selectattr('is_active') | list | length }} active · {{ users | rejectattr('is_active') | list | length }} deactivated</div>
+      <div class="subtitle">{{ users | selectattr('is_active') | list | length }} active · {{ users | rejectattr('is_active') | list | length }} deactivated{% if pending_invites %} · {{ pending_invites | length }} pending{% endif %}</div>
     </div>
     <div class="actions">
       {% if account_active %}<a href="{{ url_for('user_new') }}" class="btn btn-primary">+ Add user</a>{% endif %}
@@ -27,6 +27,7 @@
       <option value="">All statuses</option>
       <option value="active">Active</option>
       <option value="inactive">Deactivated</option>
+      <option value="pending">Pending invite</option>
     </select>
     <span class="filter-count" id="userSearchCount"></span>
   </div>
@@ -91,30 +92,23 @@
               </td>
             </tr>
           {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  {% if pending_invites %}
-  <div class="card">
-    <div class="card-header"><h2>Pending invitations <span class="badge status-yellow">Invited</span></h2></div>
-    <div class="card-body no-pad">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Email</th>
-            {% if network_scope %}<th>Location</th>{% endif %}
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
           {% for inv in pending_invites %}
-            <tr>
+            <tr data-search="{{ ((inv.first_name or '') ~ ' ' ~ (inv.last_name or '') ~ ' ' ~ (inv.email or '') ~ ' ' ~ (inv.role or '') ~ ' ' ~ (inv.phone or '') ~ ' ' ~ (inv.scope_label or '') ~ ' pending invited') | lower }}"
+                data-status="pending">
+              <td>
+                <div class="user-avatar" style="width: 32px; height: 32px; background: var(--ac-bg); color: var(--ac-gray); border: 1px dashed var(--ac-gray); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px;">
+                  {{ inv.first_name[0] if inv.first_name else '?' }}{{ inv.last_name[0] if inv.last_name else '' }}
+                </div>
+              </td>
               <td style="font-weight: 600;">{{ inv.first_name }} {{ inv.last_name }}</td>
               <td class="mono">{{ inv.email }}</td>
-              {% if network_scope %}<td class="small">{{ inv.org_name }}</td>{% endif %}
+              <td><span class="badge role-{{ inv.role or 'admin' }}">{{ (inv.role or 'admin') | replace('_',' ') | title }}</span></td>
+              {% if network_scope %}
+                <td class="small">{{ inv.scope_label }}</td>
+              {% endif %}
+              <td class="small">{{ inv.phone or '—' }}</td>
+              <td class="small">—</td>
+              <td><span class="badge status-yellow">Pending</span></td>
               <td>
                 <div style="display: flex; gap: 6px; justify-content: flex-end;">
                   <a href="{{ url_for('accept_invite', token=inv.token) }}" class="btn btn-sm" target="_blank">Accept (demo)</a>
@@ -133,7 +127,6 @@
       </table>
     </div>
   </div>
-  {% endif %}
 </div>
 <script>
 (function() {
