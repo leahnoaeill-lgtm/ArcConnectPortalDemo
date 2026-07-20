@@ -1514,6 +1514,14 @@ def seed():
             if nv != row['val']:
                 c.execute(f'UPDATE {tbl} SET {col} = ? WHERE rowid = ?', (nv, row['rid']))
 
+    # Demo: enable mobile (SMS OTP) user sign-in for Adapt, and give James (a 'user')
+    # a verified login number so the phone sign-in path works out of the box.
+    conn.execute("""UPDATE organizations SET allow_user_mobile_login = 1
+                    WHERE type = 'parent' AND name LIKE 'Adapt%'""")
+    conn.execute("""UPDATE users SET login_phone = '+13035550142',
+                    login_phone_verified_at = CURRENT_TIMESTAMP
+                    WHERE email = 'james.r@adapt.com'""")
+
     conn.commit()
     conn.close()
     print(f'Seeded {DB_PATH}')
@@ -1521,7 +1529,7 @@ def seed():
     print('  support@abmrespiratory.com (ABMRC super admin — view-only across all orgs)')
     print('  karen.h@adapt.com     (Adapt HQ admin — parent rollup + switch location)')
     print('  priya.s@adapt.com     (Adapt — Denver admin — full location admin)')
-    print('  james.r@adapt.com     (Adapt — Denver user)')
+    print('  james.r@adapt.com     (Adapt — Denver user — mobile sign-in +1 303-555-0142)')
     print('  linda.w@adapt.com     (Adapt — Boulder admin)')
     print('  maria.t@sunwest.com  (Sunwest Medical admin)')
 

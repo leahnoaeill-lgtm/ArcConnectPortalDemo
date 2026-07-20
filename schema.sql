@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     login_mode TEXT NOT NULL DEFAULT 'sso',
     sso_providers TEXT DEFAULT 'google,facebook,apple',   -- comma list (when login_mode='sso')
     login_domain TEXT,         -- allowed email domain (when login_mode='domain')
+    allow_user_mobile_login INTEGER NOT NULL DEFAULT 0,   -- group-admin policy: users may sign in with a verified mobile via SMS OTP
     phone TEXT,
     email TEXT,
     npi TEXT,
@@ -82,6 +83,8 @@ CREATE TABLE IF NOT EXISTS users (
     rss_feeds_json TEXT,  -- JSON array of subscribed feed keys; NULL = use defaults
     notify_channel TEXT DEFAULT 'email',  -- 'email','sms','both','none'
     notify_phone_e164 TEXT,  -- E.164 SMS target; falls back to 'phone' if NULL
+    login_phone TEXT,  -- verified E.164 mobile used as a passwordless sign-in identifier (users only)
+    login_phone_verified_at TIMESTAMP,  -- when login_phone was verified via SMS OTP
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -357,6 +360,10 @@ CREATE TABLE IF NOT EXISTS devices (
     last_communication TIMESTAMP,
     warranty_end DATE,
     status TEXT DEFAULT 'in_stock' CHECK(status IN ('in_stock','in_use','maintenance','retired')),
+    verification_status TEXT NOT NULL DEFAULT 'verified' CHECK(verification_status IN ('verified','pending')),
+    intake_method TEXT,
+    verified_at TIMESTAMP,
+    verified_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

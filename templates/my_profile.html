@@ -28,6 +28,57 @@
     </div>
   </div>
 
+  {% if mobile_login_allowed %}
+  <div class="card">
+    <div class="card-header"><h2>Mobile sign-in</h2></div>
+    <div class="card-body">
+      {% if user.login_phone and not pending_phone %}
+        <div class="form-group">
+          <label>Verified mobile number</label>
+          <div><span class="mono">{{ user.login_phone }}</span> <span class="badge status-active">Verified</span></div>
+          <div class="help">You can sign in with this number using a one-time SMS code.</div>
+        </div>
+        <div class="form-actions" style="justify-content:flex-start; gap:8px;">
+          <form method="POST" action="{{ url_for('my_profile_phone_remove') }}"
+                onsubmit="return confirm('Remove your mobile sign-in number?');">
+            <button type="submit" class="btn btn-sm btn-danger">Remove number</button>
+          </form>
+        </div>
+      {% elif pending_phone %}
+        <p>We sent a 6-digit code by SMS to <strong class="mono">{{ pending_phone }}</strong>. Enter it to finish adding this number.</p>
+        <form method="POST" action="{{ url_for('my_profile_phone_verify') }}" autocomplete="off">
+          <div class="form-group" style="max-width:220px;">
+            <label for="otp">Verification code</label>
+            <input type="text" id="otp" name="otp" required inputmode="numeric" pattern="\d{6}"
+                   maxlength="6" autocomplete="one-time-code" autofocus placeholder="123456">
+            <div class="help">The code expires in 5 minutes.</div>
+          </div>
+          <div class="form-actions" style="justify-content:flex-start;">
+            <button type="submit" class="btn btn-primary">Verify number</button>
+          </div>
+        </form>
+        <form method="POST" action="{{ url_for('my_profile_phone_resend') }}" style="margin-top:6px;">
+          <button type="submit" class="btn btn-sm" {% if resend_wait > 0 %}disabled{% endif %}>
+            Resend code{% if resend_wait > 0 %} ({{ resend_wait }}s){% endif %}
+          </button>
+          {% if resend_wait > 0 %}<span class="small muted">You can request a new code in {{ resend_wait }} seconds.</span>{% endif %}
+        </form>
+      {% else %}
+        <p class="help" style="margin-bottom:10px;">Add a mobile number to sign in with a one-time SMS code. Country code defaults to +1 (US).</p>
+        <form method="POST" action="{{ url_for('my_profile_phone_send') }}">
+          <div class="form-group span-2" style="max-width:360px;">
+            <label>Mobile number</label>
+            {{ phone_field('login_phone', '', required=True) }}
+          </div>
+          <div class="form-actions" style="justify-content:flex-start;">
+            <button type="submit" class="btn btn-primary">Send code</button>
+          </div>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <form method="POST">
     <div class="card">
       <div class="card-header"><h2>Notifications</h2></div>

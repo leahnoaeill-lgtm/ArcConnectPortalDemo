@@ -85,6 +85,30 @@ def _ensure_org_verification_columns():
         conn.close()
 
 
+def _ensure_device_verification_columns():
+    """Lightweight migration: add manual-entry verification columns to devices on
+    an existing DB that pre-dates them (URS_5.2). Idempotent. Existing rows default
+    to 'verified' — they were scanned or seeded, so possession is already evidenced;
+    only new manual-entry devices land in 'pending'."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+        wanted = [
+            ('verification_status', "TEXT NOT NULL DEFAULT 'verified'"),
+            ('intake_method',       'TEXT'),
+            ('verified_at',         'TIMESTAMP'),
+            ('verified_by_user_id', 'INTEGER REFERENCES users(id) ON DELETE SET NULL'),
+        ]
+        for name, decl in wanted:
+            if name not in cols:
+                conn.execute(f"ALTER TABLE devices ADD COLUMN {name} {decl}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _ensure_signup_request_columns():
     """Lightweight migration: add address line 2 / country and split-name columns
     to signup_requests on an existing DB that pre-dates them. Idempotent."""
@@ -134,9 +158,28 @@ def _ensure_org_login_columns():
         cols = {row[1] for row in conn.execute("PRAGMA table_info(organizations)").fetchall()}
         for name, decl in [('login_mode', "TEXT NOT NULL DEFAULT 'sso'"),
                            ('sso_providers', "TEXT DEFAULT 'google,facebook,apple'"),
-                           ('login_domain', 'TEXT')]:
+                           ('login_domain', 'TEXT'),
+                           ('allow_user_mobile_login', 'INTEGER NOT NULL DEFAULT 0')]:
             if name not in cols:
                 conn.execute(f"ALTER TABLE organizations ADD COLUMN {name} {decl}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _ensure_user_login_phone_columns():
+    """Lightweight migration: add the verified mobile-login columns to users on an
+    existing DB (login_phone = normalized E.164 login identifier, and the timestamp
+    it was verified). Idempotent."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        for name, decl in [('login_phone', 'TEXT'),
+                           ('login_phone_verified_at', 'TIMESTAMP')]:
+            if name not in cols:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {name} {decl}")
         conn.commit()
     finally:
         conn.close()
@@ -227,9 +270,11 @@ def _ensure_invitation_user_fields():
 
 _ensure_heatmap_schema()
 _ensure_org_verification_columns()
+_ensure_device_verification_columns()
 _ensure_signup_request_columns()
 _ensure_org_country_column()
 _ensure_org_login_columns()
+_ensure_user_login_phone_columns()
 _ensure_user_location_access()
 _ensure_org_status_rejected()
 _ensure_invitation_user_fields()
@@ -809,6 +854,91 @@ def login():
         ORDER BY o.name, u.role DESC, u.last_name
     """)
     return render_template('login.html', users=users)
+
+
+@app.route('/login/phone', methods=['GET'])
+def login_phone():
+    """Mobile-number sign-in for users whose organization allows it. Shows the
+    number-entry form, or the code-entry form when an OTP is in progress."""
+    pending = session.get('login_phone_otp')
+    return render_template('login_phone.html',
+                           pending_phone=(pending or {}).get('phone'),
+                           resend_wait=_phone_otp_resend_wait('login_phone_otp') if pending else 0)
+
+
+@app.route('/login/phone/send', methods=['POST'])
+def login_phone_send():
+    """Issue an SMS OTP for a sign-in attempt. Enumeration-safe: the flow always
+    advances to the code-entry screen whether or not the number matches a user."""
+    phone = _normalize_phone(request.form.get('login_phone'))
+    if not phone:
+        flash('Enter a valid mobile number.', 'error')
+        return redirect(url_for('login_phone'))
+    user = _lookup_mobile_login_user(phone)
+    code = _issue_phone_otp('login_phone_otp', phone,
+                            extra={'user_id': user['id'] if user else None})
+    # Demo mode surfaces the code only when it can actually be used; production sends
+    # it by SMS and the on-screen response is identical regardless of a match.
+    if user:
+        flash(f'Demo mode — SMS delivery is stubbed, so your code is shown here: {code}', 'info')
+    else:
+        flash('If that number is registered for mobile sign-in, a code has been sent.', 'info')
+    return redirect(url_for('login_phone'))
+
+
+@app.route('/login/phone/resend', methods=['POST'])
+def login_phone_resend():
+    rec = session.get('login_phone_otp')
+    if not rec:
+        flash('Enter your mobile number to get started.', 'error')
+        return redirect(url_for('login_phone'))
+    wait = _phone_otp_resend_wait('login_phone_otp')
+    if wait > 0:
+        flash(f'Please wait {wait} seconds before requesting a new code.', 'error')
+        return redirect(url_for('login_phone'))
+    user = _lookup_mobile_login_user(rec['phone'])
+    code = _issue_phone_otp('login_phone_otp', rec['phone'],
+                            extra={'user_id': user['id'] if user else None})
+    if user:
+        flash(f'Demo mode — a new code was generated: {code}', 'info')
+    else:
+        flash('If that number is registered for mobile sign-in, a new code has been sent.', 'info')
+    return redirect(url_for('login_phone'))
+
+
+@app.route('/login/phone/verify', methods=['POST'])
+def login_phone_verify():
+    rec = session.get('login_phone_otp')
+    if not rec:
+        flash('Enter your mobile number to get started.', 'error')
+        return redirect(url_for('login_phone'))
+    if datetime.now() > datetime.fromisoformat(rec['expires']):
+        session.pop('login_phone_otp', None)
+        flash('That code has expired. Request a new one.', 'error')
+        return redirect(url_for('login_phone'))
+    if rec.get('attempts', 0) >= PHONE_OTP_MAX_ATTEMPTS:
+        session.pop('login_phone_otp', None)
+        flash('Too many incorrect attempts. Request a new code.', 'error')
+        return redirect(url_for('login_phone'))
+    entered = (request.form.get('otp') or '').strip()
+    # A wrong code and an unregistered number are treated identically (no enumeration).
+    if not rec.get('user_id') or _otp_hash(entered) != rec['hash']:
+        rec['attempts'] = rec.get('attempts', 0) + 1
+        session['login_phone_otp'] = rec
+        left = PHONE_OTP_MAX_ATTEMPTS - rec['attempts']
+        flash('That code didn\'t match. %d attempt%s left.' % (left, '' if left == 1 else 's'), 'error')
+        return redirect(url_for('login_phone'))
+    user = q_one('SELECT * FROM users WHERE id = ? AND is_active = 1', (rec['user_id'],))
+    if not user or not _mobile_login_allowed(user):
+        session.pop('login_phone_otp', None)
+        flash('That account can no longer sign in with a mobile number.', 'error')
+        return redirect(url_for('login_phone'))
+    session.clear()
+    session['user_id'] = user['id']
+    q_exec('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', (user['id'],))
+    _log_access('user_update', ref_type='user', ref_id=user['id'],
+                detail='Signed in with mobile number')
+    return redirect(url_for('home'))
 
 
 @app.route('/logout')
@@ -1451,6 +1581,59 @@ def _issue_signup_otp(email):
     return code
 
 
+# ── Mobile (SMS) OTP for passwordless phone sign-in + phone enrollment ────────
+# Parameters follow LD-5 (passwordless auth): 5-minute code validity, 60-second
+# resend cooldown, code invalidated after 5 failed entries, no permanent lockout.
+# SMS delivery is stubbed here (logged + surfaced on screen in demo mode); swap
+# the _send_sms call for a real provider (Twilio/SNS) when REQ-17.1 lands.
+PHONE_OTP_TTL_MIN = 5
+PHONE_OTP_RESEND_SECONDS = 60
+PHONE_OTP_MAX_ATTEMPTS = 5
+
+
+def _normalize_phone(raw):
+    """Canonicalize a phone string to a comparable E.164-ish form: a leading '+'
+    (when present) followed by digits only. Returns None if there are no digits."""
+    if not raw:
+        return None
+    s = str(raw).strip()
+    plus = s.startswith('+')
+    digits = ''.join(ch for ch in s if ch.isdigit())
+    if len(digits) < 8:          # too short to be a real dialable number
+        return None
+    return ('+' + digits) if plus else digits
+
+
+def _issue_phone_otp(session_key, phone, extra=None):
+    """Generate a 6-digit SMS OTP for `phone`, store {hash, expiry, attempts,
+    sent_at, phone, **extra} under session[session_key], 'send' it (stubbed), and
+    return the plaintext so the caller can surface it in demo mode."""
+    code = '%06d' % secrets.randbelow(1000000)
+    now = datetime.now()
+    rec = {'hash': _otp_hash(code),
+           'expires': (now + timedelta(minutes=PHONE_OTP_TTL_MIN)).isoformat(sep=' ', timespec='seconds'),
+           'sent_at': now.isoformat(sep=' ', timespec='seconds'),
+           'attempts': 0, 'phone': phone}
+    if extra:
+        rec.update(extra)
+    session[session_key] = rec
+    print(f'[LOGIN SMS] verification code for {phone}: {code} '
+          f'(valid {PHONE_OTP_TTL_MIN} minutes)', flush=True)
+    return code
+
+
+def _phone_otp_resend_wait(session_key):
+    """Seconds the user must still wait before a resend is allowed (0 if allowed)."""
+    rec = session.get(session_key)
+    if not rec or not rec.get('sent_at'):
+        return 0
+    try:
+        elapsed = (datetime.now() - datetime.fromisoformat(rec['sent_at'])).total_seconds()
+    except ValueError:
+        return 0
+    return max(0, int(PHONE_OTP_RESEND_SECONDS - elapsed))
+
+
 @app.route('/signup', methods=['GET'])
 def public_signup_form():
     """Public, unauthenticated signup form (REQ-3.8 AC-1)."""
@@ -1824,13 +2007,15 @@ def super_dashboard():
 
 
 def _parse_login_policy(form):
-    """Read the User Login policy fields from a submitted form → (mode, providers_csv, domain)."""
+    """Read the User Login policy fields from a submitted form →
+    (mode, providers_csv, domain, allow_user_mobile_login)."""
     mode = form.get('login_mode') or 'sso'
     if mode not in ('sso', 'domain'):
         mode = 'sso'
     providers = ','.join(p for p in ('google', 'facebook', 'apple') if form.get('sso_' + p) == 'on')
     domain = (form.get('login_domain') or '').strip().lower().lstrip('@')
-    return mode, providers, domain
+    allow_mobile = 1 if form.get('allow_user_mobile_login') == 'on' else 0
+    return mode, providers, domain, allow_mobile
 
 
 @app.route('/super/orgs/<int:org_id>/login', methods=['POST'])
@@ -1841,9 +2026,10 @@ def super_org_login_update(org_id):
     if bounce: return bounce
     if not q_one('SELECT id FROM organizations WHERE id = ?', (org_id,)):
         abort(404)
-    mode, providers, domain = _parse_login_policy(request.form)
-    q_exec("UPDATE organizations SET login_mode = ?, sso_providers = ?, login_domain = ? WHERE id = ?",
-           (mode, providers, domain, org_id))
+    mode, providers, domain, allow_mobile = _parse_login_policy(request.form)
+    q_exec("""UPDATE organizations SET login_mode = ?, sso_providers = ?, login_domain = ?,
+              allow_user_mobile_login = ? WHERE id = ?""",
+           (mode, providers, domain, allow_mobile, org_id))
     flash('User login settings updated.', 'success')
     return redirect(url_for('super_org_update', org_id=org_id))
 
@@ -4566,6 +4752,15 @@ def device_new():
     if request.method == 'POST':
         serial = request.form.get('serial_number', '').strip().upper()
         model = request.form.get('model')
+        intake = request.form.get('intake_method') or 'manual'
+        manual = (intake == 'manual')
+
+        # Serial-format validation (URS_5.2) — enforced for manual entry too, not only scans.
+        if not DEVICE_SERIAL_RE.match(serial):
+            flash(f'"{serial}" is not a valid BiWaze serial number (CNSXXAXXX for Cough, '
+                  'KNSXXAXXX for Clear).', 'error')
+            return redirect(url_for('device_new'))
+
         existing = q_one('SELECT id, organization_id FROM devices WHERE serial_number = ?',
                          (serial,))
         if existing:
@@ -4576,19 +4771,42 @@ def device_new():
             flash(f'Serial {serial} is registered to another organization — contact '
                   'ABMRC to arrange a transfer.', 'error')
             return redirect(url_for('device_new'))
+
+        # Manual entry (URS_5.2): require an explicit confirmation step that echoes the
+        # device the serial resolves to, so a wrong-but-valid serial surfaces a mismatch
+        # BEFORE it is saved. The device is then created Unverified: it holds no
+        # patient data and cannot be assigned until possession is verified.
+        serial_model = 'biwaze_cough' if serial.startswith('C') else 'biwaze_clear'
+        if manual and not request.form.get('confirmed'):
+            carry = {k: request.form.get(k, '') for k in
+                     ('firmware_version', 'software_version', 'upload_date', 'warranty_end', 'notes')}
+            return render_template('device_confirm.html', serial=serial, model=model,
+                                   serial_model=serial_model,
+                                   model_mismatch=bool(model and model != serial_model),
+                                   carry=carry)
+
+        verification_status = 'pending' if manual else 'verified'
         new_id = q_exec("""INSERT INTO devices (organization_id, serial_number, model, firmware_version,
-                  software_version, upload_date, warranty_end, status, notes)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, 'in_stock', ?)""",
+                  software_version, upload_date, warranty_end, status, verification_status,
+                  intake_method, notes)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, 'in_stock', ?, ?, ?)""",
                (oid, serial, model, request.form.get('firmware_version'),
                 request.form.get('software_version'),
                 request.form.get('upload_date') or date.today().isoformat(),
                 request.form.get('warranty_end') or None,
+                verification_status, intake,
                 request.form.get('notes')))
-        intake = request.form.get('intake_method') or 'manual'
+        if not manual:
+            # Scanning the physical label is itself possession evidence — auto-verified.
+            q_exec("UPDATE devices SET verified_at = datetime('now') WHERE id = ?", (new_id,))
         _log_access('device_add', ref_type='device', ref_id=new_id,
-                    detail=f'serial {serial} · intake {intake}')
-        flash(f'Device {serial} added to inventory.', 'success')
-        return redirect(url_for('devices', tab='unassigned'))
+                    detail=f'serial {serial} · intake {intake} · {verification_status}')
+        if manual:
+            flash(f'Device {serial} added as Unverified. Verify device possession '
+                  'before it can be assigned to a patient.', 'success')
+        else:
+            flash(f'Device {serial} added to inventory.', 'success')
+        return redirect(url_for('device_detail', device_id=new_id))
     return render_template('device_form.html', device=None)
 
 
@@ -4651,6 +4869,13 @@ def device_assign(device_id):
         return redirect(url_for('device_detail', device_id=device_id))
     if d['status'] == 'retired':
         flash(f'Device {d["serial_number"]} is retired and can\'t be assigned.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+    # Manual-entry gate (URS_5.2): an Unverified device cannot be assigned until
+    # device possession is verified, so a wrong-but-valid typed serial never links a patient
+    # to a device they don't have.
+    if d['verification_status'] == 'pending':
+        flash(f'Device {d["serial_number"]} was added by manual entry and must be verified '
+              'before it can be assigned. Verify device possession first.', 'error')
         return redirect(url_for('device_detail', device_id=device_id))
     # Current assignment (if any) — presence means this is a REASSIGNMENT
     active = q_one("""SELECT da.*, p.first_name, p.last_name, p.mrn, p.id AS patient_id
@@ -4723,6 +4948,30 @@ def device_assign(device_id):
     return render_template('device_assign.html', device=d, patients=patients_list,
                            today=date.today().isoformat(),
                            current_assignment=active)
+
+
+@app.route('/devices/<int:device_id>/verify', methods=['POST'])
+@require_login
+def device_verify(device_id):
+    """Mark a manually-entered device as possession-verified (URS_5.2). In production
+    this is driven by the external possession-proof signal — patient app-pairing, a
+    device-displayed code, or HOTP — which lives in the mobile app / telemetry gateway,
+    not the portal. Here it is a manual confirmation standing in for that signal. Until it
+    runs, the device is Unverified and cannot be assigned."""
+    oid = current_org_id()
+    d = q_one('SELECT * FROM devices WHERE id = ? AND organization_id = ?', (device_id, oid))
+    if not d:
+        abort(404)
+    if d['verification_status'] == 'verified':
+        flash(f'Device {d["serial_number"]} is already verified.', 'info')
+        return redirect(url_for('device_detail', device_id=device_id))
+    q_exec("""UPDATE devices SET verification_status = 'verified', verified_at = datetime('now'),
+              verified_by_user_id = ? WHERE id = ?""", (current_user()['id'], device_id))
+    _log_access('device_verify', ref_type='device', ref_id=device_id,
+                detail=f'Device {d["serial_number"]} possession verified')
+    flash(f'Device {d["serial_number"]} verified — possession confirmed. It can now be '
+          'assigned to a patient.', 'success')
+    return redirect(url_for('device_detail', device_id=device_id))
 
 
 @app.route('/devices/<int:device_id>/unassign/<int:assignment_id>', methods=['POST'])
@@ -4971,9 +5220,10 @@ def settings():
                 new_tz, default_assignee, oid))
         # User login policy — only present on the parent-org (group admin) form.
         if request.form.get('login_mode'):
-            l_mode, l_providers, l_domain = _parse_login_policy(request.form)
-            q_exec("UPDATE organizations SET login_mode = ?, sso_providers = ?, login_domain = ? WHERE id = ?",
-                   (l_mode, l_providers, l_domain, oid))
+            l_mode, l_providers, l_domain, l_mobile = _parse_login_policy(request.form)
+            q_exec("""UPDATE organizations SET login_mode = ?, sso_providers = ?, login_domain = ?,
+                      allow_user_mobile_login = ? WHERE id = ?""",
+                   (l_mode, l_providers, l_domain, l_mobile, oid))
         # Logo upload (optional) — only group admins (parent orgs) can upload.
         # Satellite admins POSTing a logo are silently ignored.
         logo_file = request.files.get('logo')
@@ -5282,6 +5532,25 @@ def _manageable_invite(invite_id):
     return inv if inv['organization_id'] == current_org_id() else None
 
 
+def _invite_scope_label(inv):
+    """Human-readable location scope carried by a pending invitation — the mirror of
+    _user_scope_label, but reading the role/scope columns on the invitation row."""
+    keys = inv.keys()
+    if 'all_locations' in keys and inv['all_locations']:
+        return 'All locations'
+    csv = inv['location_ids'] if 'location_ids' in keys else None
+    if csv:
+        ids = [int(x) for x in str(csv).split(',') if x.strip().isdigit()]
+        if ids:
+            ph = ','.join('?' * len(ids))
+            rows = q_all(f"SELECT name FROM organizations WHERE id IN ({ph}) ORDER BY name",
+                         tuple(ids))
+            if rows:
+                return ', '.join(r['name'] for r in rows)
+    o = q_one('SELECT name FROM organizations WHERE id = ?', (inv['organization_id'],))
+    return o['name'] if o else '—'
+
+
 @app.route('/settings/users')
 @require_login
 @require_admin
@@ -5317,15 +5586,20 @@ def users():
         d = dict(r)
         d['scope_label'] = _user_scope_label(r)
         user_rows.append(d)
+    pend_rows = []
+    for r in pend:
+        d = dict(r)
+        d['scope_label'] = _invite_scope_label(r)
+        pend_rows.append(d)
     return render_template('users.html', users=user_rows, network_scope=network,
-                           pending_invites=pend)
+                           pending_invites=pend_rows)
 
 
 @app.route('/settings/users/invitations/<int:invite_id>/resend', methods=['POST'])
 @require_login
 @require_admin
 def user_invite_resend(invite_id):
-    """Re-send a pending invitation — fresh token + new 14-day expiry, re-notify."""
+    """Re-send a pending invitation — fresh token + new 7-day expiry, re-notify."""
     inv = _manageable_invite(invite_id)
     if not inv:
         flash('That invitation no longer exists or has been accepted.', 'error')
@@ -5333,13 +5607,13 @@ def user_invite_resend(invite_id):
     import secrets
     from datetime import timedelta as _td
     token = secrets.token_urlsafe(24)
-    expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
+    expires_at = (datetime.now() + _td(days=7)).isoformat(sep=' ', timespec='seconds')
     q_exec("""UPDATE org_invitations
               SET token = ?, expires_at = ?, invited_at = CURRENT_TIMESTAMP
               WHERE id = ?""", (token, expires_at, invite_id))
     _log_access('user_update', ref_type='organization', ref_id=inv['organization_id'],
                 detail=f'Resent invitation {invite_id} to {inv["email"]}')
-    print(f'[INVITE NOTIFY] invitation resent to {inv["email"]} — fresh 14-day token.', flush=True)
+    print(f'[INVITE NOTIFY] invitation resent to {inv["email"]} — fresh 7-day token.', flush=True)
     flash(f'Invitation resent to {inv["email"]}.', 'success')
     return redirect(url_for('users'))
 
@@ -5401,6 +5675,13 @@ def accept_invite(token):
                    WHERE i.token = ?""", (token,))
     if not inv or inv['accepted_at']:
         return render_template('accept_invite.html', inv=None, reason='invalid')
+    # Single-use links expire after 7 days — an expired link can no longer be accepted.
+    if inv['expires_at']:
+        try:
+            if datetime.fromisoformat(str(inv['expires_at'])) < datetime.now():
+                return render_template('accept_invite.html', inv=None, reason='expired')
+        except ValueError:
+            pass
     if q_one('SELECT id FROM users WHERE email = ?', (inv['email'],)):
         return render_template('accept_invite.html', inv=None, reason='exists')
     if request.method == 'POST':
@@ -5418,13 +5699,23 @@ def user_new():
         flash("Your account is pending activation — you can't add users yet.", 'error')
         return redirect(url_for('users'))
     mgr = current_user()
-    network = _is_network_admin(mgr)
-    grantable = _grantable_site_rows(mgr) if network else []
+    # An admin may only invite into locations they themselves administer — their own
+    # accessible set. A single-location admin gets exactly one; a multi-location admin
+    # gets a dropdown to choose one, defaulting to the location they're acting within.
+    # A group admin with all-locations reach may additionally grant "All locations".
+    grantable = _grantable_site_rows(mgr)
     grantable_ids = {g['id'] for g in grantable}
+    can_grant_all = _is_network_admin(mgr)
     parent_root = (mgr['org_parent'] or mgr['organization_id'])
-    # A network admin may pre-target one site via ?location=<id> (checked by default).
+    cur = current_org_id()
     requested_loc = request.values.get('location', type=int)
-    preselected = [requested_loc] if (requested_loc in grantable_ids) else []
+    if requested_loc in grantable_ids:
+        default_loc = requested_loc
+    elif cur in grantable_ids:
+        default_loc = cur
+    else:
+        default_loc = grantable[0]['id'] if grantable else cur
+    multi = len(grantable) > 1
 
     if request.method == 'POST':
         first = (request.form.get('first_name') or '').strip()
@@ -5432,8 +5723,14 @@ def user_new():
         email = (request.form.get('email') or '').strip().lower()
         phone = (request.form.get('phone') or '').strip() or None
         role  = request.form.get('role')
+        if not first or not last:
+            flash('First and last name are required.', 'error')
+            return redirect(url_for('user_new'))
         if '@' not in email or '.' not in email.split('@')[-1]:
             flash('A valid email is required.', 'error')
+            return redirect(url_for('user_new'))
+        if role not in ('admin', 'user'):
+            flash('Please select a role.', 'error')
             return redirect(url_for('user_new'))
         if q_one('SELECT id FROM users WHERE email = ?', (email,)):
             flash('A user with that email already exists.', 'error')
@@ -5442,39 +5739,37 @@ def user_new():
             flash('There is already a pending invitation for that email.', 'error')
             return redirect(url_for('user_new'))
 
-        if network:
-            # Scope selector drives the access set granted on acceptance.
-            mode = 'all' if request.form.get('scope_mode') == 'all' else 'sites'
-            site_ids = [int(s) for s in request.form.getlist('sites') if s.isdigit()]
-            site_ids = [s for s in site_ids if s in grantable_ids]   # never beyond grant
-            if mode == 'sites' and not site_ids:
-                flash('Select at least one location, or choose All locations.', 'error')
+        # Location: within the inviter's own admin locations. A group admin with
+        # all-locations reach may grant "All locations" (network-wide, admin-only);
+        # otherwise it's a single location — chosen from the dropdown when there's
+        # more than one, or the inviter's only location.
+        loc_choice = (request.form.get('location') or '').strip()
+        if loc_choice == 'all' and can_grant_all:
+            if role != 'admin':
+                flash('All-locations access requires the Admin role.', 'error')
                 return redirect(url_for('user_new'))
-            # All-locations is admin-only; specific sites take admin or user.
-            allowed = ('admin',) if mode == 'all' else ('admin', 'user')
-            if role not in allowed:
-                flash('All-locations access requires the Admin role.' if mode == 'all'
-                      else 'Invalid role.', 'error')
-                return redirect(url_for('user_new'))
-            invite_org = parent_root
-            all_loc = 1 if mode == 'all' else 0
-            loc_csv = '' if mode == 'all' else ','.join(str(s) for s in site_ids)
-            scope_desc = 'all locations' if mode == 'all' else f'{len(site_ids)} location(s)'
+            invite_org, all_loc, loc_csv = parent_root, 1, ''
+            loc_name = 'all locations'
         else:
-            # Site admin → a single-site user at their current acting location.
-            if role not in ('admin', 'user'):
-                flash('Invalid role.', 'error')
-                return redirect(url_for('user_new'))
-            invite_org = current_org_id()
+            if multi:
+                invite_org = request.form.get('location', type=int)
+                if invite_org not in grantable_ids:
+                    flash('Select a location for this user.', 'error')
+                    return redirect(url_for('user_new'))
+            elif grantable:
+                invite_org = default_loc      # only one location — no choice to make
+            else:
+                invite_org = cur              # defensive fallback (shouldn't happen for an admin)
             all_loc, loc_csv = 0, str(invite_org)
-            scope_desc = 'this location'
+            loc_name = next((g['name'] for g in grantable if g['id'] == invite_org), 'this location')
 
         # Invitation-based: create a pending invitation that becomes a user account
-        # only when the invitee accepts it (carrying the role + scope chosen here).
+        # only when the invitee accepts it (carrying the role + location scope chosen
+        # here — anchored at that location, or network-wide, on acceptance).
         import secrets
         from datetime import timedelta as _td
         token = secrets.token_urlsafe(24)
-        expires_at = (datetime.now() + _td(days=14)).isoformat(sep=' ', timespec='seconds')
+        expires_at = (datetime.now() + _td(days=7)).isoformat(sep=' ', timespec='seconds')
         q_exec("""INSERT INTO org_invitations
                   (organization_id, email, first_name, last_name, token, invited_by_user_id,
                    expires_at, role, phone, all_locations, location_ids)
@@ -5483,16 +5778,16 @@ def user_new():
                 role, phone, all_loc, loc_csv))
         new_id = q_one('SELECT last_insert_rowid() AS id')['id']
         _log_access('user_create', ref_type='organization', ref_id=invite_org,
-                    detail=f'Invited {email} ({role}, {scope_desc})')
-        print(f'[INVITE NOTIFY] portal invite to {email} — {role}, {scope_desc}; '
+                    detail=f'Invited {email} ({role}, {loc_name})')
+        print(f'[INVITE NOTIFY] portal invite to {email} — {role}, {loc_name}; '
               f'accept link: /accept/{token}', flush=True)
         flash(f'Invitation sent to {email}.', 'success')
         return redirect(url_for('users'))
 
     return render_template('user_form.html', user=None,
-                           network_scope=network, grantable_sites=grantable,
-                           can_grant_all=network, scope_mode='sites',
-                           selected_site_ids=preselected)
+                           grantable_sites=grantable, location_multi=multi,
+                           can_grant_all=can_grant_all,
+                           default_location_id=default_loc, network_scope=False)
 
 
 @app.route('/settings/users/<int:user_id>/edit', methods=['GET', 'POST'])
@@ -6721,6 +7016,38 @@ def alert_create_task(alert_id):
     return redirect(request.referrer or url_for('alerts'))
 
 
+def _org_allows_mobile_login(org_id):
+    """Whether mobile (SMS OTP) user sign-in is enabled for an org. The group admin
+    sets this policy on the network root (main/parent org); branches inherit it, so
+    resolve the flag from the root, not the branch."""
+    o = q_one('SELECT parent_id, allow_user_mobile_login FROM organizations WHERE id = ?', (org_id,))
+    if not o:
+        return False
+    root_id = o['parent_id'] or org_id
+    root = q_one('SELECT allow_user_mobile_login FROM organizations WHERE id = ?', (root_id,))
+    return bool(root and root['allow_user_mobile_login'])
+
+
+def _mobile_login_allowed(user):
+    """True when mobile (SMS OTP) sign-in is enabled for the user's organization AND
+    the user is eligible for it — role 'user' only (admins always use the email domain)."""
+    if not user or user['role'] != 'user':
+        return False
+    return _org_allows_mobile_login(user['organization_id'])
+
+
+def _lookup_mobile_login_user(phone):
+    """The single active 'user' whose verified login_phone matches, in an org that
+    permits mobile sign-in — else None. Used by the phone sign-in path."""
+    if not phone:
+        return None
+    u = q_one("""SELECT * FROM users
+                 WHERE login_phone = ? AND is_active = 1 AND role = 'user'""", (phone,))
+    if u and _org_allows_mobile_login(u['organization_id']):
+        return u
+    return None
+
+
 @app.route('/my/profile', methods=['GET', 'POST'])
 @require_login
 def my_profile():
@@ -6737,7 +7064,107 @@ def my_profile():
         flash('Profile updated.', 'success')
         return redirect(url_for('my_profile'))
     fresh = q_one("SELECT * FROM users WHERE id = ?", (u['id'],))
-    return render_template('my_profile.html', user=fresh)
+    pending = session.get('profile_phone_otp')
+    return render_template('my_profile.html', user=fresh,
+                           mobile_login_allowed=_mobile_login_allowed(fresh),
+                           pending_phone=(pending or {}).get('phone'),
+                           resend_wait=_phone_otp_resend_wait('profile_phone_otp') if pending else 0)
+
+
+@app.route('/my/profile/phone/send', methods=['POST'])
+@require_login
+def my_profile_phone_send():
+    """User submits a mobile number to add as a sign-in identifier → issue SMS OTP."""
+    u = current_user()
+    if not _mobile_login_allowed(u):
+        flash('Mobile sign-in is not enabled for your organization.', 'error')
+        return redirect(url_for('my_profile'))
+    phone = _normalize_phone(request.form.get('login_phone'))
+    if not phone:
+        flash('Enter a valid mobile number.', 'error')
+        return redirect(url_for('my_profile'))
+    # Duplicate-number detection: a number verified on another profile can't be reused.
+    taken = q_one('SELECT id FROM users WHERE login_phone = ? AND id != ?', (phone, u['id']))
+    if taken:
+        flash('That mobile number is already in use on another account.', 'error')
+        return redirect(url_for('my_profile'))
+    code = _issue_phone_otp('profile_phone_otp', phone)
+    flash(f'Demo mode — SMS delivery is stubbed, so your code is shown here: {code}', 'info')
+    return redirect(url_for('my_profile'))
+
+
+@app.route('/my/profile/phone/resend', methods=['POST'])
+@require_login
+def my_profile_phone_resend():
+    u = current_user()
+    if not _mobile_login_allowed(u):
+        flash('Mobile sign-in is not enabled for your organization.', 'error')
+        return redirect(url_for('my_profile'))
+    rec = session.get('profile_phone_otp')
+    if not rec:
+        flash('Start by entering a mobile number.', 'error')
+        return redirect(url_for('my_profile'))
+    wait = _phone_otp_resend_wait('profile_phone_otp')
+    if wait > 0:
+        flash(f'Please wait {wait} seconds before requesting a new code.', 'error')
+        return redirect(url_for('my_profile'))
+    code = _issue_phone_otp('profile_phone_otp', rec['phone'])
+    flash(f'Demo mode — a new code was generated: {code}', 'info')
+    return redirect(url_for('my_profile'))
+
+
+@app.route('/my/profile/phone/verify', methods=['POST'])
+@require_login
+def my_profile_phone_verify():
+    u = current_user()
+    if not _mobile_login_allowed(u):
+        flash('Mobile sign-in is not enabled for your organization.', 'error')
+        return redirect(url_for('my_profile'))
+    rec = session.get('profile_phone_otp')
+    if not rec:
+        flash('Start by entering a mobile number.', 'error')
+        return redirect(url_for('my_profile'))
+    if datetime.now() > datetime.fromisoformat(rec['expires']):
+        session.pop('profile_phone_otp', None)
+        flash('That code has expired. Request a new one.', 'error')
+        return redirect(url_for('my_profile'))
+    if rec.get('attempts', 0) >= PHONE_OTP_MAX_ATTEMPTS:
+        session.pop('profile_phone_otp', None)
+        flash('Too many incorrect attempts. Request a new code.', 'error')
+        return redirect(url_for('my_profile'))
+    entered = (request.form.get('otp') or '').strip()
+    if _otp_hash(entered) != rec['hash']:
+        rec['attempts'] = rec.get('attempts', 0) + 1
+        session['profile_phone_otp'] = rec
+        left = PHONE_OTP_MAX_ATTEMPTS - rec['attempts']
+        flash('Incorrect code. %d attempt%s left.' % (left, '' if left == 1 else 's'), 'error')
+        return redirect(url_for('my_profile'))
+    # Re-check uniqueness at commit time (guards against a race between send + verify).
+    phone = rec['phone']
+    if q_one('SELECT id FROM users WHERE login_phone = ? AND id != ?', (phone, u['id'])):
+        session.pop('profile_phone_otp', None)
+        flash('That mobile number was just claimed by another account.', 'error')
+        return redirect(url_for('my_profile'))
+    q_exec("""UPDATE users SET login_phone = ?, login_phone_verified_at = CURRENT_TIMESTAMP
+              WHERE id = ?""", (phone, u['id']))
+    session.pop('profile_phone_otp', None)
+    _log_access('user_update', ref_type='user', ref_id=u['id'],
+                detail=f'Verified mobile sign-in number {phone}')
+    flash('Mobile number verified — you can now sign in with it.', 'success')
+    return redirect(url_for('my_profile'))
+
+
+@app.route('/my/profile/phone/remove', methods=['POST'])
+@require_login
+def my_profile_phone_remove():
+    u = current_user()
+    q_exec('UPDATE users SET login_phone = NULL, login_phone_verified_at = NULL WHERE id = ?',
+           (u['id'],))
+    session.pop('profile_phone_otp', None)
+    _log_access('user_update', ref_type='user', ref_id=u['id'],
+                detail='Removed mobile sign-in number')
+    flash('Mobile sign-in number removed.', 'success')
+    return redirect(url_for('my_profile'))
 
 
 @app.route('/my/feeds', methods=['GET', 'POST'])

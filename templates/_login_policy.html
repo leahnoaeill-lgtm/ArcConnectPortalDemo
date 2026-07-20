@@ -33,6 +33,14 @@
       <label class="lp-check" style="display:flex; gap:6px; align-items:center; font-weight:400;"><input type="checkbox" name="sso_apple" {{ 'checked' if 'apple' in provs else '' }}> Apple</label>
     </div>
   </div>
+  <div class="form-group span-2">
+    <label>Mobile sign-in</label>
+    <label class="lp-check" style="display:flex; gap:8px; align-items:flex-start; font-weight:400;">
+      <input type="checkbox" name="allow_user_mobile_login" {{ 'checked' if (org and org.allow_user_mobile_login) else '' }}>
+      <span>Allow users to sign in with a mobile number (SMS code)<br>
+        <span class="small muted">When on, your users can add and verify a mobile number in their profile and use it to sign in with a one-time SMS code. Admins always use the organization email domain.</span></span>
+    </label>
+  </div>
 </div>
 <script>
 (function(){
@@ -62,4 +70,5 @@
   <strong>Organization email domain only</strong>{% if org.login_domain %} — <span class="mono">@{{ org.login_domain }}</span>{% else %} — <span class="muted">no domain set</span>{% endif %}
 {% endif %}
 </div>
+<div>Mobile sign-in (users): <strong>{{ 'Allowed' if org.allow_user_mobile_login else 'Off' }}</strong></div>
 {% endmacro %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_phone.html" import phone_field %}
+{% block title %}Sign in with mobile · Arc Connect Portal{% endblock %}
+{% block body %}
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="{{ url_for('static', filename='img/updated-arc-connect-logo.svg') }}" alt="Arc Connect">
+    </div>
+    <h1>Sign in with mobile</h1>
+
+    {% if pending_phone %}
+      <div class="login-sub">We sent a 6-digit code by SMS to <strong class="mono">{{ pending_phone }}</strong></div>
+      <form method="POST" action="{{ url_for('login_phone_verify') }}" autocomplete="off" style="margin-top:16px;">
+        <div class="form-group">
+          <label for="otp">Verification code</label>
+          <input type="text" id="otp" name="otp" required inputmode="numeric" pattern="\d{6}"
+                 maxlength="6" autocomplete="one-time-code" autofocus placeholder="123456"
+                 style="width:100%;">
+          <div class="help">The code expires in 5 minutes.</div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Verify &amp; sign in</button>
+      </form>
+      <form method="POST" action="{{ url_for('login_phone_resend') }}" style="margin-top:12px; text-align:center;">
+        <button type="submit" class="btn btn-sm" {% if resend_wait > 0 %}disabled{% endif %}>
+          Resend code{% if resend_wait > 0 %} ({{ resend_wait }}s){% endif %}
+        </button>
+        {% if resend_wait > 0 %}<div class="small muted" style="margin-top:4px;">You can request a new code in {{ resend_wait }} seconds.</div>{% endif %}
+      </form>
+    {% else %}
+      <div class="login-sub">Enter your mobile number to receive a one-time sign-in code</div>
+      <form method="POST" action="{{ url_for('login_phone_send') }}" style="margin-top:16px;">
+        <div class="form-group">
+          <label>Mobile number</label>
+          {{ phone_field('login_phone', '', required=True) }}
+          <div class="help">Country code defaults to +1 (US). Available to users whose organization has enabled mobile sign-in.</div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Send code</button>
+      </form>
+    {% endif %}
+
+    <div class="login-footer" style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e1e8ed; text-align: center;">
+      <a href="{{ url_for('login') }}" class="btn btn-sm">← Back to sign in</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

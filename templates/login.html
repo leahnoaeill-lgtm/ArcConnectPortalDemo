@@ -47,7 +47,8 @@
     {% endfor %}
 
     <div class="login-footer" style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e1e8ed; text-align: center;">
-      <div style="color: #55667; margin-bottom: 8px; font-size: 13px;">New to Arc Connect?</div>
+      <a href="{{ url_for('login_phone') }}" class="btn">📱 Sign in with a mobile number</a>
+      <div style="color: #55667; margin: 16px 0 8px; font-size: 13px;">New to Arc Connect?</div>
       <a href="{{ url_for('public_signup_form') }}" class="btn btn-primary">Sign up your organization</a>
     </div>
   </div>
