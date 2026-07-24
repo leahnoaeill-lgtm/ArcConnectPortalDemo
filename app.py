@@ -268,6 +268,62 @@ def _ensure_invitation_user_fields():
         conn.close()
 
 
+def _ensure_device_claim_schema():
+    """Lightweight migration for the claim / contest / reset workflow (URS_5.11–5.15).
+    Adds claim columns to devices + reset columns to device_assignments, and creates the
+    device_contests and device_notices tables. Idempotent; safe on the live volume — the
+    single-row-per-serial invariant is preserved, so no table rebuild is needed."""
+    if not DB_PATH.exists():
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        dcols = {row[1] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+        for name, decl in [
+            ('claim_state',      "TEXT NOT NULL DEFAULT 'active'"),
+            ('claim_expires_at', 'TIMESTAMP'),
+            ('prior_link_type',  "TEXT DEFAULT 'none'"),
+        ]:
+            if name not in dcols:
+                conn.execute(f"ALTER TABLE devices ADD COLUMN {name} {decl}")
+        acols = {row[1] for row in conn.execute("PRAGMA table_info(device_assignments)").fetchall()}
+        for name, decl in [
+            ('assignment_state',       "TEXT NOT NULL DEFAULT 'active'"),
+            ('previous_patient_id',    'INTEGER'),
+            ('reset_flag_received_at', 'TIMESTAMP'),
+        ]:
+            if name not in acols:
+                conn.execute(f"ALTER TABLE device_assignments ADD COLUMN {name} {decl}")
+        conn.execute("""CREATE TABLE IF NOT EXISTS device_contests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            serial_number TEXT NOT NULL,
+            model TEXT,
+            device_id INTEGER,
+            incumbent_org_id INTEGER NOT NULL,
+            challenger_org_id INTEGER NOT NULL,
+            challenger_intake_method TEXT NOT NULL DEFAULT 'manual',
+            status TEXT NOT NULL DEFAULT 'open',
+            opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            incumbent_notified_at TIMESTAMP,
+            resolved_at TIMESTAMP,
+            resolved_by_user_id INTEGER,
+            resolution_notes TEXT )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_contests_challenger ON device_contests(challenger_org_id, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_contests_incumbent ON device_contests(incumbent_org_id, status)")
+        conn.execute("""CREATE TABLE IF NOT EXISTS device_notices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            serial_number TEXT,
+            contest_id INTEGER,
+            kind TEXT NOT NULL,
+            body TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            read_at TIMESTAMP )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notices_org ON device_notices(organization_id, read_at)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 _ensure_heatmap_schema()
 _ensure_org_verification_columns()
 _ensure_device_verification_columns()
@@ -278,6 +334,7 @@ _ensure_user_login_phone_columns()
 _ensure_user_location_access()
 _ensure_org_status_rejected()
 _ensure_invitation_user_fields()
+_ensure_device_claim_schema()
 
 
 # ── Optional HTTP Basic Auth gate (set AUTH_USERNAME + AUTH_PASSWORD env vars to enable) ──
@@ -625,6 +682,8 @@ SUPER_ADMIN_WRITE_ALLOWLIST = {
     'super_org_login_update', 'super_org_update',
     # REQ-3.9 self-service signup review actions
     'super_signup_approve', 'super_signup_reject',
+    # URS_5.14 ABMRC device-contest resolution console
+    'super_contest_resolve',
     # REQ-3.8 public signup form (no auth required, but POSTs from anonymous users)
     'public_signup_submit',
 }
@@ -810,8 +869,14 @@ def inject_globals():
                               AND COALESCE(t.status, 'todo') = 'todo'""",
                          (current_org_id(),))
             inbox_unread = _row['n'] if _row else 0
+    # Open device contests awaiting ABMRC (drives the super-admin nav badge).
+    open_contest_count = 0
+    if u and is_super_admin():
+        _c = q_one("SELECT COUNT(*) AS n FROM device_contests WHERE status IN ('open','escalated')")
+        open_contest_count = _c['n'] if _c else 0
     return {
         'current_user': u,
+        'open_contest_count': open_contest_count,
         'current_org': org,
         'parent_org': parent_org,
         'sibling_locations': sibling_locations,
@@ -4651,45 +4716,101 @@ def patient_new():
 def devices():
     bounce = _parent_redirect_if_no_location('parent_devices')
     if bounce: return bounce
+    _expire_stale_claims()
     oid = current_org_id()
     tab = request.args.get('tab', 'all')
+    # Only ACTIVE claims appear in inventory; released/expired rows are kept for history but
+    # hidden (URS_5.11). Each row carries whether its claim window has effectively expired.
     if tab == 'assigned':
         rows = q_all("""SELECT d.*, p.id AS patient_id, p.first_name, p.last_name, p.mrn,
-                        da.assigned_date, da.consent_form_path
+                        da.assigned_date, da.consent_form_path, da.assignment_state
                         FROM devices d
                         JOIN device_assignments da ON da.device_id = d.id AND da.returned_date IS NULL
                         JOIN patients p ON p.id = da.patient_id
-                        WHERE d.organization_id = ?
+                        WHERE d.organization_id = ? AND d.claim_state = 'active'
                         ORDER BY d.serial_number""", (oid,))
     elif tab == 'unassigned':
         rows = q_all("""SELECT d.*, NULL AS patient_id, NULL AS first_name, NULL AS last_name,
-                        NULL AS mrn, NULL AS assigned_date, NULL AS consent_form_path
+                        NULL AS mrn, NULL AS assigned_date, NULL AS consent_form_path,
+                        NULL AS assignment_state
                         FROM devices d
-                        WHERE d.organization_id = ?
+                        WHERE d.organization_id = ? AND d.claim_state = 'active'
                           AND NOT EXISTS (SELECT 1 FROM device_assignments da
                                           WHERE da.device_id = d.id AND da.returned_date IS NULL)
                         ORDER BY d.serial_number""", (oid,))
     else:
         rows = q_all("""SELECT d.*, p.id AS patient_id, p.first_name, p.last_name, p.mrn,
-                        da.assigned_date, da.consent_form_path
+                        da.assigned_date, da.consent_form_path, da.assignment_state
                         FROM devices d
                         LEFT JOIN device_assignments da ON da.device_id = d.id AND da.returned_date IS NULL
                         LEFT JOIN patients p ON p.id = da.patient_id
-                        WHERE d.organization_id = ?
+                        WHERE d.organization_id = ? AND d.claim_state = 'active'
                         ORDER BY d.serial_number""", (oid,))
-    # KPIs across all devices
-    all_devices = q_all('SELECT status FROM devices WHERE organization_id = ?', (oid,))
+    # KPIs across all active-claim devices
+    all_devices = q_all("SELECT status FROM devices WHERE organization_id = ? AND claim_state = 'active'", (oid,))
     kpis = {
         'total': len(all_devices),
         'in_use': len([d for d in all_devices if d['status'] == 'in_use']),
         'in_stock': len([d for d in all_devices if d['status'] == 'in_stock']),
         'maintenance': len([d for d in all_devices if d['status'] == 'maintenance']),
     }
-    return render_template('devices.html', devices=rows, tab=tab, kpis=kpis)
+    # Claim-status panels (URS_5.11–5.13): notices, this org's pending contests (as challenger),
+    # and contests where this org is the incumbent being challenged.
+    notices = _org_notices(oid)
+    my_contests = q_all("""SELECT * FROM device_contests WHERE challenger_org_id = ?
+                           AND status IN ('open','escalated') ORDER BY opened_at DESC""", (oid,))
+    incumbent_contests = q_all("""SELECT c.* FROM device_contests c
+                                  WHERE c.incumbent_org_id = ? AND c.status IN ('open','escalated')
+                                  ORDER BY c.opened_at DESC""", (oid,))
+    return render_template('devices.html', devices=rows, tab=tab, kpis=kpis,
+                           notices=notices, my_contests=my_contests,
+                           incumbent_contests=incumbent_contests)
 
 
 # BiWaze label serial format: CNSXXAXXX (Cough) / KNSXXAXXX (Clear).
 DEVICE_SERIAL_RE = re.compile(r'^[CK]NS\d{2}A\d{3}$')
+
+# Verification window for an unverified (manual-entry) claim (URS_5.12).
+CLAIM_WINDOW_DAYS = 14
+
+
+def _claim_notice(org_id, kind, body, serial=None, contest_id=None):
+    """Queue a tenant-isolated device notice for an org (never names the other party)."""
+    q_exec("""INSERT INTO device_notices (organization_id, serial_number, contest_id, kind, body)
+              VALUES (?, ?, ?, ?, ?)""", (org_id, serial, contest_id, kind, body))
+
+
+def _org_notices(org_id):
+    return q_all("""SELECT * FROM device_notices WHERE organization_id = ? AND read_at IS NULL
+                    ORDER BY created_at DESC""", (org_id,))
+
+
+def _expire_stale_claims():
+    """Lazily expire unverified claims whose 14-day window has lapsed (URS_5.12) and notify the
+    holder. Called opportunistically on device-page loads — demo scale, so a full scan is fine."""
+    stale = q_all("""SELECT id, organization_id, serial_number FROM devices
+                     WHERE claim_state = 'active' AND verification_status = 'pending'
+                       AND claim_expires_at IS NOT NULL AND claim_expires_at < datetime('now')""")
+    for d in stale:
+        q_exec("UPDATE devices SET claim_state = 'expired' WHERE id = ?", (d['id'],))
+        _claim_notice(d['organization_id'], 'claim_expired',
+                      f'Your unverified claim on device {d["serial_number"]} expired after '
+                      f'{CLAIM_WINDOW_DAYS} days without possession verification and was released '
+                      'from your inventory.', serial=d['serial_number'])
+
+
+def _transfer_device_row(device_id, to_org, intake, model=None, prior_link='different_org'):
+    """Re-point a single device row to a new owning org as a VERIFIED claim — the mechanism
+    behind scan-wins (URS_5.1), a contest award, and an incumbent release (URS_5.13/5.14).
+    Closes any active assignment first (ownership is changing orgs)."""
+    q_exec("""UPDATE device_assignments SET returned_date = DATE('now')
+              WHERE device_id = ? AND returned_date IS NULL""", (device_id,))
+    q_exec("""UPDATE devices SET organization_id = ?, verification_status = 'verified',
+              intake_method = ?, verified_at = datetime('now'), claim_state = 'active',
+              claim_expires_at = NULL, prior_link_type = ?, status = 'in_stock'
+              WHERE id = ?""", (to_org, intake, prior_link, device_id))
+    if model:
+        q_exec("UPDATE devices SET model = ? WHERE id = ?", (model, device_id))
 
 
 def _scan_serial_response(raw):
@@ -4700,16 +4821,16 @@ def _scan_serial_response(raw):
         return jsonify(error=f'"{serial}" does not look like a BiWaze serial number '
                              '(CNSXXAXXX for Cough, KNSXXAXXX for Clear).'), 422
     model = 'biwaze_cough' if serial.startswith('C') else 'biwaze_clear'
-    existing = q_one('SELECT id, organization_id FROM devices WHERE serial_number = ?',
+    existing = q_one('SELECT id, organization_id, claim_state FROM devices WHERE serial_number = ?',
                      (serial,))
-    if existing:
-        if existing['organization_id'] == current_org_id():
-            return jsonify(serial=serial, duplicate='own',
-                           device_url=url_for('device_detail', device_id=existing['id']),
-                           message=f'Device {serial} is already in your fleet.')
-        return jsonify(serial=serial, duplicate='other',
-                       message=f'Serial {serial} is registered to another organization — '
-                               'contact ABMRC to arrange a transfer.')
+    if existing and existing['claim_state'] == 'active' \
+            and existing['organization_id'] == current_org_id():
+        return jsonify(serial=serial, duplicate='own',
+                       device_url=url_for('device_detail', device_id=existing['id']),
+                       message=f'Device {serial} is already in your fleet.')
+    # A serial held by another org no longer dead-ends: submitting the scan resolves it via
+    # claim precedence (scan wins over an unverified claim; opens a contest against a verified
+    # owner — URS_5.11–5.13).
     return jsonify(serial=serial, model=model)
 
 
@@ -4761,21 +4882,10 @@ def device_new():
                   'KNSXXAXXX for Clear).', 'error')
             return redirect(url_for('device_new'))
 
-        existing = q_one('SELECT id, organization_id FROM devices WHERE serial_number = ?',
-                         (serial,))
-        if existing:
-            if existing['organization_id'] == oid:
-                flash(f'Device {serial} is already in your fleet — here is its record.',
-                      'error')
-                return redirect(url_for('device_detail', device_id=existing['id']))
-            flash(f'Serial {serial} is registered to another organization — contact '
-                  'ABMRC to arrange a transfer.', 'error')
-            return redirect(url_for('device_new'))
-
         # Manual entry (URS_5.2): require an explicit confirmation step that echoes the
         # device the serial resolves to, so a wrong-but-valid serial surfaces a mismatch
-        # BEFORE it is saved. The device is then created Unverified: it holds no
-        # patient data and cannot be assigned until possession is verified.
+        # BEFORE anything is claimed. (This runs before the precedence check so the echo is
+        # shown even when the serial is contested.)
         serial_model = 'biwaze_cough' if serial.startswith('C') else 'biwaze_clear'
         if manual and not request.form.get('confirmed'):
             carry = {k: request.form.get(k, '') for k in
@@ -4785,25 +4895,98 @@ def device_new():
                                    model_mismatch=bool(model and model != serial_model),
                                    carry=carry)
 
+        # ── Claim precedence (URS_5.11–5.13) ────────────────────────────────────
+        # A serial carries at most ONE device row (the current claimant/owner). Ownership
+        # transfers re-point that row in place, so the row stays unique.
+        existing = q_one('SELECT * FROM devices WHERE serial_number = ?', (serial,))
+
+        if existing and existing['claim_state'] == 'active' and existing['organization_id'] == oid:
+            flash(f'Device {serial} is already in your fleet — here is its record.', 'error')
+            return redirect(url_for('device_detail', device_id=existing['id']))
+
+        if existing and existing['claim_state'] == 'active' \
+                and existing['verification_status'] == 'verified':
+            # A verified owner in ANOTHER org → this is a CONTEST, not a block (URS_5.13).
+            dup = q_one("""SELECT id FROM device_contests WHERE serial_number = ?
+                           AND challenger_org_id = ? AND status IN ('open','escalated')""",
+                        (serial, oid))
+            if dup:
+                flash('You already have a pending claim on this device — see "Your pending '
+                      'claims" on the Devices page.', 'info')
+                return redirect(url_for('devices'))
+            cid = q_exec("""INSERT INTO device_contests (serial_number, model, device_id,
+                            incumbent_org_id, challenger_org_id, challenger_intake_method,
+                            incumbent_notified_at)
+                            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+                         (serial, existing['model'], existing['id'],
+                          existing['organization_id'], oid, intake))
+            _claim_notice(existing['organization_id'], 'contest_incumbent',
+                          f'Another organization has claimed device {serial}. Confirm you still '
+                          'have possession, or release it. Your current link is unaffected until '
+                          'you release it or ABMRC rules.', serial=serial, contest_id=cid)
+            _log_access('device_contest_open', ref_type='device', ref_id=existing['id'],
+                        detail=f'Contest opened on {serial}')
+            flash(f'Device {serial} is already claimed by another organization. Your claim is '
+                  'queued for ABMRC review — see "Your pending claims" on the Devices page. You '
+                  'can withdraw, escalate to ABMRC, or wait.', 'success')
+            return redirect(url_for('devices'))
+
+        if existing and existing['claim_state'] == 'active' \
+                and existing['verification_status'] == 'pending':
+            # Another org holds an UNVERIFIED claim. A scan proves possession and WINS
+            # (URS_5.1 AC-7 / UC-4); a manual entry cannot displace it.
+            if not manual:
+                _claim_notice(existing['organization_id'], 'claim_released',
+                              f'Device {serial} was scanned into another organization\'s fleet, '
+                              'which proves physical possession, so your unverified claim on it '
+                              'was released.', serial=serial)
+                _transfer_device_row(existing['id'], oid, 'scan', model=model, prior_link='none')
+                _log_access('device_scan_win', ref_type='device', ref_id=existing['id'],
+                            detail=f'Scan superseded an unverified claim on {serial}')
+                flash(f'Device {serial} scanned — possession confirmed. It is now in your '
+                      'fleet as Verified.', 'success')
+                return redirect(url_for('device_detail', device_id=existing['id']))
+            exp = str(existing['claim_expires_at'] or '')[:10]
+            flash(f'Another organization already holds an unverified claim on {serial}'
+                  f'{(" (expires " + exp + ")") if exp else ""}. Scan the physical label to take '
+                  'possession now, or wait for that claim to expire.', 'error')
+            return redirect(url_for('device_new'))
+
+        # No active claim exists (brand-new serial, or a prior claim that expired/was
+        # released). Create or re-point the row for this org.
         verification_status = 'pending' if manual else 'verified'
-        new_id = q_exec("""INSERT INTO devices (organization_id, serial_number, model, firmware_version,
-                  software_version, upload_date, warranty_end, status, verification_status,
-                  intake_method, notes)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, 'in_stock', ?, ?, ?)""",
-               (oid, serial, model, request.form.get('firmware_version'),
-                request.form.get('software_version'),
-                request.form.get('upload_date') or date.today().isoformat(),
-                request.form.get('warranty_end') or None,
-                verification_status, intake,
-                request.form.get('notes')))
-        if not manual:
-            # Scanning the physical label is itself possession evidence — auto-verified.
-            q_exec("UPDATE devices SET verified_at = datetime('now') WHERE id = ?", (new_id,))
+        expires = f'+{CLAIM_WINDOW_DAYS} days' if manual else None
+        if existing:
+            # Re-use the dormant (expired/released) row — keeps the serial unique.
+            q_exec("""UPDATE devices SET organization_id = ?, model = ?, verification_status = ?,
+                      intake_method = ?, verified_at = CASE WHEN ? = 'verified' THEN datetime('now') END,
+                      claim_state = 'active',
+                      claim_expires_at = CASE WHEN ? IS NOT NULL THEN datetime('now', ?) END,
+                      prior_link_type = 'none', status = 'in_stock',
+                      upload_date = ? WHERE id = ?""",
+                   (oid, model, verification_status, intake, verification_status,
+                    expires, expires, request.form.get('upload_date') or date.today().isoformat(),
+                    existing['id']))
+            new_id = existing['id']
+        else:
+            new_id = q_exec("""INSERT INTO devices (organization_id, serial_number, model, firmware_version,
+                      software_version, upload_date, warranty_end, status, verification_status,
+                      intake_method, claim_expires_at, notes)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, 'in_stock', ?, ?,
+                              CASE WHEN ? IS NOT NULL THEN datetime('now', ?) END, ?)""",
+                   (oid, serial, model, request.form.get('firmware_version'),
+                    request.form.get('software_version'),
+                    request.form.get('upload_date') or date.today().isoformat(),
+                    request.form.get('warranty_end') or None,
+                    verification_status, intake, expires, expires,
+                    request.form.get('notes')))
+            if not manual:
+                q_exec("UPDATE devices SET verified_at = datetime('now') WHERE id = ?", (new_id,))
         _log_access('device_add', ref_type='device', ref_id=new_id,
                     detail=f'serial {serial} · intake {intake} · {verification_status}')
         if manual:
-            flash(f'Device {serial} added as Unverified. Verify device possession '
-                  'before it can be assigned to a patient.', 'success')
+            flash(f'Device {serial} added as Unverified — verify possession within '
+                  f'{CLAIM_WINDOW_DAYS} days, before it can be assigned to a patient.', 'success')
         else:
             flash(f'Device {serial} added to inventory.', 'success')
         return redirect(url_for('device_detail', device_id=new_id))
@@ -4852,7 +5035,14 @@ def device_detail(device_id):
                            LEFT JOIN users u ON u.id = da.assigned_by_user_id
                            WHERE da.device_id = ? ORDER BY da.assigned_date DESC""",
                         (device_id,))
-    return render_template('device_detail.html', device=d, assignments=assignments)
+    # The active assignment that is still waiting on a device reset (URS_5.15).
+    pending_reset = q_one("""SELECT da.*, p.first_name, p.last_name FROM device_assignments da
+                             JOIN patients p ON p.id = da.patient_id
+                             WHERE da.device_id = ? AND da.returned_date IS NULL
+                               AND da.assignment_state = 'pending_reset'""", (device_id,))
+    expired = (d['claim_state'] == 'expired')
+    return render_template('device_detail.html', device=d, assignments=assignments,
+                           pending_reset=pending_reset, expired=expired)
 
 
 @app.route('/devices/<int:device_id>/assign', methods=['GET', 'POST'])
@@ -4919,6 +5109,15 @@ def device_assign(device_id):
         assigned_date = request.form.get('assigned_date') or date.today().isoformat()
         notes = request.form.get('notes', '')
 
+        # Reset-gating (URS_5.15). The previous patient's data is never usurped: a reassignment
+        # (any patient-to-patient move), or a device that was last linked by a different org or
+        # by the patient themselves, is created Pending – Reset and does not profile the new
+        # patient until the device reset flag is received. A genuinely fresh device activates now.
+        prior = d['prior_link_type'] or 'none'
+        needs_reset = bool(active) or prior in ('different_org', 'patient_self')
+        assignment_state = 'pending_reset' if needs_reset else 'active'
+        previous_patient_id = active['patient_id'] if active else None
+
         # If this is a reassignment, close the active assignment first
         if active:
             if active['patient_id'] == patient_id:
@@ -4928,16 +5127,19 @@ def device_assign(device_id):
                    (assigned_date, active['id']))
 
         q_exec("""INSERT INTO device_assignments (patient_id, device_id, assigned_date,
-                  consent_form_path, consent_form_original_name, assigned_by_user_id, notes)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                  consent_form_path, consent_form_original_name, assigned_by_user_id, notes,
+                  assignment_state, previous_patient_id)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                (patient_id, device_id, assigned_date,
                 f'uploads/consent/{filename}', safe_orig,
-                current_user()['id'], notes))
+                current_user()['id'], notes, assignment_state, previous_patient_id))
         q_exec("UPDATE devices SET status = 'in_use' WHERE id = ?", (device_id,))
 
-        if active:
-            flash(f'Device {d["serial_number"]} reassigned from {active["first_name"]} {active["last_name"]} to {p["first_name"]} {p["last_name"]}.',
-                  'success')
+        if assignment_state == 'pending_reset':
+            flash(f'Device {d["serial_number"]} assigned to {p["first_name"]} {p["last_name"]} — '
+                  'Pending device reset. Its data will not flow to this patient until the device '
+                  'is reset; until then the previous patient\'s data is unaffected. Use '
+                  '"Reset received" once the device has been reset.', 'success')
         else:
             flash(f'Device {d["serial_number"]} assigned to {p["first_name"]} {p["last_name"]}.',
                   'success')
@@ -5041,6 +5243,175 @@ def device_set_status(device_id):
                 detail=f'Device {d["serial_number"]} status set to {target}')
     label = 'In Stock' if target == 'in_stock' else 'Maintenance'
     flash(f'Device {d["serial_number"]} moved to {label}.', 'success')
+    return redirect(url_for('device_detail', device_id=device_id))
+
+
+# ── Device claim contests & reset-gating (URS_5.11–5.15) ─────────────────────
+
+@app.route('/devices/notices/<int:notice_id>/dismiss', methods=['POST'])
+@require_login
+def device_notice_dismiss(notice_id):
+    q_exec("UPDATE device_notices SET read_at = datetime('now') WHERE id = ? AND organization_id = ?",
+           (notice_id, current_org_id()))
+    return redirect(request.referrer or url_for('devices'))
+
+
+@app.route('/devices/contest/<int:contest_id>/withdraw', methods=['POST'])
+@require_login
+def contest_withdraw(contest_id):
+    """Challenger backs out of a contest they opened (mistake)."""
+    oid = current_org_id()
+    c = q_one("""SELECT * FROM device_contests WHERE id = ? AND challenger_org_id = ?
+                 AND status IN ('open','escalated')""", (contest_id, oid))
+    if not c:
+        abort(404)
+    q_exec("UPDATE device_contests SET status = 'withdrawn', resolved_at = datetime('now') WHERE id = ?",
+           (contest_id,))
+    _log_access('device_contest_withdraw', ref_type='device', ref_id=c['device_id'],
+                detail=f'Claim on {c["serial_number"]} withdrawn')
+    flash(f'Your claim on device {c["serial_number"]} was withdrawn.', 'success')
+    return redirect(url_for('devices'))
+
+
+@app.route('/devices/contest/<int:contest_id>/escalate', methods=['POST'])
+@require_login
+def contest_escalate(contest_id):
+    """Challenger logs the case for an ABMRC ruling (single click)."""
+    oid = current_org_id()
+    c = q_one("""SELECT * FROM device_contests WHERE id = ? AND challenger_org_id = ?
+                 AND status = 'open'""", (contest_id, oid))
+    if not c:
+        abort(404)
+    q_exec("UPDATE device_contests SET status = 'escalated' WHERE id = ?", (contest_id,))
+    _log_access('device_contest_escalate', ref_type='device', ref_id=c['device_id'],
+                detail=f'Claim on {c["serial_number"]} escalated to ABMRC')
+    flash(f'Your claim on device {c["serial_number"]} was escalated to ABMRC for a ruling.', 'success')
+    return redirect(url_for('devices'))
+
+
+@app.route('/devices/contest/<int:contest_id>/release', methods=['POST'])
+@require_login
+def contest_release(contest_id):
+    """Incumbent voluntarily releases a contested device → the challenger wins without ABMRC
+    (URS_5.13 AC-6). The single device row is re-pointed to the challenger."""
+    oid = current_org_id()
+    c = q_one("""SELECT * FROM device_contests WHERE id = ? AND incumbent_org_id = ?
+                 AND status IN ('open','escalated')""", (contest_id, oid))
+    if not c:
+        abort(404)
+    if c['device_id']:
+        _transfer_device_row(c['device_id'], c['challenger_org_id'],
+                             c['challenger_intake_method'], prior_link='different_org')
+    q_exec("""UPDATE device_contests SET status = 'released', resolved_at = datetime('now') WHERE id = ?""",
+           (contest_id,))
+    # Close any sibling open contests on the same serial (only one owner now).
+    q_exec("""UPDATE device_contests SET status = 'auto_expired', resolved_at = datetime('now')
+              WHERE serial_number = ? AND id != ? AND status IN ('open','escalated')""",
+           (c['serial_number'], contest_id))
+    _claim_notice(c['challenger_org_id'], 'contest_outcome',
+                  f'Your claim on device {c["serial_number"]} succeeded — the previous holder '
+                  'released it. It is now in your fleet (assigning it will require a device reset '
+                  'before data flows).', serial=c['serial_number'], contest_id=contest_id)
+    _log_access('device_contest_release', ref_type='device', ref_id=c['device_id'],
+                detail=f'{c["serial_number"]} released to challenger')
+    flash(f'You released device {c["serial_number"]}. It has moved to the claiming organization.',
+          'success')
+    return redirect(url_for('devices'))
+
+
+@app.route('/super/contests')
+@require_login
+def super_contests():
+    """ABMRC contest-resolution console (URS_5.14) — the sole arbiter of device ownership."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    open_rows = q_all("""SELECT c.*, io.name AS incumbent_name, ch.name AS challenger_name,
+                         d.verification_status AS incumbent_verification, d.status AS device_status
+                         FROM device_contests c
+                         JOIN organizations io ON io.id = c.incumbent_org_id
+                         JOIN organizations ch ON ch.id = c.challenger_org_id
+                         LEFT JOIN devices d ON d.id = c.device_id
+                         WHERE c.status IN ('open','escalated')
+                         ORDER BY CASE c.status WHEN 'escalated' THEN 0 ELSE 1 END, c.opened_at""")
+    resolved_rows = q_all("""SELECT c.*, io.name AS incumbent_name, ch.name AS challenger_name
+                            FROM device_contests c
+                            JOIN organizations io ON io.id = c.incumbent_org_id
+                            JOIN organizations ch ON ch.id = c.challenger_org_id
+                            WHERE c.status NOT IN ('open','escalated')
+                            ORDER BY c.resolved_at DESC LIMIT 25""")
+    return render_template('super_contests.html', open_contests=open_rows,
+                           resolved_contests=resolved_rows)
+
+
+@app.route('/super/contests/<int:contest_id>/resolve', methods=['POST'])
+@require_login
+def super_contest_resolve(contest_id):
+    """ABMRC rules on a contest: award to challenger or uphold the incumbent (URS_5.14)."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    c = q_one("SELECT * FROM device_contests WHERE id = ? AND status IN ('open','escalated')",
+              (contest_id,))
+    if not c:
+        abort(404)
+    decision = request.form.get('decision')
+    note = (request.form.get('note') or '').strip()
+    if decision not in ('challenger', 'incumbent') or not note:
+        flash('Choose a decision and enter a resolution note.', 'error')
+        return redirect(url_for('super_contests'))
+    uid = current_user()['id']
+    if decision == 'challenger':
+        if c['device_id']:
+            _transfer_device_row(c['device_id'], c['challenger_org_id'],
+                                 c['challenger_intake_method'], prior_link='different_org')
+        q_exec("""UPDATE device_contests SET status = 'resolved_challenger',
+                  resolved_at = datetime('now'), resolved_by_user_id = ?, resolution_notes = ?
+                  WHERE id = ?""", (uid, note, contest_id))
+        q_exec("""UPDATE device_contests SET status = 'auto_expired', resolved_at = datetime('now')
+                  WHERE serial_number = ? AND id != ? AND status IN ('open','escalated')""",
+               (c['serial_number'], contest_id))
+        _claim_notice(c['challenger_org_id'], 'contest_outcome',
+                      f'ABMRC awarded device {c["serial_number"]} to your organization. It is now '
+                      'in your fleet (assigning it will require a device reset before data flows).',
+                      serial=c['serial_number'], contest_id=contest_id)
+        _claim_notice(c['incumbent_org_id'], 'contest_outcome',
+                      f'ABMRC transferred device {c["serial_number"]} to the organization that '
+                      'claimed it. It has been removed from your fleet.',
+                      serial=c['serial_number'], contest_id=contest_id)
+        flash(f'Contest resolved — device {c["serial_number"]} awarded to the challenger.', 'success')
+    else:
+        q_exec("""UPDATE device_contests SET status = 'resolved_incumbent',
+                  resolved_at = datetime('now'), resolved_by_user_id = ?, resolution_notes = ?
+                  WHERE id = ?""", (uid, note, contest_id))
+        _claim_notice(c['challenger_org_id'], 'contest_outcome',
+                      f'ABMRC upheld the existing owner of device {c["serial_number"]}. Your claim '
+                      'was not granted.', serial=c['serial_number'], contest_id=contest_id)
+        flash(f'Contest resolved — incumbent upheld for device {c["serial_number"]}.', 'success')
+    _log_access('device_contest_resolve', ref_type='device', ref_id=c['device_id'],
+                detail=f'{c["serial_number"]} → {decision}')
+    return redirect(url_for('super_contests'))
+
+
+@app.route('/devices/<int:device_id>/reset-received', methods=['POST'])
+@require_login
+def device_reset_received(device_id):
+    """Stand-in for the device reset flag (URS_5.15): cuts data over from the previous patient
+    to the newly-assigned patient once the physical device has been reset."""
+    oid = current_org_id()
+    d = q_one('SELECT * FROM devices WHERE id = ? AND organization_id = ?', (device_id, oid))
+    if not d:
+        abort(404)
+    a = q_one("""SELECT * FROM device_assignments WHERE device_id = ? AND returned_date IS NULL
+                 AND assignment_state = 'pending_reset'""", (device_id,))
+    if not a:
+        flash('This device has no assignment awaiting a reset.', 'info')
+        return redirect(url_for('device_detail', device_id=device_id))
+    q_exec("""UPDATE device_assignments SET assignment_state = 'active',
+              reset_flag_received_at = datetime('now') WHERE id = ?""", (a['id'],))
+    q_exec("UPDATE devices SET prior_link_type = 'same_org' WHERE id = ?", (device_id,))
+    _log_access('device_reset_received', ref_type='device', ref_id=device_id,
+                detail=f'{d["serial_number"]} reset confirmed — data cut over to new patient')
+    flash(f'Device {d["serial_number"]} reset confirmed — data now flows to the assigned patient.',
+          'success')
     return redirect(url_for('device_detail', device_id=device_id))
 
 

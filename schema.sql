@@ -364,11 +364,23 @@ CREATE TABLE IF NOT EXISTS devices (
     intake_method TEXT,
     verified_at TIMESTAMP,
     verified_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    -- Claim lifecycle (URS_5.11–5.13). A device row is one organization's CLAIM on a
+    -- serial. claim_state='active' is a live claim (the only kind shown in inventory);
+    -- 'released' (lost a scan-wins race or a contest) and 'expired' (unverified 14-day
+    -- window lapsed) are kept for history but hidden from the fleet.
+    claim_state TEXT NOT NULL DEFAULT 'active' CHECK(claim_state IN ('active','released','expired')),
+    -- For an unverified (manual-entry) claim: when the 14-day verification window closes.
+    -- Cleared to NULL on verification. Scanned claims are born verified → NULL.
+    claim_expires_at TIMESTAMP,
+    -- Seed/demo hint for reset-gating (URS_5.15): how the device was last linked before
+    -- this org owned it — 'none' | 'same_org' | 'different_org' | 'patient_self'.
+    prior_link_type TEXT DEFAULT 'none',
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_devices_org ON devices(organization_id);
+CREATE INDEX IF NOT EXISTS idx_devices_serial ON devices(serial_number);
 
 -- Device assignments (patient ↔ device, time-bounded)
 CREATE TABLE IF NOT EXISTS device_assignments (
@@ -380,12 +392,62 @@ CREATE TABLE IF NOT EXISTS device_assignments (
     consent_form_path TEXT NOT NULL,
     consent_form_original_name TEXT,
     assigned_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    -- Reset-gated data cut-over (URS_5.15). 'active' = data profiles to this patient now.
+    -- 'pending_reset' = the device was last linked by a different org or the patient
+    -- themselves; the new patient's data does NOT flow until the device reset flag is
+    -- received, so the previous patient's data is never usurped.
+    assignment_state TEXT NOT NULL DEFAULT 'active' CHECK(assignment_state IN ('active','pending_reset')),
+    previous_patient_id INTEGER REFERENCES patients(id) ON DELETE SET NULL,
+    reset_flag_received_at TIMESTAMP,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_assign_patient ON device_assignments(patient_id);
 CREATE INDEX IF NOT EXISTS idx_assign_device ON device_assignments(device_id);
+
+-- Device contests (URS_5.13/5.14): opened when an org claims a serial that already has a
+-- VERIFIED owner in another org. The challenger holds NO device row until it wins — the
+-- single device row stays with the incumbent and is only re-pointed on an award/release.
+-- ABMRC is the sole arbiter; the two orgs never see each other's identity.
+CREATE TABLE IF NOT EXISTS device_contests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    serial_number TEXT NOT NULL,
+    model TEXT,
+    device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,   -- the incumbent's row
+    incumbent_org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    challenger_org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    challenger_intake_method TEXT NOT NULL DEFAULT 'manual',       -- 'scan' | 'manual'
+    -- open        = queued, awaiting a challenger choice or ABMRC
+    -- escalated   = challenger logged a case for ABMRC to rule on
+    -- resolved_challenger / resolved_incumbent = ABMRC ruling
+    -- released    = incumbent voluntarily released → challenger won without ABMRC
+    -- withdrawn   = challenger backed out (mistake)
+    -- auto_expired= closed by window lapse
+    status TEXT NOT NULL DEFAULT 'open'
+        CHECK(status IN ('open','escalated','resolved_challenger','resolved_incumbent','released','withdrawn','auto_expired')),
+    opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    incumbent_notified_at TIMESTAMP,
+    resolved_at TIMESTAMP,
+    resolved_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    resolution_notes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_contests_challenger ON device_contests(challenger_org_id, status);
+CREATE INDEX IF NOT EXISTS idx_contests_incumbent ON device_contests(incumbent_org_id, status);
+
+-- Per-organization device notices (anonymized, tenant-isolated). Drives the contest nudge
+-- to an incumbent, and the release/expiry/outcome messages. Never names the other org.
+CREATE TABLE IF NOT EXISTS device_notices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    serial_number TEXT,
+    contest_id INTEGER REFERENCES device_contests(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,   -- 'contest_incumbent' | 'claim_released' | 'claim_expired' | 'contest_outcome'
+    body TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    read_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_notices_org ON device_notices(organization_id, read_at);
 
 -- Alert rules (per org)
 CREATE TABLE IF NOT EXISTS alert_rules (

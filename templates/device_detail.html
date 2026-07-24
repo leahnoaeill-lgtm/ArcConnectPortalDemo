@@ -7,6 +7,7 @@
       <a href="{{ url_for('devices') }}" class="btn btn-sm">← Back to devices</a>
       <h1 class="mt-2"><span class="mono">{{ device.serial_number }}</span>
         <span class="badge status-{{ device.status }}">{{ device.status | replace('_',' ') | title }}</span>
+        {% if device.verification_status == 'pending' %}<span class="badge" style="background:#F4E3B2;color:#7A5B12;">Unverified</span>{% endif %}
       </h1>
       <div class="subtitle">
         {{ device.model | model_label }} ·
@@ -28,7 +29,13 @@
             <button type="submit" class="btn btn-danger">Retire</button>
           </form>
         {% elif device.status != 'retired' %}
+          {% if device.verification_status == 'pending' %}
+          <form method="POST" action="{{ url_for('device_verify', device_id=device.id) }}" style="display:inline;">
+            <button type="submit" class="btn btn-primary">Verify device possession</button>
+          </form>
+          {% else %}
           <a href="{{ url_for('device_assign', device_id=device.id) }}" class="btn btn-primary">Assign to patient</a>
+          {% endif %}
           <form method="POST" action="{{ url_for('device_set_status', device_id=device.id) }}" style="display:inline;">
             <input type="hidden" name="status" value="maintenance">
             <button type="submit" class="btn">Send to maintenance</button>
@@ -38,6 +45,11 @@
           </form>
         {% endif %}
       {% else %}
+        {% if pending_reset %}
+        <form method="POST" action="{{ url_for('device_reset_received', device_id=device.id) }}" style="display:inline;">
+          <button type="submit" class="btn btn-primary">Reset received</button>
+        </form>
+        {% endif %}
         <a href="{{ url_for('device_assign', device_id=device.id) }}" class="btn btn-amber">Reassign</a>
         <form method="POST" action="{{ url_for('device_unassign', device_id=device.id, assignment_id=active[0].id) }}" onsubmit="return confirm('Unassign this device from {{ active[0].first_name }} {{ active[0].last_name }} and return to inventory?');" style="display:inline;">
           <button type="submit" class="btn btn-danger">Unassign</button>
@@ -45,6 +57,32 @@
       {% endif %}
     </div>
   </div>
+
+  {% if expired %}
+  <div style="margin:0 0 16px;padding:12px 14px;border-radius:8px;background:#F3D6D6;color:#8A2A2A;">
+    <strong>Claim expired.</strong> This unverified claim lapsed after {{ 14 }} days without
+    possession verification and was released from your inventory. Re-claim the device by scanning
+    its label to take possession.
+  </div>
+  {% elif device.verification_status == 'pending' %}
+  <div style="margin:0 0 16px;padding:12px 14px;border-radius:8px;background:#F7ECCB;color:#7A5B12;">
+    <strong>Unverified.</strong> This device was added by manual serial entry. It holds no
+    patient data and cannot be assigned until device possession is confirmed
+    (patient app-pairing, a device-displayed code, or HOTP). Use <em>Verify device possession</em> above
+    once that check passes.
+    {% if device.claim_expires_at %}<br><span class="small">Verification window closes {{ device.claim_expires_at | date_only }}.</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if pending_reset %}
+  <div style="margin:0 0 16px;padding:12px 14px;border-radius:8px;background:#E7F0FA;color:#1B4B7A;border:1px solid #B9D6EE;">
+    <strong>Awaiting device reset — data not yet flowing to this patient.</strong>
+    This device was previously linked elsewhere, so it is assigned to
+    <strong>{{ pending_reset.first_name }} {{ pending_reset.last_name }}</strong> but its data is
+    not being profiled to them yet. The previous patient's data is unaffected until the device is
+    physically reset. Click <em>Reset received</em> once the reset is confirmed to cut the data over.
+  </div>
+  {% endif %}
 
   <div class="two-col">
     <div>
@@ -142,6 +180,28 @@
             <label>Status</label>
             <div><span class="badge status-{{ device.status }}">{{ device.status | replace('_',' ') | title }}</span></div>
           </div>
+          <div class="form-group mt-2">
+            <label>Verification</label>
+            <div>
+              {% if device.verification_status == 'pending' %}
+                <span class="badge" style="background:#F4E3B2;color:#7A5B12;">Unverified</span>
+              {% else %}
+                <span class="badge status-in_stock">Verified</span>
+              {% endif %}
+            </div>
+          </div>
+          {% if device.intake_method %}
+          <div class="form-group mt-2">
+            <label>Intake method</label>
+            <div>{{ device.intake_method | replace('_',' ') | title }}</div>
+          </div>
+          {% endif %}
+          {% if device.verified_at %}
+          <div class="form-group mt-2">
+            <label>Verified</label>
+            <div>{{ device.verified_at | dt }}</div>
+          </div>
+          {% endif %}
           {% if device.notes %}
           <div class="form-group mt-2">
             <label>Notes</label>

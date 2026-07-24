@@ -30,6 +30,68 @@
     </div>
   </div>
 
+  {# ── Device notices (anonymized, tenant-isolated) — releases, expiries, outcomes ── #}
+  {% for n in notices or [] %}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:12px 14px;border-radius:8px;
+                {% if n.kind == 'contest_incumbent' %}background:#F7ECCB;color:#7A5B12;border:1px solid #E4CE93;
+                {% elif n.kind == 'contest_outcome' %}background:#E7F0FA;color:#1B4B7A;border:1px solid #B9D6EE;
+                {% else %}background:#F1EFEA;color:#5A5346;border:1px solid #DDD8CE;{% endif %}">
+      <div>
+        {% if n.kind == 'contest_incumbent' %}<strong>A claim was made on one of your devices.</strong> {% endif %}
+        {{ n.body }}
+      </div>
+      <div style="display:flex;gap:8px;white-space:nowrap;">
+        {% if n.kind == 'contest_incumbent' and n.contest_id %}
+        <form method="POST" action="{{ url_for('contest_release', contest_id=n.contest_id) }}"
+              onsubmit="return confirm('Release device {{ n.serial_number }} to the organization claiming it? This removes it from your fleet.');">
+          <button type="submit" class="btn btn-sm btn-amber">Release device</button>
+        </form>
+        {% endif %}
+        <form method="POST" action="{{ url_for('device_notice_dismiss', notice_id=n.id) }}">
+          <button type="submit" class="btn btn-sm">Dismiss</button>
+        </form>
+      </div>
+    </div>
+  {% endfor %}
+
+  {# ── Your pending claims (contests you opened as the challenger) ── #}
+  {% if my_contests %}
+    <div class="card" style="margin-bottom:16px;border-left:4px solid var(--ac-cyan);">
+      <div class="card-header"><h2 style="margin:0;font-size:15px;">Your pending claims</h2></div>
+      <div class="card-body no-pad">
+        <table class="table">
+          <thead><tr><th>Serial</th><th>Status</th><th>Opened</th><th></th></tr></thead>
+          <tbody>
+            {% for c in my_contests %}
+            <tr>
+              <td class="mono">{{ c.serial_number }}</td>
+              <td>
+                {% if c.status == 'escalated' %}<span class="badge" style="background:#E7F0FA;color:#1B4B7A;">Escalated to ABMRC</span>
+                {% else %}<span class="badge" style="background:#F4E3B2;color:#7A5B12;">Waiting — claimed by another organization</span>{% endif %}
+              </td>
+              <td class="small muted">{{ c.opened_at | date_only }}</td>
+              <td style="text-align:right;white-space:nowrap;">
+                {% if c.status == 'open' %}
+                <form method="POST" action="{{ url_for('contest_escalate', contest_id=c.id) }}" style="display:inline;">
+                  <button type="submit" class="btn btn-sm btn-primary">Escalate to ABMRC</button>
+                </form>
+                {% endif %}
+                <form method="POST" action="{{ url_for('contest_withdraw', contest_id=c.id) }}" style="display:inline;"
+                      onsubmit="return confirm('Withdraw your claim on {{ c.serial_number }}?');">
+                  <button type="submit" class="btn btn-sm">Withdraw</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="small muted" style="padding:8px 14px;">Contests are settled by ABMRC. You and the
+          other organization never see each other's identity. <em>Wait</em> has no effect until the
+          current owner releases the device or ABMRC rules.</div>
+      </div>
+    </div>
+  {% endif %}
+
   {# Tabs + Add-device share one line; the underline runs under the whole row. #}
   <div class="flex" style="justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ac-border); margin-bottom: 18px;">
     <div class="tabs" style="border-bottom: 0; margin-bottom: 0;">
@@ -96,7 +158,7 @@
                 data-sort-last-comm="{{ d.last_communication or '' }}"
                 data-sort-status="{{ d.status }}"
                 onclick="window.location='{{ url_for('device_detail', device_id=d.id) }}'">
-              <td class="mono" style="font-weight: 600; font-size: 12px; white-space: nowrap;">{{ d.serial_number }}</td>
+              <td class="mono" style="font-weight: 600; font-size: 12px; white-space: nowrap;">{{ d.serial_number }}{% if d.verification_status == 'pending' %} <span class="badge" style="background:#F4E3B2;color:#7A5B12;font-size:10px;">Unverified</span>{% endif %}</td>
               <td>{{ d.model | model_label }}</td>
               <td>{{ d.firmware_version or '—' }}</td>
               <td class="small">{{ d.upload_date | date_only }}</td>

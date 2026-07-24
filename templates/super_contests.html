@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Device contests · ABMRC{% endblock %}
+{% block body %}
+<div class="page pd-soft">
+  <div class="page-header">
+    <div>
+      <h1>Device contests</h1>
+      <div class="subtitle">ABMRC is the sole arbiter of contested device ownership. Neither
+        organization sees the other's identity — you do.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Open contests
+      {% if open_contests %}<span class="tab-count">{{ open_contests | length }}</span>{% endif %}</h2></div>
+    <div class="card-body no-pad">
+      {% if open_contests %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Serial</th>
+            <th>Current owner (incumbent)</th>
+            <th>Claiming org (challenger)</th>
+            <th>Claim method</th>
+            <th>Opened</th>
+            <th>Ruling</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in open_contests %}
+          <tr>
+            <td class="mono">{{ c.serial_number }}<div class="small muted">{{ c.model | model_label }}</div></td>
+            <td>
+              {{ c.incumbent_name }}
+              <div class="small muted">
+                {% if c.incumbent_verification %}{{ c.incumbent_verification | title }}{% endif %}
+                {% if c.device_status %} · {{ c.device_status | replace('_',' ') }}{% endif %}
+              </div>
+            </td>
+            <td>{{ c.challenger_name }}</td>
+            <td>{{ c.challenger_intake_method | title }}
+              {% if c.status == 'escalated' %}<div><span class="badge" style="background:#E7F0FA;color:#1B4B7A;">Escalated</span></div>{% endif %}
+            </td>
+            <td class="small muted">{{ c.opened_at | date_only }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('super_contest_resolve', contest_id=c.id) }}"
+                    onsubmit="return this.decision.value && this.note.value.trim() ? true : (alert('Choose a decision and enter a note.'), false);">
+                <input type="text" name="note" placeholder="Resolution note (required)"
+                       style="width:100%;margin-bottom:6px;padding:5px 8px;font-size:12px;">
+                <div style="display:flex;gap:6px;">
+                  <button type="submit" name="decision" value="challenger" class="btn btn-sm btn-primary">Award to challenger</button>
+                  <button type="submit" name="decision" value="incumbent" class="btn btn-sm">Uphold incumbent</button>
+                </div>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="empty-state"><p>No open contests.</p></div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if resolved_contests %}
+  <div class="card" style="margin-top:18px;">
+    <div class="card-header"><h2>Recently resolved</h2></div>
+    <div class="card-body no-pad">
+      <table class="table">
+        <thead>
+          <tr><th>Serial</th><th>Incumbent</th><th>Challenger</th><th>Outcome</th><th>Resolved</th><th>Note</th></tr>
+        </thead>
+        <tbody>
+          {% for c in resolved_contests %}
+          <tr>
+            <td class="mono">{{ c.serial_number }}</td>
+            <td>{{ c.incumbent_name }}</td>
+            <td>{{ c.challenger_name }}</td>
+            <td>
+              {% if c.status == 'resolved_challenger' %}<span class="badge status-in_stock">Awarded to challenger</span>
+              {% elif c.status == 'released' %}<span class="badge status-in_stock">Released to challenger</span>
+              {% elif c.status == 'resolved_incumbent' %}<span class="badge">Incumbent upheld</span>
+              {% elif c.status == 'withdrawn' %}<span class="badge">Withdrawn</span>
+              {% else %}<span class="badge">{{ c.status | replace('_',' ') | title }}</span>{% endif %}
+            </td>
+            <td class="small muted">{{ c.resolved_at | date_only }}</td>
+            <td class="small muted">{{ c.resolution_notes or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

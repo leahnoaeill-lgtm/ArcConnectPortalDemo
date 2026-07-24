@@ -574,6 +574,74 @@ def seed():
                   (patient_id, device_id, assigned_date, consent_relpath,
                    f'{mrn}_consent.pdf', priya_id, 'Seeded at home setup visit.'))
 
+    # ── Device-association demo scenarios (URS_5.11–5.15) ────────────
+    # Fixed serials in the 90-range so UAT can target them deterministically. Orphan cases
+    # (UC-1/2/3) are intentionally NOT seeded — testers type a fresh serial (see UAT doc).
+    def _demo_device(serial, model, org, *, verification='verified', claim_state='active',
+                     expires_days=None, prior_link='none', status='in_stock'):
+        exp = ((now + timedelta(days=expires_days)).isoformat(sep=' ', timespec='seconds')
+               if expires_days is not None else None)
+        verified_at = now.isoformat(sep=' ', timespec='seconds') if verification == 'verified' else None
+        c.execute("""INSERT INTO devices (organization_id, serial_number, model, firmware_version,
+                     upload_date, warranty_end, status, verification_status, intake_method,
+                     claim_state, claim_expires_at, prior_link_type, verified_at)
+                     VALUES (?, ?, ?, '3.4.1', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  (org, serial, model, date.today().isoformat(),
+                   (date.today() + timedelta(days=1200)).isoformat(), status, verification,
+                   'scan' if verification == 'verified' else 'manual',
+                   claim_state, exp, prior_link, verified_at))
+        return c.lastrowid
+
+    # UC-4: Sunwest holds an UNVERIFIED claim; a Denver SCAN of this serial wins.
+    _demo_device('KNS90A910', 'biwaze_clear', sunwest_id,
+                 verification='pending', expires_days=10)
+    # UC-5/UC-6: Sunwest is the VERIFIED owner; Denver manually entering it opens a contest.
+    _demo_device('KNS90A911', 'biwaze_clear', sunwest_id)
+    # UC-7: Phoenix unverified claim whose 14-day window has LAPSED (auto-expires on view)…
+    _demo_device('CNS90A912', 'biwaze_cough', adap_phoenix,
+                 verification='pending', expires_days=-1)
+    #        …and a second, still-active unverified claim (live countdown).
+    _demo_device('CNS90A913', 'biwaze_cough', adap_phoenix,
+                 verification='pending', expires_days=12)
+
+    # UC-8/UC-9 and UC-10: two pre-escalated contests waiting in the ABMRC queue —
+    # Denver (challenger) vs Sunwest (incumbent/verified owner).
+    for serial in ('KNS90A914', 'KNS90A915'):
+        inc_id = _demo_device(serial, 'biwaze_clear', sunwest_id)
+        c.execute("""INSERT INTO device_contests (serial_number, model, device_id,
+                     incumbent_org_id, challenger_org_id, challenger_intake_method,
+                     status, incumbent_notified_at)
+                     VALUES (?, 'biwaze_clear', ?, ?, ?, 'manual', 'escalated', ?)""",
+                  (serial, inc_id, sunwest_id, adap_denver,
+                   now.isoformat(sep=' ', timespec='seconds')))
+        cid = c.lastrowid
+        c.execute("""INSERT INTO device_notices (organization_id, serial_number, contest_id, kind, body)
+                     VALUES (?, ?, ?, 'contest_incumbent', ?)""",
+                  (sunwest_id, serial, cid,
+                   f'Another organization has claimed device {serial}. Confirm you still have '
+                   'possession, or release it. Your current link is unaffected until you release '
+                   'it or ABMRC rules.'))
+
+    # UC-11: Denver verified owner, never assigned — assigns immediately.
+    _demo_device('CNS90A916', 'biwaze_cough', adap_denver)
+    # UC-12: Denver verified owner previously linked by a DIFFERENT org / patient-self —
+    # assigning it lands in Pending – Reset until the reset flag arrives.
+    _demo_device('KNS90A917', 'biwaze_clear', adap_denver, prior_link='different_org')
+    # UC-13: Denver verified owner already assigned to a Denver patient (reassignment demo).
+    dev_uc13 = _demo_device('CNS90A918', 'biwaze_cough', adap_denver, status='in_use')
+    _denver_pid = next(iter(patient_ids_denver.values()), None)
+    if _denver_pid:
+        _consent = 'uploads/consent/consent_demo_CNS90A918.pdf'
+        _cf = UPLOADS_CONSENT / 'consent_demo_CNS90A918.pdf'
+        if not _cf.exists():
+            _cf.write_bytes(b'%PDF-1.4\n% Arc Connect demo placeholder consent form\n')
+        c.execute("""INSERT INTO device_assignments (patient_id, device_id, assigned_date,
+                     consent_form_path, consent_form_original_name, assigned_by_user_id, notes,
+                     assignment_state)
+                     VALUES (?, ?, ?, ?, 'demo_consent.pdf', ?, 'Seeded for reassignment demo.', 'active')""",
+                  (_denver_pid, dev_uc13, (date.today() - timedelta(days=60)).isoformat(),
+                   _consent, priya_id))
+
     # ── Alert rules (Adapt Denver defaults) ─────────────────────────
     rules = [
         ('Missed therapy (1 day)', 'missed_therapy_days', 1, 24, 'warning',
