@@ -924,6 +924,10 @@ tr.filter-hidden { display: none !important; }
 /* Dense tables (e.g. the ABMRC Super User org/request grids) keep every cell on
    a single line; the card body scrolls horizontally rather than letting values
    wrap. Stacked sub-lines inside a cell (a <div> over another) are unaffected. */
+/* Keep column headers on a single line (the card body scrolls horizontally if the
+   table gets wide). Header-only — data cells wrap as before. */
+.table-hdr-nowrap thead th { white-space: nowrap; }
+
 .table-nowrap thead th,
 .table-nowrap tbody td {
   white-space: nowrap;
