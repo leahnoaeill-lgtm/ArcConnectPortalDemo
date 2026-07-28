@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Cases · ABMRC{% endblock %}
+{% block body %}
+<div class="page pd-soft">
+  <div class="page-header">
+    <div>
+      <h1>Cases</h1>
+      <div class="subtitle">ABMRC case queue. Disputes are settled here — you see both
+        organizations; they never see each other.</div>
+    </div>
+  </div>
+
+  <div class="filter-bar" id="caseFilterBar">
+    <div class="filter-search">
+      <input type="search" id="caseSearch" placeholder="Search serial, organization, type…" autocomplete="off">
+    </div>
+    <select class="filter-select" onchange="location = updateQuery({status: this.value})">
+      <option value="open"     {% if status_filter == 'open'     %}selected{% endif %}>Open ({{ counts.open or 0 }})</option>
+      <option value="resolved" {% if status_filter == 'resolved' %}selected{% endif %}>Resolved ({{ counts.resolved or 0 }})</option>
+      <option value="all"      {% if status_filter == 'all'      %}selected{% endif %}>All ({{ counts.all or 0 }})</option>
+    </select>
+    <select class="filter-select" onchange="location = updateQuery({type: this.value})">
+      <option value="all"     {% if type_filter == 'all'     %}selected{% endif %}>All types</option>
+      <option value="dispute" {% if type_filter == 'dispute' %}selected{% endif %}>Dispute</option>
+    </select>
+    <span class="filter-count" id="caseSearchCount"></span>
+  </div>
+
+  <div class="card">
+    <div class="card-body no-pad">
+      {% if cases %}
+      <table class="table table-hdr-nowrap">
+        <thead>
+          <tr>
+            <th>Case</th>
+            <th>Type</th>
+            <th>Subject</th>
+            <th>Parties</th>
+            <th>Status</th>
+            <th>Opened</th>
+            <th>Resolution</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in cases %}
+          <tr data-search="{{ (c.type_label ~ ' ' ~ c.serial ~ ' ' ~ c.incumbent ~ ' ' ~ c.challenger) | lower }}">
+            <td class="mono muted">#{{ c.id }}</td>
+            <td><span class="badge" style="background:#EFE7F7;color:#6D4CA6;">{{ c.type_label }}</span></td>
+            <td>
+              <span class="mono">{{ c.serial }}</span>
+              <div class="small muted">{{ c.model | model_label }}</div>
+            </td>
+            <td class="small">
+              <div><strong>Claiming:</strong> {{ c.challenger }} <span class="muted">({{ c.challenger_intake | title }})</span></div>
+              <div><strong>Current owner:</strong> {{ c.incumbent }}
+                <span class="muted">{% if c.incumbent_verification %}{{ c.incumbent_verification | title }}{% endif %}{% if c.device_status %} · {{ c.device_status | replace('_',' ') }}{% endif %}</span>
+              </div>
+            </td>
+            <td>
+              {% if c.status == 'escalated' %}<span class="badge" style="background:#E7F0FA;color:#1B4B7A;">Escalated</span>
+              {% elif c.status == 'open' %}<span class="badge" style="background:#F4E3B2;color:#7A5B12;">Open</span>
+              {% elif c.status == 'resolved_challenger' %}<span class="badge status-in_stock">Awarded to claimant</span>
+              {% elif c.status == 'released' %}<span class="badge status-in_stock">Released to claimant</span>
+              {% elif c.status == 'resolved_incumbent' %}<span class="badge">Owner upheld</span>
+              {% elif c.status == 'withdrawn' %}<span class="badge">Withdrawn</span>
+              {% else %}<span class="badge">{{ c.status | replace('_',' ') | title }}</span>{% endif %}
+            </td>
+            <td class="small muted">{{ c.opened_at | date_only }}</td>
+            <td>
+              {% if c.is_open %}
+                <form method="POST" action="{{ c.resolve_action }}"
+                      onsubmit="return this.decision.value && this.note.value.trim() ? true : (alert('Choose a decision and enter a note.'), false);">
+                  <input type="text" name="note" placeholder="Resolution note (required)"
+                         style="width:100%;min-width:180px;margin-bottom:6px;padding:5px 8px;font-size:12px;">
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button type="submit" name="decision" value="challenger" class="btn btn-sm btn-primary">Award to claimant</button>
+                    <button type="submit" name="decision" value="incumbent" class="btn btn-sm">Uphold owner</button>
+                  </div>
+                </form>
+              {% else %}
+                <div class="small muted">{{ c.resolution_notes or '—' }}
+                  {% if c.resolved_at %}<div>{{ c.resolved_at | date_only }}</div>{% endif %}
+                </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="empty-state">
+          <p>No {{ 'open ' if status_filter == 'open' else '' }}cases{{ ' of this type' if type_filter != 'all' else '' }}.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+function updateQuery(overrides) {
+  const u = new URL(window.location.href);
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === null || v === '' || v === 'all') u.searchParams.delete(k);
+    else u.searchParams.set(k, v);
+  }
+  return u.pathname + (u.search || '');
+}
+(function() {
+  const search = document.getElementById('caseSearch');
+  if (!search) return;
+  const count = document.getElementById('caseSearchCount');
+  const rows = document.querySelectorAll('tbody tr[data-search]');
+  const total = rows.length;
+  function apply() {
+    const q = (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(el => {
+      const show = !q || (el.dataset.search || '').includes(q);
+      el.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    if (count) count.textContent = q ? `${visible} of ${total}` : '';
+  }
+  search.addEventListener('input', apply);
+})();
+</script>
+{% endblock %}

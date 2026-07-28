@@ -20,7 +20,7 @@
     {% if is_super_admin and not super_acting_org_id %}
       {# ABMRC super admin at their own dashboard — no customer workflows. #}
       <a href="{{ url_for('super_dashboard') }}" class="{{ 'active' if request.endpoint and (request.endpoint == 'super_dashboard' or request.endpoint.startswith('super_org') or request.endpoint.startswith('super_signup')) else '' }}">Organizations</a>
-      <a href="{{ url_for('super_contests') }}" class="nav-with-badge {{ 'active' if request.endpoint == 'super_contests' else '' }}">Disputes{% if open_contest_count %}<span class="nav-badge">{{ open_contest_count }}</span>{% endif %}</a>
+      <a href="{{ url_for('super_cases') }}" class="nav-with-badge {{ 'active' if request.endpoint in ('super_cases', 'super_contests') else '' }}">Cases{% if open_contest_count %}<span class="nav-badge">{{ open_contest_count }}</span>{% endif %}</a>
       <a href="{{ url_for('super_map') }}" class="{{ 'active' if request.endpoint == 'super_map' else '' }}">Map</a>
     {% else %}
       <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint in ('dashboard', 'parent_overview') else '' }}">Dashboard</a>

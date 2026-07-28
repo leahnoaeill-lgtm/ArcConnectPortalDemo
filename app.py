@@ -5319,28 +5319,68 @@ def contest_release(contest_id):
     return redirect(url_for('devices'))
 
 
+def _gather_cases(type_filter='all'):
+    """Collect ABMRC cases across types into a uniform shape for the Cases queue.
+    Extensible: each case TYPE contributes rows here. Today the only type is 'dispute'
+    (device ownership disputes, from device_contests); add future types by appending
+    another block that yields the same dict shape."""
+    cases = []
+    if type_filter in ('all', 'dispute'):
+        rows = q_all("""SELECT c.*, io.name AS incumbent_name, ch.name AS challenger_name,
+                        d.verification_status AS incumbent_verification, d.status AS device_status
+                        FROM device_contests c
+                        JOIN organizations io ON io.id = c.incumbent_org_id
+                        JOIN organizations ch ON ch.id = c.challenger_org_id
+                        LEFT JOIN devices d ON d.id = c.device_id
+                        ORDER BY CASE c.status WHEN 'escalated' THEN 0 WHEN 'open' THEN 1 ELSE 2 END,
+                                 c.opened_at DESC""")
+        for r in rows:
+            is_open = r['status'] in ('open', 'escalated')
+            cases.append({
+                'type': 'dispute', 'type_label': 'Dispute', 'id': r['id'],
+                'is_open': is_open, 'status': r['status'],
+                'opened_at': r['opened_at'], 'resolved_at': r['resolved_at'],
+                'resolution_notes': r['resolution_notes'],
+                'serial': r['serial_number'], 'model': r['model'],
+                'incumbent': r['incumbent_name'], 'challenger': r['challenger_name'],
+                'challenger_intake': r['challenger_intake_method'],
+                'incumbent_verification': r['incumbent_verification'],
+                'device_status': r['device_status'],
+                'resolve_action': url_for('super_contest_resolve', contest_id=r['id']),
+            })
+    return cases
+
+
+@app.route('/super/cases')
+@require_login
+def super_cases():
+    """ABMRC Cases queue (URS_5.14) — a task-style queue of cases for the super admin.
+    Case types are extensible; the first (and currently only) type is 'dispute'."""
+    bounce = _require_super_admin()
+    if bounce: return bounce
+    type_filter = request.args.get('type', 'all')       # all | dispute
+    status_filter = request.args.get('status', 'open')  # open | resolved | all
+    all_cases = _gather_cases(type_filter)
+    counts = {
+        'open': len([c for c in all_cases if c['is_open']]),
+        'resolved': len([c for c in all_cases if not c['is_open']]),
+        'all': len(all_cases),
+    }
+    if status_filter == 'open':
+        cases = [c for c in all_cases if c['is_open']]
+    elif status_filter == 'resolved':
+        cases = [c for c in all_cases if not c['is_open']]
+    else:
+        cases = all_cases
+    return render_template('super_cases.html', cases=cases, counts=counts,
+                           type_filter=type_filter, status_filter=status_filter)
+
+
 @app.route('/super/contests')
 @require_login
 def super_contests():
-    """ABMRC contest-resolution console (URS_5.14) — the sole arbiter of device ownership."""
-    bounce = _require_super_admin()
-    if bounce: return bounce
-    open_rows = q_all("""SELECT c.*, io.name AS incumbent_name, ch.name AS challenger_name,
-                         d.verification_status AS incumbent_verification, d.status AS device_status
-                         FROM device_contests c
-                         JOIN organizations io ON io.id = c.incumbent_org_id
-                         JOIN organizations ch ON ch.id = c.challenger_org_id
-                         LEFT JOIN devices d ON d.id = c.device_id
-                         WHERE c.status IN ('open','escalated')
-                         ORDER BY CASE c.status WHEN 'escalated' THEN 0 ELSE 1 END, c.opened_at""")
-    resolved_rows = q_all("""SELECT c.*, io.name AS incumbent_name, ch.name AS challenger_name
-                            FROM device_contests c
-                            JOIN organizations io ON io.id = c.incumbent_org_id
-                            JOIN organizations ch ON ch.id = c.challenger_org_id
-                            WHERE c.status NOT IN ('open','escalated')
-                            ORDER BY c.resolved_at DESC LIMIT 25""")
-    return render_template('super_contests.html', open_contests=open_rows,
-                           resolved_contests=resolved_rows)
+    """Back-compat: the dispute console is now the Cases queue."""
+    return redirect(url_for('super_cases'))
 
 
 @app.route('/super/contests/<int:contest_id>/resolve', methods=['POST'])
@@ -5357,7 +5397,7 @@ def super_contest_resolve(contest_id):
     note = (request.form.get('note') or '').strip()
     if decision not in ('challenger', 'incumbent') or not note:
         flash('Choose a decision and enter a resolution note.', 'error')
-        return redirect(url_for('super_contests'))
+        return redirect(url_for('super_cases'))
     uid = current_user()['id']
     if decision == 'challenger':
         if c['device_id']:
@@ -5388,7 +5428,7 @@ def super_contest_resolve(contest_id):
         flash(f'Dispute resolved — incumbent upheld for device {c["serial_number"]}.', 'success')
     _log_access('device_contest_resolve', ref_type='device', ref_id=c['device_id'],
                 detail=f'{c["serial_number"]} → {decision}')
-    return redirect(url_for('super_contests'))
+    return redirect(url_for('super_cases'))
 
 
 @app.route('/devices/<int:device_id>/reset-received', methods=['POST'])
