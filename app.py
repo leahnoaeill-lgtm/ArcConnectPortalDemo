@@ -4925,7 +4925,7 @@ def device_new():
                           'have possession, or release it. Your current link is unaffected until '
                           'you release it or ABMRC rules.', serial=serial, contest_id=cid)
             _log_access('device_contest_open', ref_type='device', ref_id=existing['id'],
-                        detail=f'Contest opened on {serial}')
+                        detail=f'Dispute opened on {serial}')
             flash(f'Device {serial} is already claimed by another organization. Your claim is '
                   'queued for ABMRC review — see "Your pending claims" on the Devices page. You '
                   'can withdraw, escalate to ABMRC, or wait.', 'success')
@@ -5377,7 +5377,7 @@ def super_contest_resolve(contest_id):
                       f'ABMRC transferred device {c["serial_number"]} to the organization that '
                       'claimed it. It has been removed from your fleet.',
                       serial=c['serial_number'], contest_id=contest_id)
-        flash(f'Contest resolved — device {c["serial_number"]} awarded to the challenger.', 'success')
+        flash(f'Dispute resolved — device {c["serial_number"]} awarded to the challenger.', 'success')
     else:
         q_exec("""UPDATE device_contests SET status = 'resolved_incumbent',
                   resolved_at = datetime('now'), resolved_by_user_id = ?, resolution_notes = ?
@@ -5385,7 +5385,7 @@ def super_contest_resolve(contest_id):
         _claim_notice(c['challenger_org_id'], 'contest_outcome',
                       f'ABMRC upheld the existing owner of device {c["serial_number"]}. Your claim '
                       'was not granted.', serial=c['serial_number'], contest_id=contest_id)
-        flash(f'Contest resolved — incumbent upheld for device {c["serial_number"]}.', 'success')
+        flash(f'Dispute resolved — incumbent upheld for device {c["serial_number"]}.', 'success')
     _log_access('device_contest_resolve', ref_type='device', ref_id=c['device_id'],
                 detail=f'{c["serial_number"]} → {decision}')
     return redirect(url_for('super_contests'))

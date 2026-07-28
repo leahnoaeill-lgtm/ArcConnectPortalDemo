@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Device contests · ABMRC{% endblock %}
+{% block title %}Device disputes · ABMRC{% endblock %}
 {% block body %}
 <div class="page pd-soft">
   <div class="page-header">
     <div>
-      <h1>Device contests</h1>
-      <div class="subtitle">ABMRC is the sole arbiter of contested device ownership. Neither
+      <h1>Device disputes</h1>
+      <div class="subtitle">ABMRC is the sole arbiter of disputed device ownership. Neither
         organization sees the other's identity — you do.</div>
     </div>
   </div>
 
   <div class="card">
-    <div class="card-header"><h2>Open contests
+    <div class="card-header"><h2>Open disputes
       {% if open_contests %}<span class="tab-count">{{ open_contests | length }}</span>{% endif %}</h2></div>
     <div class="card-body no-pad">
       {% if open_contests %}
@@ -58,7 +58,7 @@
         </tbody>
       </table>
       {% else %}
-        <div class="empty-state"><p>No open contests.</p></div>
+        <div class="empty-state"><p>No open disputes.</p></div>
       {% endif %}
     </div>
   </div>
