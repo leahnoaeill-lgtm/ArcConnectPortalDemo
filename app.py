@@ -319,6 +319,19 @@ def _ensure_device_claim_schema():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             read_at TIMESTAMP )""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_notices_org ON device_notices(organization_id, read_at)")
+        # Claim queue (URS_5.11–5.12): one organization holds a serial at a time; others wait
+        # here in FIFO order. When an unverified holder's 14-day window lapses, the oldest
+        # waiting entry is promoted (scanned → verified holder; typed → its own 14-day window).
+        conn.execute("""CREATE TABLE IF NOT EXISTS device_claim_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            serial_number TEXT NOT NULL,
+            organization_id INTEGER NOT NULL,
+            intake_method TEXT NOT NULL DEFAULT 'manual',   -- 'scan' | 'manual'
+            status TEXT NOT NULL DEFAULT 'waiting',          -- 'waiting' | 'promoted' | 'withdrawn'
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            promoted_at TIMESTAMP )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_serial ON device_claim_queue(serial_number, status, created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_org ON device_claim_queue(organization_id, status)")
         conn.commit()
     finally:
         conn.close()
@@ -4762,9 +4775,16 @@ def devices():
     incumbent_contests = q_all("""SELECT c.* FROM device_contests c
                                   WHERE c.incumbent_org_id = ? AND c.status IN ('open','escalated')
                                   ORDER BY c.opened_at DESC""", (oid,))
+    # This org's waiting queue claims (serials held by another org), each with its live position.
+    my_queue = q_all("""SELECT q.*, d.claim_expires_at, d.verification_status AS holder_verification
+                        FROM device_claim_queue q
+                        LEFT JOIN devices d ON d.serial_number = q.serial_number AND d.claim_state = 'active'
+                        WHERE q.organization_id = ? AND q.status = 'waiting'
+                        ORDER BY q.created_at""", (oid,))
+    my_queue = [dict(e, position=_queue_position(e['serial_number'], oid)) for e in my_queue]
     return render_template('devices.html', devices=rows, tab=tab, kpis=kpis,
                            notices=notices, my_contests=my_contests,
-                           incumbent_contests=incumbent_contests)
+                           incumbent_contests=incumbent_contests, my_queue=my_queue)
 
 
 # BiWaze label serial format: CNSXXAXXX (Cough) / KNSXXAXXX (Clear).
@@ -4785,18 +4805,66 @@ def _org_notices(org_id):
                     ORDER BY created_at DESC""", (org_id,))
 
 
+def _queue_waiting(serial):
+    """Waiting queue entries for a serial, FIFO (oldest first)."""
+    return q_all("""SELECT * FROM device_claim_queue
+                    WHERE serial_number = ? AND status = 'waiting'
+                    ORDER BY created_at, id""", (serial,))
+
+
+def _queue_position(serial, org_id):
+    """1-based position of an org's waiting claim on a serial, or None if not queued."""
+    for i, e in enumerate(_queue_waiting(serial), start=1):
+        if e['organization_id'] == org_id:
+            return i
+    return None
+
+
+def _promote_next_in_queue(device_id, serial):
+    """When a holder is freed (an unverified window lapsed), hand the serial to the oldest
+    waiting claimant (URS_5.12). A scanned entry becomes the verified holder; a typed entry
+    becomes an unverified holder starting its own 14-day window. Returns True if promoted."""
+    nxt = q_one("""SELECT * FROM device_claim_queue WHERE serial_number = ? AND status = 'waiting'
+                   ORDER BY created_at, id LIMIT 1""", (serial,))
+    if not nxt:
+        return False
+    if nxt['intake_method'] == 'scan':
+        # Physical possession proven → verified holder immediately.
+        q_exec("""UPDATE devices SET organization_id = ?, verification_status = 'verified',
+                  intake_method = 'scan', verified_at = datetime('now'), claim_state = 'active',
+                  claim_expires_at = NULL, prior_link_type = 'none', status = 'in_stock'
+                  WHERE id = ?""", (nxt['organization_id'], device_id))
+        body = (f'You are now the verified holder of device {serial} — the previous holder\'s '
+                'unverified claim lapsed and your scanned claim was next in the queue.')
+    else:
+        # Typed claim → unverified holder with a fresh 14-day window.
+        q_exec("""UPDATE devices SET organization_id = ?, verification_status = 'pending',
+                  intake_method = 'manual', verified_at = NULL, claim_state = 'active',
+                  claim_expires_at = datetime('now', ?), prior_link_type = 'none', status = 'in_stock'
+                  WHERE id = ?""", (nxt['organization_id'], f'+{CLAIM_WINDOW_DAYS} days', device_id))
+        body = (f'You now hold device {serial} — the previous holder\'s claim lapsed and yours was '
+                f'next in the queue. Verify possession within {CLAIM_WINDOW_DAYS} days or it passes on.')
+    q_exec("UPDATE device_claim_queue SET status = 'promoted', promoted_at = datetime('now') WHERE id = ?",
+           (nxt['id'],))
+    _claim_notice(nxt['organization_id'], 'queue_promoted', body, serial=serial)
+    return True
+
+
 def _expire_stale_claims():
-    """Lazily expire unverified claims whose 14-day window has lapsed (URS_5.12) and notify the
-    holder. Called opportunistically on device-page loads — demo scale, so a full scan is fine."""
+    """Lazily expire unverified holders whose 14-day window has lapsed (URS_5.12) and either
+    promote the next queued claimant or, if none wait, release the serial. Called
+    opportunistically on device-page loads — demo scale, so a full scan is fine."""
     stale = q_all("""SELECT id, organization_id, serial_number FROM devices
                      WHERE claim_state = 'active' AND verification_status = 'pending'
                        AND claim_expires_at IS NOT NULL AND claim_expires_at < datetime('now')""")
     for d in stale:
-        q_exec("UPDATE devices SET claim_state = 'expired' WHERE id = ?", (d['id'],))
         _claim_notice(d['organization_id'], 'claim_expired',
                       f'Your unverified claim on device {d["serial_number"]} expired after '
-                      f'{CLAIM_WINDOW_DAYS} days without possession verification and was released '
-                      'from your inventory.', serial=d['serial_number'])
+                      f'{CLAIM_WINDOW_DAYS} days without possession verification.',
+                      serial=d['serial_number'])
+        # Hand off to the next in line, or free the serial entirely.
+        if not _promote_next_in_queue(d['id'], d['serial_number']):
+            q_exec("UPDATE devices SET claim_state = 'expired' WHERE id = ?", (d['id'],))
 
 
 def _transfer_device_row(device_id, to_org, intake, model=None, prior_link='different_org'):
@@ -4829,8 +4897,8 @@ def _scan_serial_response(raw):
                        device_url=url_for('device_detail', device_id=existing['id']),
                        message=f'Device {serial} is already in your fleet.')
     # A serial held by another org no longer dead-ends: submitting the scan resolves it via
-    # claim precedence (scan wins over an unverified claim; opens a contest against a verified
-    # owner — URS_5.11–5.13).
+    # claim precedence (join the FIFO queue behind an unverified holder; open an ABMRC dispute
+    # against a verified holder — URS_5.11–5.13).
     return jsonify(serial=serial, model=model)
 
 
@@ -4933,24 +5001,27 @@ def device_new():
 
         if existing and existing['claim_state'] == 'active' \
                 and existing['verification_status'] == 'pending':
-            # Another org holds an UNVERIFIED claim. A scan proves possession and WINS
-            # (URS_5.1 AC-7 / UC-4); a manual entry cannot displace it.
-            if not manual:
-                _claim_notice(existing['organization_id'], 'claim_released',
-                              f'Device {serial} was scanned into another organization\'s fleet, '
-                              'which proves physical possession, so your unverified claim on it '
-                              'was released.', serial=serial)
-                _transfer_device_row(existing['id'], oid, 'scan', model=model, prior_link='none')
-                _log_access('device_scan_win', ref_type='device', ref_id=existing['id'],
-                            detail=f'Scan superseded an unverified claim on {serial}')
-                flash(f'Device {serial} scanned — possession confirmed. It is now in your '
-                      'fleet as Verified.', 'success')
-                return redirect(url_for('device_detail', device_id=existing['id']))
+            # Another org holds an UNVERIFIED claim. One org holds a serial at a time — so this
+            # claim WAITS in the FIFO queue (URS_5.11–5.12). A scan does not displace the holder;
+            # it queues too, and converts to verified only if it reaches the front (when the
+            # holder's 14-day window lapses).
+            already = q_one("""SELECT id FROM device_claim_queue WHERE serial_number = ?
+                               AND organization_id = ? AND status = 'waiting'""", (serial, oid))
+            if already:
+                flash(f'You are already in the queue for device {serial} — see "Your pending '
+                      'claims" on the Devices page.', 'info')
+                return redirect(url_for('devices'))
+            q_exec("""INSERT INTO device_claim_queue (serial_number, organization_id, intake_method)
+                      VALUES (?, ?, ?)""", (serial, oid, intake))
+            pos = _queue_position(serial, oid)
             exp = str(existing['claim_expires_at'] or '')[:10]
-            flash(f'Another organization already holds an unverified claim on {serial}'
-                  f'{(" (expires " + exp + ")") if exp else ""}. Scan the physical label to take '
-                  'possession now, or wait for that claim to expire.', 'error')
-            return redirect(url_for('device_new'))
+            _log_access('device_queue_join', ref_type='device', ref_id=existing['id'],
+                        detail=f'Queued for {serial} (position {pos})')
+            flash(f'Device {serial} is held by another organization. You are #{pos} in the queue'
+                  f'{(" — their window closes " + exp) if exp else ""}. If they don\'t verify in time, '
+                  'the device passes to the next in line. See "Your pending claims" on the Devices page.',
+                  'success')
+            return redirect(url_for('devices'))
 
         # No active claim exists (brand-new serial, or a prior claim that expired/was
         # released). Create or re-point the row for this org.
@@ -5254,6 +5325,22 @@ def device_notice_dismiss(notice_id):
     q_exec("UPDATE device_notices SET read_at = datetime('now') WHERE id = ? AND organization_id = ?",
            (notice_id, current_org_id()))
     return redirect(request.referrer or url_for('devices'))
+
+
+@app.route('/devices/queue/<int:queue_id>/withdraw', methods=['POST'])
+@require_login
+def queue_withdraw(queue_id):
+    """Leave the waiting queue for a serial (URS_5.11)."""
+    oid = current_org_id()
+    e = q_one("""SELECT * FROM device_claim_queue WHERE id = ? AND organization_id = ?
+                 AND status = 'waiting'""", (queue_id, oid))
+    if not e:
+        abort(404)
+    q_exec("UPDATE device_claim_queue SET status = 'withdrawn' WHERE id = ?", (queue_id,))
+    _log_access('device_queue_withdraw', ref_type='device',
+                detail=f'Left the queue for {e["serial_number"]}')
+    flash(f'You left the queue for device {e["serial_number"]}.', 'success')
+    return redirect(url_for('devices'))
 
 
 @app.route('/devices/contest/<int:contest_id>/withdraw', methods=['POST'])

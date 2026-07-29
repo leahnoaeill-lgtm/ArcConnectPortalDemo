@@ -89,6 +89,40 @@
     </div>
   {% endif %}
 
+  {# ── Your queued claims (serials held by another org; you wait your turn) ── #}
+  {% if my_queue %}
+    <div class="card" style="margin-bottom:16px;border-left:4px solid var(--ac-yellow);">
+      <div class="card-header"><h2 style="margin:0;font-size:15px;">Your queued claims</h2></div>
+      <div class="card-body no-pad">
+        <table class="table">
+          <thead><tr><th>Serial</th><th>Your place</th><th>Holder's window</th><th>Your claim</th><th></th></tr></thead>
+          <tbody>
+            {% for e in my_queue %}
+            <tr>
+              <td class="mono">{{ e.serial_number }}</td>
+              <td><span class="badge" style="background:#F4E3B2;color:#7A5B12;">#{{ e.position }} in queue</span></td>
+              <td class="small muted">
+                {% if e.holder_verification == 'verified' %}Held (verified) — turns over only by ABMRC ruling
+                {% elif e.claim_expires_at %}Passes on {{ e.claim_expires_at | date_only }} if unverified
+                {% else %}—{% endif %}
+              </td>
+              <td class="small">{{ e.intake_method | title }}{% if e.intake_method == 'scan' %} → becomes verified when it reaches the front{% else %} → starts its own 14 days{% endif %}</td>
+              <td style="text-align:right;white-space:nowrap;">
+                <form method="POST" action="{{ url_for('queue_withdraw', queue_id=e.id) }}" style="display:inline;"
+                      onsubmit="return confirm('Leave the queue for {{ e.serial_number }}?');">
+                  <button type="submit" class="btn btn-sm">Leave queue</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="small muted" style="padding:8px 14px;">One organization holds a serial at a
+          time. If a holder doesn't verify within their window, the device passes to the next in line.</div>
+      </div>
+    </div>
+  {% endif %}
+
   {# Tabs + Add-device share one line; the underline runs under the whole row. #}
   <div class="flex" style="justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ac-border); margin-bottom: 18px;">
     <div class="tabs" style="border-bottom: 0; margin-bottom: 0;">

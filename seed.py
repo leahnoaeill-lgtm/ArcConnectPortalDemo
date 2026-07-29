@@ -642,6 +642,21 @@ def seed():
                   (_denver_pid, dev_uc13, (date.today() - timedelta(days=60)).isoformat(),
                    _consent, priya_id))
 
+    # ── Claim-queue demos (URS_5.11–5.12) ────────────────────────────
+    def _enqueue(serial, org, intake, days_ago=0):
+        ts = (now - timedelta(days=days_ago)).isoformat(sep=' ', timespec='seconds')
+        c.execute("""INSERT INTO device_claim_queue (serial_number, organization_id, intake_method, created_at)
+                     VALUES (?, ?, ?, ?)""", (serial, org, intake, ts))
+
+    # Live queue: Phoenix holds KNS90A921 unverified (window open ~8 days); Denver waits #1.
+    _demo_device('KNS90A921', 'biwaze_clear', adap_phoenix, verification='pending', expires_days=8)
+    _enqueue('KNS90A921', adap_denver, 'scan', days_ago=1)
+
+    # Auto-advance: Sunwest holds CNS90A920 unverified but the window has LAPSED (−1 day);
+    # Denver waits #1 (scanned). The next Devices-page load promotes Denver to verified holder.
+    _demo_device('CNS90A920', 'biwaze_cough', sunwest_id, verification='pending', expires_days=-1)
+    _enqueue('CNS90A920', adap_denver, 'scan', days_ago=2)
+
     # ── Alert rules (Adapt Denver defaults) ─────────────────────────
     rules = [
         ('Missed therapy (1 day)', 'missed_therapy_days', 1, 24, 'warning',

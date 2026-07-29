@@ -449,6 +449,23 @@ CREATE TABLE IF NOT EXISTS device_notices (
 );
 CREATE INDEX IF NOT EXISTS idx_notices_org ON device_notices(organization_id, read_at);
 
+-- Claim queue (URS_5.11–5.12): one organization holds a serial at a time (verified or not);
+-- other organizations' claims wait here in FIFO order. When an unverified holder's 14-day
+-- window lapses, the oldest waiting entry is promoted to holder — a scanned entry becomes a
+-- verified holder, a typed entry becomes an unverified holder starting its own 14 days.
+CREATE TABLE IF NOT EXISTS device_claim_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    serial_number TEXT NOT NULL,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    intake_method TEXT NOT NULL DEFAULT 'manual',   -- 'scan' | 'manual'
+    status TEXT NOT NULL DEFAULT 'waiting'           -- 'waiting' | 'promoted' | 'withdrawn'
+        CHECK(status IN ('waiting','promoted','withdrawn')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    promoted_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_queue_serial ON device_claim_queue(serial_number, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_queue_org ON device_claim_queue(organization_id, status);
+
 -- Alert rules (per org)
 CREATE TABLE IF NOT EXISTS alert_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
