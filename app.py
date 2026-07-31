@@ -5001,26 +5001,38 @@ def device_new():
 
         if existing and existing['claim_state'] == 'active' \
                 and existing['verification_status'] == 'pending':
-            # Another org holds an UNVERIFIED claim. One org holds a serial at a time — so this
-            # claim WAITS in the FIFO queue (URS_5.11–5.12). A scan does not displace the holder;
-            # it queues too, and converts to verified only if it reaches the front (when the
-            # holder's 14-day window lapses).
+            # Another org holds an UNVERIFIED (weak) claim. Middle-path precedence:
+            #   • Scan/photo proves physical possession → it BEATS the unverified holder
+            #     immediately (a present HME shouldn't wait behind an unproven typed guess).
+            #   • Manual entry (typed vs typed — neither side has stronger evidence) → WAIT in
+            #     the FIFO queue; on the holder's 14-day lapse it passes to the next in line.
+            if not manual:
+                _claim_notice(existing['organization_id'], 'claim_released',
+                              f'Device {serial} was scanned into another organization\'s fleet, '
+                              'which proves physical possession, so your unverified claim on it was '
+                              'superseded.', serial=serial)
+                _transfer_device_row(existing['id'], oid, 'scan', model=model, prior_link='none')
+                _log_access('device_scan_win', ref_type='device', ref_id=existing['id'],
+                            detail=f'Scan superseded an unverified claim on {serial}')
+                flash(f'Device {serial} scanned — possession confirmed. It is now in your fleet '
+                      'as Verified.', 'success')
+                return redirect(url_for('device_detail', device_id=existing['id']))
             already = q_one("""SELECT id FROM device_claim_queue WHERE serial_number = ?
                                AND organization_id = ? AND status = 'waiting'""", (serial, oid))
             if already:
-                flash(f'You are already in the queue for device {serial} — see "Your pending '
+                flash(f'You are already in the queue for device {serial} — see "Your queued '
                       'claims" on the Devices page.', 'info')
                 return redirect(url_for('devices'))
             q_exec("""INSERT INTO device_claim_queue (serial_number, organization_id, intake_method)
-                      VALUES (?, ?, ?)""", (serial, oid, intake))
+                      VALUES (?, ?, 'manual')""", (serial, oid))
             pos = _queue_position(serial, oid)
             exp = str(existing['claim_expires_at'] or '')[:10]
             _log_access('device_queue_join', ref_type='device', ref_id=existing['id'],
                         detail=f'Queued for {serial} (position {pos})')
             flash(f'Device {serial} is held by another organization. You are #{pos} in the queue'
                   f'{(" — their window closes " + exp) if exp else ""}. If they don\'t verify in time, '
-                  'the device passes to the next in line. See "Your pending claims" on the Devices page.',
-                  'success')
+                  'the device passes to the next in line. To take it now, scan the physical label. '
+                  'See "Your queued claims" on the Devices page.', 'success')
             return redirect(url_for('devices'))
 
         # No active claim exists (brand-new serial, or a prior claim that expired/was

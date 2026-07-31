@@ -648,14 +648,16 @@ def seed():
         c.execute("""INSERT INTO device_claim_queue (serial_number, organization_id, intake_method, created_at)
                      VALUES (?, ?, ?, ?)""", (serial, org, intake, ts))
 
-    # Live queue: Phoenix holds KNS90A921 unverified (window open ~8 days); Denver waits #1.
+    # Live queue: Phoenix holds KNS90A921 unverified (window open ~8 days); Denver waits #1 with a
+    # MANUAL claim (a scan would take it immediately, so only typed claims sit in the queue).
     _demo_device('KNS90A921', 'biwaze_clear', adap_phoenix, verification='pending', expires_days=8)
-    _enqueue('KNS90A921', adap_denver, 'scan', days_ago=1)
+    _enqueue('KNS90A921', adap_denver, 'manual', days_ago=1)
 
     # Auto-advance: Sunwest holds CNS90A920 unverified but the window has LAPSED (−1 day);
-    # Denver waits #1 (scanned). The next Devices-page load promotes Denver to verified holder.
+    # Denver waits #1 (manual). The next Devices-page load promotes Denver to unverified holder
+    # with its own 14-day window.
     _demo_device('CNS90A920', 'biwaze_cough', sunwest_id, verification='pending', expires_days=-1)
-    _enqueue('CNS90A920', adap_denver, 'scan', days_ago=2)
+    _enqueue('CNS90A920', adap_denver, 'manual', days_ago=2)
 
     # ── Alert rules (Adapt Denver defaults) ─────────────────────────
     rules = [
